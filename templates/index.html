@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travel with Tots</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+</head>
+<body>
+  <main class="hero">
+    <div class="hero-overlay">
+      <h1 class="app-name">Travel with Tots</h1>
+      <p class="tagline">Stress-free itineraries for parents adventuring with children 0–5.</p>
+      <a class="cta" href="{{ url_for('plan') }}">Plan my day</a>
+      <a class="cta cta-secondary" href="#learn-more">Learn more</a>
+    </div>
+  </main>
+
+<section class="features" id="learn-more">
+    <div class="feature">
+      <h3>🍼 Built around your baby</h3>
+      <p>Plans built around your child's age, nap and feeding schedule, temperament, and travel gear.</p>
+    </div>
+    <div class="feature">
+      <h3>🗺️ On-the-go help</h3>
+      <p>Find kid-friendly restaurants, nursing rooms, and rest stops the moment you need them.</p>
+    </div>
+    <div class="feature">
+      <h3>🆘 Calm in emergencies</h3>
+      <p>Quick, practical suggestions for handling the little (and big) surprises along the way.</p>
+    </div>
+</section>
+
+  <footer class="footer">
+    <p>Travel with Tots — stress-free adventures for little ones.</p>
+    <p>&copy; 2026 Travel with Tots. All rights reserved.</p>
+  </footer>
+</body>
+</html>

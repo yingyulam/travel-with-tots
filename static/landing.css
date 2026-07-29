@@ -1,0 +1,111 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #2b2b2b;
+  line-height: 1.6;
+}
+
+/* Banner / hero */
+.hero {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background:
+    linear-gradient(rgba(30, 60, 90, 0.55), rgba(30, 60, 90, 0.55)),
+    url("https://images.unsplash.com/photo-1741990811736-81fd08f449e5?fm=jpg&q=80&w=2000")
+      center/cover no-repeat;
+  color: #fff;
+  padding: 2rem;
+}
+
+.hero-overlay {
+  max-width: 620px;
+}
+
+.app-name {
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 0.5rem;
+}
+
+.tagline {
+  font-size: 1.25rem;
+  margin-bottom: 2rem;
+  opacity: 0.95;
+}
+
+/* Buttons */
+.cta {
+  display: inline-block;
+  background: #ff7043;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  padding: 0.9rem 2.2rem;
+  border-radius: 999px;
+  margin: 0.35rem;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.cta:hover {
+  background: #f4511e;
+  transform: translateY(-2px);
+}
+
+.cta-secondary {
+  background: #1e88e5;
+}
+
+.cta-secondary:hover {
+  background: #1565c0;
+}
+
+/* Features */
+.features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  justify-content: center;
+  padding: 3.5rem 1.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.feature {
+  flex: 1 1 260px;
+  background: #f7f9fb;
+  border-radius: 16px;
+  padding: 1.75rem;
+}
+
+.feature h3 {
+  margin-bottom: 0.5rem;
+  font-size: 1.15rem;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  background: #1e3c5a;
+  color: #fff;
+  padding: 3rem 1.5rem;
+}
+
+.footer p {
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 600px) {
+  .app-name { font-size: 2.2rem; }
+  .tagline { font-size: 1.05rem; }
+}

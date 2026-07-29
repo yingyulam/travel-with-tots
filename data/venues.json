@@ -1,0 +1,132 @@
+[
+  {
+    "name": "Rocky Mountain Flatbread",
+    "type": "restaurant",
+    "category": "food",
+    "neighbourhood": "Kitsilano",
+    "kid_friendly": true,
+    "has_family_room": true,
+    "has_nursing_room": true,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Nourish Kitchen",
+    "type": "cafe",
+    "category": "food",
+    "neighbourhood": "Mount Pleasant",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": false,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Tacofino Gastown",
+    "type": "restaurant",
+    "category": "food",
+    "neighbourhood": "Gastown",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": false,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Medina Cafe",
+    "type": "cafe",
+    "category": "food",
+    "neighbourhood": "Downtown",
+    "kid_friendly": false,
+    "has_family_room": false,
+    "has_nursing_room": false,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Kokomo Foods",
+    "type": "restaurant",
+    "category": "food",
+    "neighbourhood": "Chinatown",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": true,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Science World",
+    "type": "museum",
+    "category": "activity",
+    "neighbourhood": "False Creek",
+    "kid_friendly": true,
+    "has_family_room": true,
+    "has_nursing_room": true,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Vancouver Aquarium",
+    "type": "attraction",
+    "category": "activity",
+    "neighbourhood": "Stanley Park",
+    "kid_friendly": true,
+    "has_family_room": true,
+    "has_nursing_room": true,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Stanley Park Seawall",
+    "type": "park",
+    "category": "activity",
+    "neighbourhood": "West End",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": false,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Queen Elizabeth Park",
+    "type": "park",
+    "category": "activity",
+    "neighbourhood": "Riley Park",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": false,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Oakridge Park Mall",
+    "type": "mall",
+    "category": "activity",
+    "neighbourhood": "Oakridge",
+    "kid_friendly": true,
+    "has_family_room": true,
+    "has_nursing_room": true,
+    "stroller_accessible": true
+  },
+  {
+    "name": "VanDusen Botanical Garden",
+    "type": "park",
+    "category": "activity",
+    "neighbourhood": "Shaughnessy",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": true,
+    "stroller_accessible": true
+  },
+  {
+    "name": "Museum of Vancouver",
+    "type": "museum",
+    "category": "activity",
+    "neighbourhood": "Kitsilano",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": true,
+    "stroller_accessible": false
+  },
+  {
+    "name": "Grouse Mountain",
+    "type": "attraction",
+    "category": "activity",
+    "neighbourhood": "North Vancouver",
+    "kid_friendly": true,
+    "has_family_room": false,
+    "has_nursing_room": false,
+    "stroller_accessible": false
+  }
+]

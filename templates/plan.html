@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travel with Tots — Plan your day</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="masthead">
+    <a class="home-link" href="{{ url_for('home') }}">← Home</a>
+    <h1 class="app-name">Travel with Tots</h1>
+    <p class="tagline">Build a nap-friendly day plan for little ones 0–5.</p>
+  </header>
+
+  <main class="layout">
+    <!-- Trip details form -->
+    <section class="card form-card">
+      <h2>Your trip</h2>
+      <form method="post" action="{{ url_for('plan') }}">
+        <div class="field-row">
+          <label class="field">
+            <span>Wake-up time</span>
+            <input type="time" name="wake_up" value="{{ form.wake_up }}">
+          </label>
+          <label class="field">
+            <span>Bedtime</span>
+            <input type="time" name="bedtime" value="{{ form.bedtime }}">
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Nap time 1</span>
+            <input type="time" name="nap_1" value="{{ form.nap_1 }}">
+          </label>
+          <label class="field">
+            <span>Nap time 2 <em>(optional)</em></span>
+            <input type="time" name="nap_2" value="{{ form.nap_2 }}">
+          </label>
+        </div>
+
+        <label class="field field-full">
+          <span>Tell us about your kid's nap/sleep habits</span>
+          <textarea name="nap_notes" rows="3"
+                    placeholder="e.g. 4-month-old, sleeps in the bassinet but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Kid's age (years)</span>
+            <input type="number" name="kid_age" min="0" max="5" value="{{ form.kid_age }}">
+          </label>
+          <label class="field">
+            <span>Destination</span>
+            <input type="text" name="destination" value="{{ form.destination }}">
+          </label>
+        </div>
+
+        <fieldset class="group">
+          <legend>How are you getting around? <em>(pick any)</em></legend>
+          <div class="chips">
+            {% for option in transit_options %}
+            <label class="chip">
+              <input type="checkbox" name="transit" value="{{ option }}"
+                     {% if option in form.transit %}checked{% endif %}>
+              <span>{{ option|capitalize }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Features that matter</legend>
+          <div class="chips">
+            {% for key, label in feature_options %}
+            <label class="chip">
+              <input type="checkbox" name="features" value="{{ key }}"
+                     {% if key in form.features %}checked{% endif %}>
+              <span>{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <button type="submit" class="cta">Generate my day</button>
+      </form>
+    </section>
+
+    <!-- Generated itinerary -->
+    {% if itinerary is not none %}
+    <section class="card plan-card">
+      <div class="plan-head">
+        <h2>Your day in {{ form.destination }}</h2>
+        {% set transit_label = form.transit | map('capitalize') | join(', ') %}
+        <p class="transit-pill">🚕 Getting around by <strong>{{ transit_label or 'Not specified' }}</strong></p>
+        {% if form.nap_notes %}
+        <p class="nap-notes"><strong>Your nap notes:</strong> {{ form.nap_notes }}</p>
+        {% endif %}
+        <button type="button" id="help-btn" class="help-btn">Ask for help</button>
+        <p id="help-text" class="help-text" hidden></p>
+      </div>
+
+      {% if itinerary %}
+      <ol class="timeline">
+        {% for stop in itinerary %}
+        <li class="stop {{ stop.kind }}">
+          <div class="stop-time">{{ stop.time }}</div>
+          {% if stop.venue %}
+          <div class="stop-body">
+            <h3>{{ stop.venue.name }}</h3>
+            <p class="meta">{{ stop.venue.type|capitalize }} · {{ stop.venue.neighbourhood }}</p>
+            <div class="badges">
+              {% for key, label in feature_options %}
+                {% if stop.venue[key] %}<span class="badge">{{ label }}</span>{% endif %}
+              {% endfor %}
+            </div>
+            <p class="reason">💡 {{ stop.reason }}</p>
+            <a class="maps-link" href="{{ stop.venue.maps_url }}" target="_blank" rel="noopener">
+              📍 Open in Google Maps
+            </a>
+          </div>
+          {% else %}
+          <div class="stop-body empty-body">
+            <h3>No matching venue</h3>
+            <p class="reason">{{ stop.reason }}</p>
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="empty-plan">We couldn't build a day from those times. Try widening the gap between wake-up and bedtime.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+
+  <footer class="footer">
+    <p>Travel with Tots — stress-free adventures for little ones.</p>
+  </footer>
+
+  <script>
+    const helpBtn = document.getElementById("help-btn");
+    if (helpBtn) {
+      helpBtn.addEventListener("click", async () => {
+        const out = document.getElementById("help-text");
+        helpBtn.disabled = true;
+        try {
+          const res = await fetch("/help", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          out.textContent = data.suggestion;
+        } catch (e) {
+          out.textContent = "Sorry, help is unavailable right now.";
+        }
+        out.hidden = false;
+        helpBtn.disabled = false;
+      });
+    }
+  </script>
+</body>
+</html>
