@@ -154,8 +154,9 @@
     }
 
     function renderTabs() {
+      // Only ever two slots: Original (0, never changes) and Current (1).
       picker.innerHTML = PLANS.map((p, i) =>
-        `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${p.label}${i === 0 ? " · original" : ""}</button>`
+        `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${i === 0 ? "Original" : "Current"}</button>`
       ).join("");
       picker.querySelectorAll(".plan-tab").forEach((tab) => {
         tab.addEventListener("click", () => {
@@ -180,12 +181,14 @@
             body: JSON.stringify({ plan: PLANS[active], situation: btn.dataset.situation, current_time: timeField.value }),
           });
           const newPlan = await res.json();
-          PLANS.push(newPlan);
-          active = PLANS.length - 1;
+          // Replace the single "Current" version (or create it the first time),
+          // so the switcher always shows exactly Original + Current.
+          PLANS[1] = newPlan;
+          active = 1;
           renderTabs();
           renderTimeline();
           status.hidden = false;
-          status.textContent = `Updated from ${newPlan.from_time || nowDisplay()} — original plan kept below.`;
+          status.textContent = `Updated from ${newPlan.from_time || nowDisplay()} — tap “Original” to compare.`;
         } catch (e) {
           status.hidden = false;
           status.textContent = "Couldn't re-plan right now.";
