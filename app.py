@@ -9,7 +9,7 @@ from flask import Flask, jsonify, render_template, request
 
 from src.ai_helper import get_suggestion
 from src.data_loader import FEATURE_LABELS, load_venues
-from src.itinerary import generate_plan
+from src.itinerary import generate_plans
 
 app = Flask(__name__)
 
@@ -92,23 +92,15 @@ def home():
 def plan():
     if request.method == "POST":
         form = _read_form(request.form)
-        itinerary = generate_plan(
-            VENUES,
-            wake_time=form["wake_up"],
-            bedtime=form["bedtime"],
-            nap_times=form["nap_times"],
-            transit_modes=form["transit"],
-            nap_notes=form["nap_notes"],
-            features=form["features"],
-        )
+        plans = generate_plans(VENUES, form)
     else:
         form = dict(DEFAULTS)
-        itinerary = None
+        plans = None
 
     return render_template(
         "plan.html",
         form=form,
-        itinerary=itinerary,
+        plans=plans,
         transit_options=TRANSIT_OPTIONS,
         pace_options=PACE_OPTIONS,
         feature_options=FEATURE_OPTIONS,

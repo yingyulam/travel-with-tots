@@ -117,8 +117,8 @@
       </form>
     </section>
 
-    <!-- Generated itinerary -->
-    {% if itinerary is not none %}
+    <!-- Generated plans -->
+    {% if plans is not none %}
     <section class="card plan-card">
       <div class="plan-head">
         <h2>Your day in {{ form.destination }}</h2>
@@ -131,36 +131,52 @@
         <p id="help-text" class="help-text" hidden></p>
       </div>
 
-      {% if itinerary %}
-      <ol class="timeline">
-        {% for stop in itinerary %}
-        <li class="stop {{ stop.kind }}">
-          <div class="stop-time">{{ stop.time }}</div>
-          {% if stop.venue %}
-          <div class="stop-body">
-            <h3>{{ stop.venue.name }}</h3>
-            <p class="meta">{{ stop.venue.type|capitalize }} · {{ stop.venue.neighbourhood }}</p>
-            <div class="badges">
-              {% for key, label in feature_options %}
-                {% if stop.venue[key] %}<span class="badge">{{ label }}</span>{% endif %}
-              {% endfor %}
-            </div>
-            <p class="reason">💡 {{ stop.reason }}</p>
-            <a class="maps-link" href="{{ stop.venue.maps_url }}" target="_blank" rel="noopener">
-              📍 Open in Google Maps
-            </a>
-          </div>
-          {% else %}
-          <div class="stop-body empty-body">
-            <h3>No matching venue</h3>
-            <p class="reason">{{ stop.reason }}</p>
-          </div>
-          {% endif %}
-        </li>
+      {% if plans %}
+      <p class="picker-hint">Pick a plan for your day:</p>
+      <div class="plan-picker">
+        {% for plan in plans %}
+        <label class="plan-tab">
+          <input type="radio" name="plan-pick" value="{{ loop.index0 }}" {% if loop.first %}checked{% endif %}>
+          <span>{{ plan.label }}</span>
+        </label>
         {% endfor %}
-      </ol>
+      </div>
+
+      {% for plan in plans %}
+      <div class="plan-body" data-plan="{{ loop.index0 }}" {% if not loop.first %}hidden{% endif %}>
+        <p class="plan-blurb">{{ plan.blurb }}</p>
+        <ol class="timeline">
+          {% for stop in plan.stops %}
+          <li class="stop {{ stop.kind }}">
+            <div class="stop-time">{{ stop.time }}</div>
+            {% if stop.venue %}
+            <div class="stop-body">
+              <h3>{{ stop.venue.name }}</h3>
+              <p class="meta">{{ stop.venue.type|capitalize }} · {{ stop.venue.neighbourhood }}</p>
+              <div class="badges">
+                {% for key, label in feature_options %}
+                  {% if stop.venue[key] %}<span class="badge">{{ label }}</span>{% endif %}
+                {% endfor %}
+                {% if stop.venue.nap_friendly %}<span class="badge badge-nap">Nap-friendly</span>{% endif %}
+              </div>
+              <p class="reason">💡 {{ stop.reason }}</p>
+              <a class="maps-link" href="{{ stop.venue.maps_url }}" target="_blank" rel="noopener">
+                📍 Open in Google Maps
+              </a>
+            </div>
+            {% else %}
+            <div class="stop-body empty-body">
+              <h3>No matching venue</h3>
+              <p class="reason">{{ stop.reason }}</p>
+            </div>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
+      {% endfor %}
       {% else %}
-      <p class="empty-plan">We couldn't build a day from those times. Try widening the gap between wake-up and bedtime.</p>
+      <p class="empty-plan">We couldn't build any plans from those inputs. Try loosening your selected features.</p>
       {% endif %}
     </section>
     {% endif %}
@@ -206,6 +222,17 @@
     if (years && months) {
       years.addEventListener("input", syncAgeCap);
       syncAgeCap();
+    }
+
+    // Show only the picked plan's stops.
+    const picks = document.querySelectorAll('input[name="plan-pick"]');
+    const bodies = document.querySelectorAll(".plan-body");
+    function showPlan(index) {
+      bodies.forEach((body) => { body.hidden = body.dataset.plan !== index; });
+    }
+    if (picks.length) {
+      picks.forEach((pick) => pick.addEventListener("change", () => showPlan(pick.value)));
+      showPlan(document.querySelector('input[name="plan-pick"]:checked').value);
     }
   </script>
 </body>

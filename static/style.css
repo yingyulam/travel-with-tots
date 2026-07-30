@@ -278,6 +278,53 @@ textarea:focus {
   font-size: 0.95rem;
 }
 
+/* Plan picker */
+.picker-hint {
+  font-weight: 600;
+  color: var(--navy);
+  margin-bottom: 0.6rem;
+}
+
+.plan-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.plan-tab input {
+  position: absolute;
+  opacity: 0;
+}
+
+.plan-tab span {
+  display: inline-block;
+  cursor: pointer;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  background: var(--surface);
+  transition: all 0.15s ease;
+}
+
+.plan-tab input:checked + span {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+
+.plan-tab input:focus-visible + span {
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.25);
+}
+
+.plan-blurb {
+  color: #55637a;
+  font-style: italic;
+  margin-bottom: 0.5rem;
+}
+
 /* Timeline */
 .timeline {
   list-style: none;
@@ -312,6 +359,10 @@ textarea:focus {
   border-left-color: var(--orange);
 }
 
+.stop.nap .stop-body {
+  border-left-color: #9c7bd6;
+}
+
 .stop-body h3 {
   color: var(--ink);
   font-size: 1.1rem;
@@ -336,6 +387,11 @@ textarea:focus {
   font-weight: 600;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
+}
+
+.badge-nap {
+  background: #efe8fb;
+  color: #6a3fb0;
 }
 
 .reason {
