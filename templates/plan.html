@@ -117,64 +117,38 @@
       </form>
     </section>
 
-    <!-- Generated plans -->
+    <!-- Candidate plans to compare -->
     {% if plans is not none %}
-    <section class="card plan-card">
-      <div class="plan-head">
-        <h2>Your day in {{ form.destination }}</h2>
-        {% set transit_label = form.transit | map('capitalize') | join(', ') %}
-        <p class="transit-pill">🚕 Getting around by <strong>{{ transit_label or 'Not specified' }}</strong></p>
-        {% if form.nap_notes %}
-        <p class="nap-notes"><strong>Your nap notes:</strong> {{ form.nap_notes }}</p>
-        {% endif %}
-        <button type="button" id="help-btn" class="help-btn">Ask for help</button>
-        <p id="help-text" class="help-text" hidden></p>
-      </div>
-
+    <section class="card">
+      <h2>Compare your options</h2>
       {% if plans %}
-      <p class="picker-hint">Pick a plan for your day:</p>
-      <div class="plan-picker">
+      <p class="picker-hint">Pick a plan and tap “Start this day”.</p>
+      <div class="plan-grid">
         {% for plan in plans %}
-        <label class="plan-tab">
-          <input type="radio" name="plan-pick" value="{{ loop.index0 }}" {% if loop.first %}checked{% endif %}>
-          <span>{{ plan.label }}</span>
-        </label>
+        <div class="plan-option">
+          <h3 class="plan-option-title">{{ plan.label }}</h3>
+          <p class="plan-blurb">{{ plan.blurb }}</p>
+          <ol class="preview-list">
+            {% for stop in plan.preview() %}
+            <li>
+              <span class="preview-time">{{ stop.time }}</span>
+              <span class="preview-name">
+                {{ stop.venue.name if stop.venue else ('Free time' if stop.kind == 'bonus' else stop.kind|capitalize) }}
+              </span>
+            </li>
+            {% endfor %}
+            {% if plan.stops|length > plan.preview()|length %}
+            <li class="preview-more">+ {{ plan.stops|length - plan.preview()|length }} more…</li>
+            {% endif %}
+          </ol>
+          <form method="post" action="{{ url_for('trip') }}">
+            <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
+            <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
+            <button type="submit" class="cta">Start this day</button>
+          </form>
+        </div>
         {% endfor %}
       </div>
-
-      {% for plan in plans %}
-      <div class="plan-body" data-plan="{{ loop.index0 }}" {% if not loop.first %}hidden{% endif %}>
-        <p class="plan-blurb">{{ plan.blurb }}</p>
-        <ol class="timeline">
-          {% for stop in plan.stops %}
-          <li class="stop {{ stop.kind }}">
-            <div class="stop-time">{{ stop.time }}</div>
-            {% if stop.venue %}
-            <div class="stop-body">
-              <h3>{{ stop.venue.name }}</h3>
-              <p class="meta">{{ stop.venue.type|capitalize }} · {{ stop.venue.neighbourhood }}</p>
-              <div class="badges">
-                {% for key, label in feature_options %}
-                  {% if stop.venue[key] %}<span class="badge">{{ label }}</span>{% endif %}
-                {% endfor %}
-                {% if stop.venue.nap_friendly %}<span class="badge badge-nap">Nap-friendly</span>{% endif %}
-              </div>
-              <p class="reason">💡 {{ stop.reason }}</p>
-              <a class="maps-link" href="{{ stop.venue.maps_url }}" target="_blank" rel="noopener">
-                📍 Open in Google Maps
-              </a>
-            </div>
-            {% else %}
-            <div class="stop-body empty-body">
-              <h3>No matching venue</h3>
-              <p class="reason">{{ stop.reason }}</p>
-            </div>
-            {% endif %}
-          </li>
-          {% endfor %}
-        </ol>
-      </div>
-      {% endfor %}
       {% else %}
       <p class="empty-plan">We couldn't build any plans from those inputs. Try loosening your selected features.</p>
       {% endif %}
@@ -187,27 +161,6 @@
   </footer>
 
   <script>
-    const helpBtn = document.getElementById("help-btn");
-    if (helpBtn) {
-      helpBtn.addEventListener("click", async () => {
-        const out = document.getElementById("help-text");
-        helpBtn.disabled = true;
-        try {
-          const res = await fetch("/help", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          });
-          const data = await res.json();
-          out.textContent = data.suggestion;
-        } catch (e) {
-          out.textContent = "Sorry, help is unavailable right now.";
-        }
-        out.hidden = false;
-        helpBtn.disabled = false;
-      });
-    }
-
     // Cap age at 5 years 0 months: at 5 years, months are locked to 0.
     const years = document.getElementById("age-years");
     const months = document.getElementById("age-months");
@@ -222,17 +175,6 @@
     if (years && months) {
       years.addEventListener("input", syncAgeCap);
       syncAgeCap();
-    }
-
-    // Show only the picked plan's stops.
-    const picks = document.querySelectorAll('input[name="plan-pick"]');
-    const bodies = document.querySelectorAll(".plan-body");
-    function showPlan(index) {
-      bodies.forEach((body) => { body.hidden = body.dataset.plan !== index; });
-    }
-    if (picks.length) {
-      picks.forEach((pick) => pick.addEventListener("change", () => showPlan(pick.value)));
-      showPlan(document.querySelector('input[name="plan-pick"]:checked').value);
     }
   </script>
 </body>

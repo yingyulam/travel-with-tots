@@ -1,15 +1,23 @@
 """Travel with Tots -- Flask entry point.
 
-Serves the trip-planning form and renders a generated single-day itinerary.
-All the real work lives in the src/ package; this file just wires HTTP
-requests to that logic.
+Two pages: a planning page (``/plan``) that compares candidate plans, and an
+in-trip page (``/trip``) that runs the chosen plan. All the real work lives in
+the src/ package; this file just wires HTTP requests to that logic.
 """
 
-from flask import Flask, jsonify, render_template, request
+import json
 
-from src.ai_helper import get_suggestion
+from flask import Flask, jsonify, redirect, render_template, request, url_for
+
 from src.data_loader import FEATURE_LABELS, load_venues
+from src.interactions import (
+    NEED_OPTIONS,
+    SITUATION_OPTIONS,
+    find_nearby,
+    replan,
+)
 from src.itinerary import generate_plans
+from src.models import Plan, Trip
 
 app = Flask(__name__)
 
@@ -90,27 +98,74 @@ def home():
 
 @app.route("/plan", methods=["GET", "POST"])
 def plan():
+    """Planning page: the trip form and, after generating, comparable plans."""
     if request.method == "POST":
         form = _read_form(request.form)
         plans = generate_plans(VENUES, form)
+        # Context carried to the in-trip page when a plan is chosen.
+        trip_context = {"destination": form["destination"], "transit": form["transit"]}
     else:
         form = dict(DEFAULTS)
         plans = None
+        trip_context = None
 
     return render_template(
         "plan.html",
         form=form,
         plans=plans,
+        trip_context=trip_context,
         transit_options=TRANSIT_OPTIONS,
         pace_options=PACE_OPTIONS,
         feature_options=FEATURE_OPTIONS,
     )
 
 
-@app.route("/help", methods=["POST"])
-def help_suggestion():
-    """Return a placeholder assistant suggestion as JSON."""
-    return jsonify({"suggestion": get_suggestion(request.get_json(silent=True))})
+@app.route("/trip", methods=["GET", "POST"])
+def trip():
+    """In-trip page: render the chosen plan as a live, adjustable Trip.
+
+    Reached by POSTing a chosen plan from the planning page. A direct GET (or a
+    malformed submission) has no plan to show, so it returns to planning.
+    """
+    if request.method == "GET":
+        return redirect(url_for("plan"))
+    try:
+        plan_data = json.loads(request.form.get("plan", ""))
+        context = json.loads(request.form.get("context", "{}"))
+    except (ValueError, TypeError):
+        return redirect(url_for("plan"))
+
+    trip = Trip(
+        destination=context.get("destination", "Vancouver"),
+        transit=context.get("transit", []),
+        original=Plan.from_dict(plan_data),
+    )
+    return render_template(
+        "trip.html",
+        trip=trip.to_dict(),
+        feature_options=FEATURE_OPTIONS,
+        situation_options=SITUATION_OPTIONS,
+        need_options=NEED_OPTIONS,
+    )
+
+
+@app.route("/replan", methods=["POST"])
+def replan_route():
+    """Re-plan the rest of the day and return a NEW plan as JSON."""
+    data = request.get_json(silent=True) or {}
+    plan = data.get("plan")
+    current_time = data.get("current_time")
+    if not plan or not current_time:
+        return jsonify({"error": "plan and current_time are required"}), 400
+    return jsonify(replan(plan, data.get("situation", ""), current_time))
+
+
+@app.route("/find_nearby", methods=["POST"])
+def find_nearby_route():
+    """Return 1-2 venues matching an immediate need as JSON."""
+    data = request.get_json(silent=True) or {}
+    venues = find_nearby(data.get("need", ""), VENUES)
+    return jsonify({"need": data.get("need", ""), "venues": venues})
 
 
 if __name__ == "__main__":

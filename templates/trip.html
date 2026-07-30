@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travel with Tots — Your day</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  {% set transit_label = trip.transit | map('capitalize') | join(', ') %}
+  <header class="masthead">
+    <a class="home-link" href="{{ url_for('plan') }}">← New plan</a>
+    <h1 class="app-name">Your day in {{ trip.destination }}</h1>
+    <p class="tagline">🚕 Getting around by {{ transit_label or 'Not specified' }}</p>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <!-- 1. Header: destination/transit (above) + adjustable current time -->
+      <div class="trip-header">
+        <p class="transit-pill">🚕 {{ transit_label or 'Not specified' }}</p>
+        <label class="field current-time-field">
+          <span>Current time</span>
+          <input type="time" id="current-time">
+        </label>
+      </div>
+      <p id="replan-status" class="replan-status" hidden></p>
+
+      <!-- 2. Live timeline of the chosen plan -->
+      <div id="timeline-host"></div>
+
+      <!-- 3. Situation buttons -->
+      <div class="action-panel">
+        <p class="panel-title">Something came up?</p>
+        <div class="chips" id="situation-bar">
+          {% for key, label in situation_options %}
+          <button type="button" class="tap-btn" data-situation="{{ key }}">{{ label }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- 4. Need-nearby panel -->
+      <div class="action-panel">
+        <p class="panel-title">Need something now?</p>
+        <div class="chips" id="need-bar">
+          {% for key, label in need_options %}
+          <button type="button" class="tap-btn" data-need="{{ key }}">{{ label }}</button>
+          {% endfor %}
+        </div>
+        <div class="need-other-row" id="need-other-row" hidden>
+          <input type="text" id="need-other-text" placeholder="Describe what you need…">
+          <button type="button" class="tap-btn" id="need-other-go">Find</button>
+        </div>
+        <div id="need-results"></div>
+      </div>
+
+      <!-- 5. Version switcher (original vs re-planned) -->
+      <div class="action-panel">
+        <p class="panel-title">Plan versions</p>
+        <div class="plan-picker" id="plan-picker"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Travel with Tots — stress-free adventures for little ones.</p>
+  </footer>
+
+  <script id="trip-data" type="application/json">{{ trip | tojson }}</script>
+  <script id="features-data" type="application/json">{{ feature_options | tojson }}</script>
+  <script>
+    const tripData = JSON.parse(document.getElementById("trip-data").textContent);
+    const FEATURES = JSON.parse(document.getElementById("features-data").textContent);
+    const PLANS = tripData.plans.slice();   // versions; index 0 is the original
+    let active = 0;
+
+    const picker = document.getElementById("plan-picker");
+    const host = document.getElementById("timeline-host");
+    const timeField = document.getElementById("current-time");
+    const status = document.getElementById("replan-status");
+
+    // Default the current-time field to the local clock (adjustable).
+    function pad(n) { return String(n).padStart(2, "0"); }
+    if (tripData.current_time) {
+      timeField.value = tripData.current_time;
+    } else {
+      const now = new Date();
+      timeField.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+
+    function toMinutes(display) {            // "1:15 PM" -> minutes
+      const m = display.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!m) return null;
+      let h = Number(m[1]) % 12;
+      if (/pm/i.test(m[3])) h += 12;
+      return h * 60 + Number(m[2]);
+    }
+    function nowMinutes() {
+      if (!timeField.value) return null;
+      const [h, mm] = timeField.value.split(":").map(Number);
+      return h * 60 + mm;
+    }
+    function nowDisplay() {
+      const mm = nowMinutes();
+      if (mm === null) return "";
+      const d = new Date(2000, 0, 1, Math.floor(mm / 60), mm % 60);
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function badges(v) {
+      const parts = FEATURES.filter(([key]) => v[key]).map(([, label]) => `<span class="badge">${label}</span>`);
+      if (v.nap_friendly) parts.push(`<span class="badge badge-nap">Nap-friendly</span>`);
+      return parts.join("");
+    }
+
+    // Which stop is "now": the latest stop that has already started.
+    function nowIndex(stops) {
+      const cur = nowMinutes();
+      if (cur === null) return -1;
+      let idx = -1;
+      stops.forEach((s, i) => { if (toMinutes(s.time) <= cur) idx = i; });
+      return idx;
+    }
+
+    function renderStop(stop, state) {
+      const v = stop.venue;
+      const body = v
+        ? `<div class="stop-body">
+             <h3>${v.name}</h3>
+             <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
+             <div class="badges">${badges(v)}</div>
+             <p class="reason">💡 ${stop.reason}</p>
+             <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
+           </div>`
+        : `<div class="stop-body empty-body">
+             <h3>${stop.kind === "bonus" ? "✨ Free time — add a stop" : "No matching venue"}</h3>
+             <p class="reason">${stop.reason}</p>
+           </div>`;
+      const tag = state ? `<span class="state-tag ${state}">${state === "now" ? "Now" : "Done"}</span>` : "";
+      return `<li class="stop ${stop.kind} ${state}">
+                <div class="stop-time">${stop.time}${tag}</div>
+                ${body}
+              </li>`;
+    }
+
+    function renderTimeline() {
+      const plan = PLANS[active];
+      const nowI = nowIndex(plan.stops);
+      const items = plan.stops.map((s, i) => {
+        const state = i < nowI ? "done" : i === nowI ? "now" : "";
+        return renderStop(s, state);
+      }).join("");
+      host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
+    }
+
+    function renderTabs() {
+      picker.innerHTML = PLANS.map((p, i) =>
+        `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${p.label}${i === 0 ? " · original" : ""}</button>`
+      ).join("");
+      picker.querySelectorAll(".plan-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          active = Number(tab.dataset.index);
+          renderTabs();
+          renderTimeline();
+        });
+      });
+    }
+
+    timeField.addEventListener("input", renderTimeline);
+
+    // Situation buttons -> POST /replan -> add a NEW version, keep the original.
+    document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+        btn.disabled = true;
+        try {
+          const res = await fetch("/replan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ plan: PLANS[active], situation: btn.dataset.situation, current_time: timeField.value }),
+          });
+          const newPlan = await res.json();
+          PLANS.push(newPlan);
+          active = PLANS.length - 1;
+          renderTabs();
+          renderTimeline();
+          status.hidden = false;
+          status.textContent = `Updated from ${newPlan.from_time || nowDisplay()} — original plan kept below.`;
+        } catch (e) {
+          status.hidden = false;
+          status.textContent = "Couldn't re-plan right now.";
+        }
+        btn.disabled = false;
+      });
+    });
+
+    // Need panel -> POST /find_nearby -> show matching venues + request time.
+    const needResults = document.getElementById("need-results");
+    const otherRow = document.getElementById("need-other-row");
+    async function runNeed(need) {
+      needResults.innerHTML = "<p class='need-loading'>Finding…</p>";
+      try {
+        const res = await fetch("/find_nearby", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ need }),
+        });
+        const data = await res.json();
+        const when = nowDisplay();
+        if (!data.venues.length) {
+          needResults.innerHTML = `<p class="need-when">Requested at ${when}</p><p class="empty-body">No match found in the sample data.</p>`;
+          return;
+        }
+        const cards = data.venues.map((v) =>
+          `<div class="need-card">
+             <h4>${v.name}</h4>
+             <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
+             <div class="badges">${badges(v)}</div>
+             <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
+           </div>`
+        ).join("");
+        needResults.innerHTML = `<p class="need-when">Requested at ${when}</p>${cards}`;
+      } catch (e) {
+        needResults.innerHTML = "<p class='empty-body'>Couldn't search right now.</p>";
+      }
+    }
+    document.getElementById("need-bar").querySelectorAll("[data-need]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.need === "other") {
+          otherRow.hidden = !otherRow.hidden;
+          if (!otherRow.hidden) document.getElementById("need-other-text").focus();
+          return;
+        }
+        otherRow.hidden = true;
+        runNeed(btn.dataset.need);
+      });
+    });
+    document.getElementById("need-other-go").addEventListener("click", () => runNeed("other"));
+
+    renderTabs();
+    renderTimeline();
+  </script>
+</body>
+</html>

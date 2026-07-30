@@ -10,6 +10,7 @@ notes yet.
 from datetime import datetime, timedelta
 
 from .filters import filter_by_features
+from .models import Plan
 
 # A buffer after wake-up before the first stop (breakfast, getting out).
 MORNING_BUFFER = timedelta(hours=2)
@@ -132,8 +133,8 @@ def generate_plans(venues, inputs):
     """Return a short list of candidate day plans for the parent to pick from.
 
     ``inputs`` is the normalised form dict (wake_up, bedtime, nap_times, pace,
-    age_years, age_months, features, ...). Each plan is a dict with a theme
-    ``label``, a ``blurb``, and an ordered list of ``stops``.
+    age_years, age_months, features, ...). Returns a list of ``Plan`` objects,
+    one per theme, each with a ``label``, a ``blurb``, and ordered ``stops``.
 
     Placeholder logic: filter venues by the chosen features, decide how many
     stops fit the child's age and pace, then arrange one plan per theme with a
@@ -148,10 +149,10 @@ def generate_plans(venues, inputs):
     count = _stop_count(inputs["pace"], inputs["age_years"], inputs["age_months"])
 
     return [
-        {
-            "label": theme["label"],
-            "blurb": theme["blurb"],
-            "stops": _build_plan(matches, wake, bedtime, naps, count, theme),
-        }
+        Plan(
+            label=theme["label"],
+            blurb=theme["blurb"],
+            stops=_build_plan(matches, wake, bedtime, naps, count, theme),
+        )
         for theme in THEMES
     ]

@@ -292,31 +292,245 @@ textarea:focus {
   margin-bottom: 1.25rem;
 }
 
-.plan-tab input {
-  position: absolute;
-  opacity: 0;
-}
-
-.plan-tab span {
-  display: inline-block;
+.plan-tab {
   cursor: pointer;
   padding: 0.55rem 1.1rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   font-weight: 600;
   font-size: 0.92rem;
+  font-family: inherit;
   background: var(--surface);
+  color: var(--ink);
   transition: all 0.15s ease;
 }
 
-.plan-tab input:checked + span {
+.plan-tab.is-active {
   background: var(--navy);
   border-color: var(--navy);
   color: #fff;
 }
 
-.plan-tab input:focus-visible + span {
+.plan-tab:focus-visible {
+  outline: none;
   box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.25);
+}
+
+/* In-the-moment area: current time + immediate needs side by side */
+.now-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.now-area .trip-controls {
+  flex: 1 1 180px;
+  margin-bottom: 0;
+}
+
+.now-area .need-panel {
+  flex: 2 1 300px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Planning page: comparison cards */
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.plan-option {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem;
+}
+
+.plan-option-title {
+  color: var(--navy);
+  font-size: 1.15rem;
+  margin-bottom: 0.25rem;
+}
+
+.preview-list {
+  list-style: none;
+  margin: 0.5rem 0 1rem;
+  flex: 1;
+}
+
+.preview-list li {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  padding: 0.2rem 0;
+}
+
+.preview-time {
+  flex: 0 0 72px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.preview-name {
+  color: #55637a;
+}
+
+.preview-more {
+  color: #8a97a6;
+  font-style: italic;
+}
+
+.plan-option .cta {
+  margin-top: auto;
+}
+
+/* In-trip page: header row (transit + current time) */
+.trip-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Current-time control + re-plan status */
+.trip-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.current-time-field {
+  flex: 0 0 auto;
+}
+
+.replan-status {
+  flex: 1 1 200px;
+  background: #fff7f2;
+  border-left: 3px solid var(--orange);
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+/* Tap-first action panels */
+.action-panel {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.panel-title {
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 0.6rem;
+}
+
+.tap-btn {
+  cursor: pointer;
+  padding: 0.55rem 1.05rem;
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--blue);
+  transition: all 0.15s ease;
+}
+
+.tap-btn:hover {
+  background: var(--blue);
+  color: #fff;
+}
+
+.tap-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.need-other-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.need-other-row input {
+  flex: 1;
+}
+
+.need-when {
+  font-size: 0.85rem;
+  color: #7a8899;
+  font-weight: 600;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.need-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.need-card h4 {
+  color: var(--ink);
+  font-size: 1rem;
+  margin-bottom: 0.15rem;
+}
+
+.need-loading {
+  color: #7a8899;
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
+}
+
+/* "Now" / "Done" stop states */
+.stop.done {
+  opacity: 0.55;
+}
+
+.stop.now .stop-body {
+  background: #eef6ff;
+  border-radius: 0 10px 10px 0;
+}
+
+.state-tag {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.state-tag.now {
+  background: var(--blue);
+  color: #fff;
+}
+
+.state-tag.done {
+  background: #e2e8ef;
+  color: #6b7a8d;
+}
+
+.stop.done .stop-body {
+  border-left-color: #c3ccd7;
 }
 
 .plan-blurb {
@@ -342,7 +556,10 @@ textarea:focus {
 }
 
 .stop-time {
-  flex: 0 0 76px;
+  flex: 0 0 82px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   font-weight: 700;
   color: var(--navy);
   font-size: 0.95rem;
@@ -361,6 +578,11 @@ textarea:focus {
 
 .stop.nap .stop-body {
   border-left-color: #9c7bd6;
+}
+
+.stop.bonus .stop-body {
+  border-left-color: #2e9e6b;
+  border-left-style: dashed;
 }
 
 .stop-body h3 {
