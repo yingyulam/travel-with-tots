@@ -105,12 +105,41 @@ body {
 input[type="time"],
 input[type="number"],
 input[type="text"],
+select,
 textarea {
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 10px;
   font-size: 1rem;
   font-family: inherit;
+}
+
+.age-input {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.age-part {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.age-part input {
+  width: 100%;
+  min-width: 0;
+}
+
+.age-part small {
+  color: #7a8899;
+  font-size: 0.85rem;
+}
+
+.age-part input:disabled {
+  background: #eef2f6;
+  color: #aab4c0;
+  cursor: not-allowed;
 }
 
 textarea {
@@ -123,6 +152,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--blue);

@@ -43,13 +43,24 @@
         <label class="field field-full">
           <span>Tell us about your kid's nap/sleep habits</span>
           <textarea name="nap_notes" rows="3"
-                    placeholder="e.g. 4-month-old, sleeps in the bassinet but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
+                    placeholder="e.g. sleeps in the car seat but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
         </label>
 
         <div class="field-row">
           <label class="field">
-            <span>Kid's age (years)</span>
-            <input type="number" name="kid_age" min="0" max="5" value="{{ form.kid_age }}">
+            <span>Kid's age</span>
+            <div class="age-input">
+              <span class="age-part">
+                <input type="number" id="age-years" name="age_years"
+                       min="0" max="5" value="{{ form.age_years }}">
+                <small>years</small>
+              </span>
+              <span class="age-part">
+                <input type="number" id="age-months" name="age_months"
+                       min="0" max="11" value="{{ form.age_months }}">
+                <small>months</small>
+              </span>
+            </div>
           </label>
           <label class="field">
             <span>Destination</span>
@@ -71,6 +82,19 @@
         </fieldset>
 
         <fieldset class="group">
+          <legend>Trip pace</legend>
+          <div class="chips">
+            {% for option in pace_options %}
+            <label class="chip">
+              <input type="radio" name="pace" value="{{ option }}"
+                     {% if form.pace == option %}checked{% endif %}>
+              <span>{{ option|capitalize }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
           <legend>Features that matter</legend>
           <div class="chips">
             {% for key, label in feature_options %}
@@ -82,6 +106,12 @@
             {% endfor %}
           </div>
         </fieldset>
+
+        <label class="field field-full">
+          <span>Anything else about your kid?</span>
+          <textarea name="extra_notes" rows="3"
+                    placeholder="e.g. do not like staying in stroller all the time">{{ form.extra_notes }}</textarea>
+        </label>
 
         <button type="submit" class="cta">Generate my day</button>
       </form>
@@ -160,6 +190,22 @@
         out.hidden = false;
         helpBtn.disabled = false;
       });
+    }
+
+    // Cap age at 5 years 0 months: at 5 years, months are locked to 0.
+    const years = document.getElementById("age-years");
+    const months = document.getElementById("age-months");
+    function syncAgeCap() {
+      const atMax = Number(years.value) >= 5;
+      if (atMax) {
+        years.value = 5;
+        months.value = 0;
+      }
+      months.disabled = atMax;
+    }
+    if (years && months) {
+      years.addEventListener("input", syncAgeCap);
+      syncAgeCap();
     }
   </script>
 </body>
