@@ -8,6 +8,7 @@ location calls without changing their signatures or the UI that calls them.
 from datetime import datetime
 
 from .filters import filter_by_features
+from .itinerary import stop_duration, venue_open_for
 
 # Situation buttons shown on a chosen plan: (key, label).
 SITUATION_OPTIONS = [
@@ -62,13 +63,15 @@ def _minutes_to_display(minutes):
 
 
 def _bonus_stop(minutes, venues, features, used_names):
-    """A stop to fill freed-up time: a real unused venue if one fits, else a
-    hint to use the 'Need something now?' panel."""
+    """A stop to fill freed-up time: a real unused venue that's open at that
+    time if one fits, else a hint to use the 'Need something now?' panel."""
     pool = filter_by_features(venues or [], features or [])
-    # Prefer an activity for the extra outing, then fall back to any match.
-    pick = next((v for v in pool if v["category"] == "activity"
-                 and v["name"] not in used_names), None)
-    pick = pick or next((v for v in pool if v["name"] not in used_names), None)
+    dur = stop_duration("bonus")
+    open_unused = [v for v in pool if v["name"] not in used_names
+                   and venue_open_for(v, minutes, dur)]
+    # Prefer an activity for the extra outing, then fall back to any open match.
+    pick = next((v for v in open_unused if v["category"] == "activity"), None)
+    pick = pick or (open_unused[0] if open_unused else None)
     if pick:
         used_names.add(pick["name"])
         return {
@@ -84,6 +87,51 @@ def _bonus_stop(minutes, venues, features, used_names):
         "reason": "Freed-up time — fit in an extra nearby stop "
                   "(try “Need something now?”).",
     }
+
+
+def _open_alternative(kind, venues, features, used, start_min, duration_min):
+    """An unused, feature-matched venue of the right sort that's open now."""
+    pool = filter_by_features(venues or [], features or [])
+    if kind == "nap":
+        candidates = [v for v in pool
+                      if v.get("nap_friendly") and v["category"] != "food"]
+    elif kind == "meal":
+        candidates = sorted((v for v in pool if v.get("can_eat")),
+                            key=lambda v: 0 if v["category"] == "food" else 1)
+    else:  # activity / bonus
+        candidates = [v for v in pool if v["category"] == "activity"]
+    for venue in candidates:
+        if venue["name"] not in used and venue_open_for(venue, start_min, duration_min):
+            return venue
+    return None
+
+
+def _enforce_hours(stops, venues, features):
+    """After any re-timing, keep only stops whose venue is open for the slot --
+    swapping in an open alternative where possible, otherwise dropping the stop.
+    Stops without a venue (leave/bonus notes) are left untouched."""
+    used = {s["venue"]["name"] for s in stops if s.get("venue")}
+    result = []
+    for stop in stops:
+        venue = stop.get("venue")
+        if venue is None:
+            result.append(stop)
+            continue
+        start = _display_to_minutes(stop["time"])
+        dur = stop_duration(stop["kind"])
+        if venue_open_for(venue, start, dur):
+            result.append(stop)
+            continue
+        used.discard(venue["name"])
+        alt = _open_alternative(stop["kind"], venues, features, used, start, dur)
+        if alt:
+            used.add(alt["name"])
+            swapped = dict(stop)
+            swapped["venue"] = alt
+            swapped["reason"] = "Swapped in — the earlier pick was closed by then. " + stop["reason"]
+            result.append(swapped)
+        # else: nothing open fits the new time -> drop the stop
+    return result
 
 
 def _apply_situation(situation, remaining, now, venues, features, used_names):
@@ -164,8 +212,12 @@ def replan(plan, situation, current_time, venues=None, features=None):
     # Venues already in the day, so a bonus stop never repeats one.
     used_names = {s["venue"]["name"] for s in stops if s.get("venue")}
 
-    new_stops = kept + _apply_situation(
-        situation, remaining, now, venues, features, used_names)
+    # Situations that re-time stops can push a venue past closing (or before
+    # opening); re-decide only the stops ahead so their venues still fit.
+    new_remaining = _enforce_hours(
+        _apply_situation(situation, remaining, now, venues, features, used_names),
+        venues, features)
+    new_stops = kept + new_remaining
     new_stops.sort(key=lambda s: _display_to_minutes(s["time"]))
 
     label = plan.get("label", "Plan")

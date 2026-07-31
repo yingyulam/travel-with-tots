@@ -23,6 +23,47 @@ LEAVE_BUFFER = timedelta(minutes=30)
 LUNCH_DURATION_MIN = 90
 LUNCH_LEAD_MIN = 30
 LUNCH_DURATION_LABEL = "about 1.5 hours"
+
+# Don't schedule a stop that would start within this window of a venue closing.
+CLOSING_BUFFER_MIN = 30
+# How long each kind of stop is assumed to take (used for the open-hours check).
+STOP_DURATION_MIN = {"activity": 60, "nap": 45, "meal": LUNCH_DURATION_MIN, "bonus": 60}
+
+
+def _hhmm_to_min(text):
+    """'09:00' -> minutes past midnight."""
+    return int(text[:2]) * 60 + int(text[3:5])
+
+
+def stop_duration(kind):
+    """Assumed length (minutes) of a stop, for the open-hours check."""
+    return STOP_DURATION_MIN.get(kind, 60)
+
+
+def venue_hours(venue):
+    """Return (open_min, close_min) for the venue, or None if unknown.
+
+    Single open/close pair for now. This is the one place per-day hours would
+    later plug in -- e.g. take a weekday and read venue["hours"][weekday] here,
+    without changing any caller.
+    """
+    open_t, close_t = venue.get("open"), venue.get("close")
+    if not open_t or not close_t:
+        return None
+    return _hhmm_to_min(open_t), _hhmm_to_min(close_t)
+
+
+def venue_open_for(venue, start_min, duration_min):
+    """True if a stop starting at ``start_min`` fits the venue's open hours:
+    at or after opening, finishing before close, and not starting within the
+    closing buffer. Venues with no hours are treated as always open."""
+    hours = venue_hours(venue)
+    if hours is None:
+        return True
+    open_min, close_min = hours
+    return (start_min >= open_min
+            and start_min + duration_min <= close_min
+            and start_min <= close_min - CLOSING_BUFFER_MIN)
 # Stops whose hour falls in this range are treated as the midday meal.
 MIDDAY_START, MIDDAY_END = 11, 14
 
@@ -105,13 +146,17 @@ def _plan_times(wake, bedtime, count):
     return [_round_to(start + span * (i / count)) for i in range(count)]
 
 
-def _pick(pool, used):
-    """Take the next unused venue from a pool, falling back to reuse."""
+def _pick(pool, used, start_min=None, duration_min=0):
+    """Take the next unused venue that's open for the slot (swapping past ones
+    that don't fit). Returns None if nothing fits, so the slot is skipped."""
     for venue in pool:
-        if venue["name"] not in used:
-            used.add(venue["name"])
-            return venue
-    return pool[0] if pool else None
+        if venue["name"] in used:
+            continue
+        if start_min is not None and not venue_open_for(venue, start_min, duration_min):
+            continue
+        used.add(venue["name"])
+        return venue
+    return None
 
 
 def _reason(venue, kind, theme):
@@ -149,15 +194,18 @@ def _lunch_time(stops, naps):
 def _lunch_stop(food_pool, used, stops, naps):
     """A midday lunch to fit in -- a meal, not one of the day's stops.
 
-    Picks an unused venue you can eat at (restaurant, cafe, or a mall food
-    court) and slots it around midday. Returns None if nothing is available.
+    Picks a place you can eat at (restaurant, cafe, or a mall food court) that
+    is open for the whole lunch block at the chosen time. Returns None if
+    nothing suitable is open.
     """
-    venue = _pick(food_pool, used)
+    when = _lunch_time(stops, naps)
+    start_min = when.hour * 60 + when.minute
+    venue = _pick(food_pool, used, start_min, stop_duration("meal"))
     if venue is None:
         return None
     spot = "food court" if venue["type"] == "mall" else venue["type"]
     return {
-        "time": _format(_lunch_time(stops, naps)),
+        "time": _format(when),
         "kind": "meal",
         "venue": venue,
         "reason": (f"Lunch break at this {spot} in {venue['neighbourhood']} "
@@ -172,17 +220,28 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining):
     ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
     food stop — the family eats during transit or at an activity).
     """
+    def _matches_theme(venue):
+        return venue["type"] in theme["types"]
+
     activities = [v for v in matches
-                  if v["category"] == "activity" and v["type"] in theme["types"]]
+                  if v["category"] == "activity" and _matches_theme(v)]
     activities = activities or [v for v in matches if v["category"] == "activity"]
+
     # Lunch spots: anything you can eat at -- restaurants, cafes, and a mall
-    # with a food court -- with proper food venues preferred over food courts.
+    # food court. Prefer venues that fit the theme (a cosy cafe on a rainy day),
+    # then real food venues over a food court.
     food = sorted((v for v in matches if v.get("can_eat")),
-                  key=lambda v: 0 if v["category"] == "food" else 1)
+                  key=lambda v: (0 if _matches_theme(v) else 1,
+                                 0 if v["category"] == "food" else 1))
+
     # Nap spots are stroller/carrier rests at parks, gardens or a mall stroll --
-    # never a dining venue, so a nap never lands at a cafe or restaurant.
-    naps_pool = [v for v in matches
-                 if v.get("nap_friendly") and v["category"] != "food"] or activities
+    # never a dining venue. Theme-matching spots come first, so a rainy-day nap
+    # is an indoor mall stroll rather than an outdoor park (with parks as a
+    # graceful fallback so a nap is never dropped for lack of a themed spot).
+    nap_candidates = [v for v in matches
+                      if v.get("nap_friendly") and v["category"] != "food"]
+    naps_pool = sorted(nap_candidates,
+                       key=lambda v: 0 if _matches_theme(v) else 1) or activities
 
     # Lay out the stop times, then anchor naps: each nap retimes its nearest
     # still-unassigned stop so a nap-friendly venue lands in the nap window.
@@ -203,7 +262,10 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining):
     used = set()
     stops = []
     for slot in slots:
-        venue = _pick(pools[slot["kind"]], used)
+        start_min = slot["time"].hour * 60 + slot["time"].minute
+        venue = _pick(pools[slot["kind"]], used, start_min, stop_duration(slot["kind"]))
+        if venue is None:
+            continue  # nothing open fits this slot -> skip it
         stops.append({
             "time": _format(slot["time"]),
             "kind": slot["kind"],
