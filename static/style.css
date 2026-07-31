@@ -3,7 +3,10 @@
   --navy: #1e3c5a;
   --orange: #ff7043;
   --orange-dark: #f4511e;
+  --cta: #ff8883;
+  --cta-dark: #f5726d;
   --blue: #1e88e5;
+  --select: #85c0d6;
   --surface: #f7f9fb;
   --line: #e2e8ef;
 }
@@ -203,13 +206,13 @@ textarea:focus {
 }
 
 .chip input:checked + span {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: #fff;
+  background: var(--select);
+  border-color: var(--select);
+  color: var(--navy);
 }
 
 .chip input:focus-visible + span {
-  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.25);
+  box-shadow: 0 0 0 3px rgba(133, 192, 214, 0.4);
 }
 
 /* Buttons */
@@ -218,7 +221,7 @@ textarea:focus {
   width: 100%;
   border: none;
   cursor: pointer;
-  background: var(--orange);
+  background: var(--cta);
   color: #fff;
   font-weight: 700;
   font-size: 1.05rem;
@@ -228,7 +231,7 @@ textarea:focus {
 }
 
 .cta:hover {
-  background: var(--orange-dark);
+  background: var(--cta-dark);
   transform: translateY(-2px);
 }
 
