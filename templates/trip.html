@@ -55,6 +55,15 @@
             </div>
           </div>
         </div>
+        <div class="nap-prompt" id="behind-prompt" hidden>
+          <p>How far behind are you running?</p>
+          <div class="chips" id="behind-length-bar">
+            <button type="button" class="tap-btn" data-mins="15">15 min</button>
+            <button type="button" class="tap-btn" data-mins="30">30 min</button>
+            <button type="button" class="tap-btn" data-mins="45">45 min</button>
+            <button type="button" class="tap-btn" data-mins="60">1 hour</button>
+          </div>
+        </div>
       </div>
 
       <!-- 4. Need-nearby panel -->
@@ -201,8 +210,8 @@
     timeField.addEventListener("input", renderTimeline);
 
     // Run a re-plan and install the result as the single "Current" version.
-    // napLength (minutes) is only used by "nap happened here".
-    async function runReplan(situation, napLength) {
+    // minutes is the parent-entered duration (nap length / how far behind).
+    async function runReplan(situation, minutes) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
       status.hidden = false;
       status.textContent = "Re-planning…";
@@ -216,7 +225,7 @@
             current_time: timeField.value,
             features: tripData.features,
             bedtime: tripData.bedtime,
-            nap_length: napLength || null,
+            minutes: minutes || null,
           }),
         });
         const newPlan = await res.json();
@@ -232,43 +241,56 @@
       }
     }
 
-    // Nap prompt flow: ask -> (Yes) pick a stay length -> re-plan.
+    // Prompts that ask for a duration before re-planning.
     const napPrompt = document.getElementById("nap-prompt");
     const napAsk = document.getElementById("nap-ask");
     const napDuration = document.getElementById("nap-duration");
-    function hideNapPrompt() {
+    const behindPrompt = document.getElementById("behind-prompt");
+    function hidePrompts() {
       napPrompt.hidden = true;
-      napAsk.hidden = false;      // reset to the first step for next time
+      napAsk.hidden = false;      // reset the nap prompt to its first step
       napDuration.hidden = true;
+      behindPrompt.hidden = true;
     }
 
-    // Situation buttons. "Nap happened here" asks first; the rest re-plan now.
+    // Situation buttons. "Nap happened here" and "Running behind" ask for a
+    // duration first; the rest re-plan straight away.
     document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        if (btn.dataset.situation === "nap_happened") {
+        const situation = btn.dataset.situation;
+        if (situation === "nap_happened" || situation === "running_behind") {
           if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-          hideNapPrompt();            // reset, then open at step 1
-          napPrompt.hidden = false;
+          hidePrompts();
+          (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
           return;
         }
-        hideNapPrompt();
-        runReplan(btn.dataset.situation);
+        hidePrompts();
+        runReplan(situation);
       });
     });
 
-    // Yes -> ask how long; No -> dismiss.
+    // Nap prompt: Yes -> ask how long; No -> dismiss.
     document.getElementById("nap-yes").addEventListener("click", () => {
       napAsk.hidden = true;
       napDuration.hidden = false;
     });
-    document.getElementById("nap-no").addEventListener("click", hideNapPrompt);
+    document.getElementById("nap-no").addEventListener("click", hidePrompts);
 
-    // Pick a stay length -> extend the current stop by that long.
+    // Pick a nap stay length -> extend the current stop by that long.
     document.getElementById("nap-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const mins = Number(btn.dataset.mins);
-        hideNapPrompt();
+        hidePrompts();
         runReplan("nap_happened", mins);
+      });
+    });
+
+    // Pick how far behind -> slide the rest of the day later by that much.
+    document.getElementById("behind-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mins = Number(btn.dataset.mins);
+        hidePrompts();
+        runReplan("running_behind", mins);
       });
     });
 

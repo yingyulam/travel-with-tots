@@ -172,7 +172,7 @@ def replan_route():
         return jsonify({"error": "plan and current_time are required"}), 400
     return jsonify(replan(plan, data.get("situation", ""), current_time,
                           VENUES, data.get("features") or [],
-                          bedtime=data.get("bedtime"), nap_length=data.get("nap_length")))
+                          bedtime=data.get("bedtime"), minutes=data.get("minutes")))
 
 
 @app.route("/find_nearby", methods=["POST"])
