@@ -8,7 +8,8 @@
     "has_family_room": true,
     "has_nursing_room": true,
     "stroller_accessible": true,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": true
   },
   {
     "name": "Nourish Kitchen",
@@ -19,7 +20,8 @@
     "has_family_room": false,
     "has_nursing_room": false,
     "stroller_accessible": true,
-    "nap_friendly": true
+    "nap_friendly": true,
+    "can_eat": true
   },
   {
     "name": "Tacofino Gastown",
@@ -30,7 +32,8 @@
     "has_family_room": false,
     "has_nursing_room": false,
     "stroller_accessible": true,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": true
   },
   {
     "name": "Medina Cafe",
@@ -41,7 +44,8 @@
     "has_family_room": false,
     "has_nursing_room": false,
     "stroller_accessible": true,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": true
   },
   {
     "name": "Kokomo Foods",
@@ -52,7 +56,8 @@
     "has_family_room": false,
     "has_nursing_room": true,
     "stroller_accessible": true,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": true
   },
   {
     "name": "Science World",
@@ -63,7 +68,8 @@
     "has_family_room": true,
     "has_nursing_room": true,
     "stroller_accessible": true,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": false
   },
   {
     "name": "Vancouver Aquarium",
@@ -74,7 +80,8 @@
     "has_family_room": true,
     "has_nursing_room": true,
     "stroller_accessible": true,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": false
   },
   {
     "name": "Stanley Park Seawall",
@@ -85,7 +92,8 @@
     "has_family_room": false,
     "has_nursing_room": false,
     "stroller_accessible": true,
-    "nap_friendly": true
+    "nap_friendly": true,
+    "can_eat": false
   },
   {
     "name": "Queen Elizabeth Park",
@@ -96,7 +104,8 @@
     "has_family_room": false,
     "has_nursing_room": false,
     "stroller_accessible": true,
-    "nap_friendly": true
+    "nap_friendly": true,
+    "can_eat": false
   },
   {
     "name": "Oakridge Park Mall",
@@ -107,7 +116,8 @@
     "has_family_room": true,
     "has_nursing_room": true,
     "stroller_accessible": true,
-    "nap_friendly": true
+    "nap_friendly": true,
+    "can_eat": true
   },
   {
     "name": "VanDusen Botanical Garden",
@@ -118,7 +128,8 @@
     "has_family_room": false,
     "has_nursing_room": true,
     "stroller_accessible": true,
-    "nap_friendly": true
+    "nap_friendly": true,
+    "can_eat": false
   },
   {
     "name": "Museum of Vancouver",
@@ -129,7 +140,8 @@
     "has_family_room": false,
     "has_nursing_room": true,
     "stroller_accessible": false,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": false
   },
   {
     "name": "Grouse Mountain",
@@ -140,6 +152,7 @@
     "has_family_room": false,
     "has_nursing_room": false,
     "stroller_accessible": false,
-    "nap_friendly": false
+    "nap_friendly": false,
+    "can_eat": false
   }
 ]

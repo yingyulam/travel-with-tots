@@ -28,6 +28,7 @@ VENUES = load_venues()
 # template so the form and the plan stay in sync.
 TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
 PACE_OPTIONS = ["relaxed", "balanced", "adventurous"]
+DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
 
 # Age is capped at this many years, 0 months.
 MAX_AGE_YEARS = 5
@@ -46,6 +47,7 @@ DEFAULTS = {
     "accommodation": "",
     "transit": ["stroller"],
     "pace": "balanced",
+    "dining": "dine_out",
     "nap_notes": "",
     "extra_notes": "",
     "features": ["kid_friendly"],
@@ -84,6 +86,7 @@ def _read_form(form):
         "accommodation": form.get("accommodation", "").strip(),
         "transit": form.getlist("transit"),
         "pace": form.get("pace") or DEFAULTS["pace"],
+        "dining": form.get("dining") or DEFAULTS["dining"],
         "nap_notes": form.get("nap_notes", ""),
         "extra_notes": form.get("extra_notes", ""),
         "features": form.getlist("features"),
@@ -122,6 +125,7 @@ def plan():
         trip_context=trip_context,
         transit_options=TRANSIT_OPTIONS,
         pace_options=PACE_OPTIONS,
+        dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
     )
 

@@ -124,20 +124,31 @@
 
     function renderStop(stop, state) {
       const v = stop.venue;
-      const body = v
-        ? `<div class="stop-body">
+      let body;
+      if (stop.kind === "meal" && v) {
+        // A lunch break to fit in — deliberately lighter than a real stop.
+        body = `<div class="stop-body meal-body">
+             <h3>🍽 Lunch break${stop.duration ? " · ⏱ " + stop.duration : ""}</h3>
+             <p class="meta">${v.name} · ${v.neighbourhood}</p>
+             <p class="reason">${stop.reason}</p>
+             <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
+           </div>`;
+      } else if (v) {
+        body = `<div class="stop-body">
              <h3>${v.name}</h3>
              <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
              <div class="badges">${badges(v)}</div>
              <p class="reason">💡 ${stop.reason}</p>
              <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-           </div>`
-        : `<div class="stop-body empty-body">
+           </div>`;
+      } else {
+        body = `<div class="stop-body empty-body">
              <h3>${stop.kind === "leave" ? "🚗 Leave by " + stop.time
                   : stop.kind === "bonus" ? "✨ Free time — add a stop"
                   : "No matching venue"}</h3>
              <p class="reason">${stop.reason}</p>
            </div>`;
+      }
       const tag = state ? `<span class="state-tag ${state}">${state === "now" ? "Now" : "Done"}</span>` : "";
       return `<li class="stop ${stop.kind} ${state}">
                 <div class="stop-time">${stop.time}${tag}</div>

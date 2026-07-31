@@ -17,6 +17,12 @@ MORNING_BUFFER = timedelta(hours=2)
 # Placeholder travel time from the accommodation to the first stop. A real
 # implementation would ask a routing API for this per-address.
 LEAVE_BUFFER = timedelta(minutes=30)
+# Default lunch block for a "dine out" meal: a well-paced 1.5 hours. Lunch is
+# placed so the whole block fits before the next stop, with a short lead after
+# the previous stop to get there.
+LUNCH_DURATION_MIN = 90
+LUNCH_LEAD_MIN = 30
+LUNCH_DURATION_LABEL = "about 1.5 hours"
 # Stops whose hour falls in this range are treated as the midday meal.
 MIDDAY_START, MIDDAY_END = 11, 14
 
@@ -114,18 +120,69 @@ def _reason(venue, kind, theme):
         return "No venue matched your chosen features for this slot."
     if kind == "nap":
         return f"Nap-friendly {venue['type']} — nap on the go so the day keeps flowing."
-    if kind == "food":
-        return f"A relaxed bite around midday in {venue['neighbourhood']}."
     return f"{theme['label']} pick: {venue['type']} in {venue['neighbourhood']}."
 
 
-def _build_plan(matches, wake, bedtime, naps, count, theme):
-    """Build one themed plan: an ordered list of timed stops."""
+def _lunch_time(stops, naps):
+    """A midday start for lunch so the whole 1.5-hour block fits before the next
+    stop (with a short lead after the previous one), keeping the day well-paced."""
+    occupied = []
+    for stop in stops:
+        dt = _parse_display(stop["time"])
+        occupied.append(dt.hour * 60 + dt.minute)
+    occupied += [n.hour * 60 + n.minute for n in naps]
+
+    target = 12 * 60  # aim for a noon lunch
+    for offset in range(0, 181, 15):
+        for candidate in (target - offset, target + offset):
+            if not 10 * 60 + 30 <= candidate <= 14 * 60:
+                continue
+            before = max((o for o in occupied if o <= candidate), default=None)
+            after = min((o for o in occupied if o > candidate), default=None)
+            lead_ok = before is None or candidate - before >= LUNCH_LEAD_MIN
+            block_ok = after is None or after - candidate >= LUNCH_DURATION_MIN
+            if lead_ok and block_ok:
+                return datetime(1900, 1, 1, candidate // 60, candidate % 60)
+    return datetime(1900, 1, 1, target // 60, target % 60)
+
+
+def _lunch_stop(food_pool, used, stops, naps):
+    """A midday lunch to fit in -- a meal, not one of the day's stops.
+
+    Picks an unused venue you can eat at (restaurant, cafe, or a mall food
+    court) and slots it around midday. Returns None if nothing is available.
+    """
+    venue = _pick(food_pool, used)
+    if venue is None:
+        return None
+    spot = "food court" if venue["type"] == "mall" else venue["type"]
+    return {
+        "time": _format(_lunch_time(stops, naps)),
+        "kind": "meal",
+        "venue": venue,
+        "reason": (f"Lunch break at this {spot} in {venue['neighbourhood']} "
+                   f"— plan {LUNCH_DURATION_LABEL}. Fit it in around your stops."),
+        "duration": LUNCH_DURATION_LABEL,
+    }
+
+
+def _build_plan(matches, wake, bedtime, naps, count, theme, dining):
+    """Build one themed plan: an ordered list of timed stops.
+
+    ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
+    food stop — the family eats during transit or at an activity).
+    """
     activities = [v for v in matches
                   if v["category"] == "activity" and v["type"] in theme["types"]]
     activities = activities or [v for v in matches if v["category"] == "activity"]
-    food = [v for v in matches if v["category"] == "food"]
-    naps_pool = [v for v in matches if v.get("nap_friendly")] or activities
+    # Lunch spots: anything you can eat at -- restaurants, cafes, and a mall
+    # with a food court -- with proper food venues preferred over food courts.
+    food = sorted((v for v in matches if v.get("can_eat")),
+                  key=lambda v: 0 if v["category"] == "food" else 1)
+    # Nap spots are stroller/carrier rests at parks, gardens or a mall stroll --
+    # never a dining venue, so a nap never lands at a cafe or restaurant.
+    naps_pool = [v for v in matches
+                 if v.get("nap_friendly") and v["category"] != "food"] or activities
 
     # Lay out the stop times, then anchor naps: each nap retimes its nearest
     # still-unassigned stop so a nap-friendly venue lands in the nap window.
@@ -139,11 +196,10 @@ def _build_plan(matches, wake, bedtime, naps, count, theme):
         nearest["time"], nearest["kind"] = nap, "nap"
     for slot in slots:
         if slot["kind"] is None:
-            midday = MIDDAY_START <= slot["time"].hour < MIDDAY_END
-            slot["kind"] = "food" if midday else "activity"
+            slot["kind"] = "activity"  # dining is added separately, not a stop
     slots.sort(key=lambda s: s["time"])
 
-    pools = {"nap": naps_pool, "food": food, "activity": activities}
+    pools = {"nap": naps_pool, "activity": activities}
     used = set()
     stops = []
     for slot in slots:
@@ -154,6 +210,14 @@ def _build_plan(matches, wake, bedtime, naps, count, theme):
             "venue": venue,
             "reason": _reason(venue, slot["kind"], theme),
         })
+
+    # Dining out adds a lunch to fit in around midday -- a meal, not one of the
+    # day's stops, so it never displaces an activity.
+    if dining == "dine_out":
+        lunch = _lunch_stop(food, used, stops, naps)
+        if lunch:
+            stops.append(lunch)
+            stops.sort(key=lambda s: _parse_display(s["time"]))
     return stops
 
 
@@ -176,10 +240,11 @@ def generate_plans(venues, inputs):
     naps = sorted(_parse(n) for n in inputs["nap_times"])
     count = _stop_count(inputs["pace"], inputs["age_years"], inputs["age_months"])
     accommodation = inputs.get("accommodation", "")
+    dining = inputs.get("dining", "dine_out")
 
     plans = []
     for theme in THEMES:
-        stops = _build_plan(matches, wake, bedtime, naps, count, theme)
+        stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining)
         leave = _leave_stop(accommodation, stops)
         if leave:
             stops = [leave] + stops

@@ -596,6 +596,17 @@ textarea:focus {
   border-left-style: dashed;
 }
 
+/* Lunch break: a meal to fit in, not one of the day's stops */
+.stop.meal .stop-body {
+  border-left-color: var(--orange);
+  border-left-style: dashed;
+}
+
+.stop.meal .meal-body h3 {
+  font-size: 1rem;
+  color: var(--orange-dark);
+}
+
 .stop-body h3 {
   color: var(--ink);
   font-size: 1.1rem;
