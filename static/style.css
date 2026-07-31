@@ -102,6 +102,12 @@ body {
   color: #7a8899;
 }
 
+.field-hint {
+  color: #7a8899;
+  font-size: 0.82rem;
+  margin-top: 0.35rem;
+}
+
 input[type="time"],
 input[type="number"],
 input[type="text"],
@@ -582,6 +588,11 @@ textarea:focus {
 
 .stop.bonus .stop-body {
   border-left-color: #2e9e6b;
+  border-left-style: dashed;
+}
+
+.stop.leave .stop-body {
+  border-left-color: #6b7a8d;
   border-left-style: dashed;
 }
 

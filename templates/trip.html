@@ -133,7 +133,9 @@
              <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
            </div>`
         : `<div class="stop-body empty-body">
-             <h3>${stop.kind === "bonus" ? "✨ Free time — add a stop" : "No matching venue"}</h3>
+             <h3>${stop.kind === "leave" ? "🚗 Leave by " + stop.time
+                  : stop.kind === "bonus" ? "✨ Free time — add a stop"
+                  : "No matching venue"}</h3>
              <p class="reason">${stop.reason}</p>
            </div>`;
       const tag = state ? `<span class="state-tag ${state}">${state === "now" ? "Now" : "Done"}</span>` : "";
@@ -178,7 +180,7 @@
           const res = await fetch("/replan", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ plan: PLANS[active], situation: btn.dataset.situation, current_time: timeField.value }),
+            body: JSON.stringify({ plan: PLANS[active], situation: btn.dataset.situation, current_time: timeField.value, features: tripData.features }),
           });
           const newPlan = await res.json();
           // Replace the single "Current" version (or create it the first time),

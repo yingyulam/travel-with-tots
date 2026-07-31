@@ -14,6 +14,9 @@ from .models import Plan
 
 # A buffer after wake-up before the first stop (breakfast, getting out).
 MORNING_BUFFER = timedelta(hours=2)
+# Placeholder travel time from the accommodation to the first stop. A real
+# implementation would ask a routing API for this per-address.
+LEAVE_BUFFER = timedelta(minutes=30)
 # Stops whose hour falls in this range are treated as the midday meal.
 MIDDAY_START, MIDDAY_END = 11, 14
 
@@ -40,6 +43,31 @@ def _parse(t):
 def _format(dt):
     """Format a datetime as a friendly 12-hour time, e.g. '1:30 PM'."""
     return dt.strftime("%-I:%M %p")
+
+
+def _parse_display(text):
+    """Parse a '1:30 PM' display string back into a datetime."""
+    return datetime.strptime(text, "%I:%M %p")
+
+
+def _leave_stop(accommodation, stops):
+    """Placeholder 'leave by' note before the first stop.
+
+    Stub: leaves a fixed ``LEAVE_BUFFER`` before the first stop. A real version
+    would ask a routing API for the travel time from ``accommodation`` to the
+    first venue and set the departure (and wake/first-stop) timing from that.
+    Returns None when there is no accommodation or no stops to head to.
+    """
+    if not accommodation or not stops:
+        return None
+    leave = _round_to(_parse_display(stops[0]["time"]) - LEAVE_BUFFER)
+    return {
+        "time": _format(leave),
+        "kind": "leave",
+        "venue": None,
+        "reason": (f"Leave {accommodation} by {_format(leave)} to reach your "
+                   f"first stop on time. (Placeholder — real travel time coming soon.)"),
+    }
 
 
 def _round_to(dt, minutes=15):
@@ -147,12 +175,13 @@ def generate_plans(venues, inputs):
     bedtime = _parse(inputs["bedtime"])
     naps = sorted(_parse(n) for n in inputs["nap_times"])
     count = _stop_count(inputs["pace"], inputs["age_years"], inputs["age_months"])
+    accommodation = inputs.get("accommodation", "")
 
-    return [
-        Plan(
-            label=theme["label"],
-            blurb=theme["blurb"],
-            stops=_build_plan(matches, wake, bedtime, naps, count, theme),
-        )
-        for theme in THEMES
-    ]
+    plans = []
+    for theme in THEMES:
+        stops = _build_plan(matches, wake, bedtime, naps, count, theme)
+        leave = _leave_stop(accommodation, stops)
+        if leave:
+            stops = [leave] + stops
+        plans.append(Plan(label=theme["label"], blurb=theme["blurb"], stops=stops))
+    return plans

@@ -43,6 +43,7 @@ DEFAULTS = {
     "age_years": "2",
     "age_months": "0",
     "destination": "Vancouver",
+    "accommodation": "",
     "transit": ["stroller"],
     "pace": "balanced",
     "nap_notes": "",
@@ -80,6 +81,7 @@ def _read_form(form):
         "age_years": age_years,
         "age_months": age_months,
         "destination": form.get("destination") or DEFAULTS["destination"],
+        "accommodation": form.get("accommodation", "").strip(),
         "transit": form.getlist("transit"),
         "pace": form.get("pace") or DEFAULTS["pace"],
         "nap_notes": form.get("nap_notes", ""),
@@ -103,7 +105,11 @@ def plan():
         form = _read_form(request.form)
         plans = generate_plans(VENUES, form)
         # Context carried to the in-trip page when a plan is chosen.
-        trip_context = {"destination": form["destination"], "transit": form["transit"]}
+        trip_context = {
+            "destination": form["destination"],
+            "transit": form["transit"],
+            "features": form["features"],
+        }
     else:
         form = dict(DEFAULTS)
         plans = None
@@ -138,6 +144,7 @@ def trip():
     trip = Trip(
         destination=context.get("destination", "Vancouver"),
         transit=context.get("transit", []),
+        features=context.get("features", []),
         original=Plan.from_dict(plan_data),
     )
     return render_template(
@@ -157,7 +164,8 @@ def replan_route():
     current_time = data.get("current_time")
     if not plan or not current_time:
         return jsonify({"error": "plan and current_time are required"}), 400
-    return jsonify(replan(plan, data.get("situation", ""), current_time))
+    return jsonify(replan(plan, data.get("situation", ""), current_time,
+                          VENUES, data.get("features") or []))
 
 
 @app.route("/find_nearby", methods=["POST"])

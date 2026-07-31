@@ -50,6 +50,7 @@ class Trip:
     transit: list
     original: Plan
     current_time: str = ""
+    features: list = field(default_factory=list)
     versions: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -66,5 +67,6 @@ class Trip:
             "destination": self.destination,
             "transit": self.transit,
             "current_time": self.current_time,
+            "features": self.features,
             "plans": [p.to_dict() for p in self.versions],
         }

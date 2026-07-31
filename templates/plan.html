@@ -68,6 +68,19 @@
           </label>
         </div>
 
+        <!-- Accommodation: plain text for now. Placeholder for a Google Maps
+             Places Autocomplete / geocoding integration later — a real build
+             would attach Autocomplete to #accommodation and feed the resolved
+             address (and lat/lng) into travel-time routing. -->
+        <label class="field field-full">
+          <span>Accommodation <em>(optional)</em></span>
+          <input type="text" id="accommodation" name="accommodation"
+                 value="{{ form.accommodation }}" autocomplete="off"
+                 data-maps-autocomplete="pending"
+                 placeholder="Home address or hotel — we'll plan your first stop and when to leave">
+          <small class="field-hint">📍 Address search (Google Maps) coming soon — free text works for now.</small>
+        </label>
+
         <fieldset class="group">
           <legend>How are you getting around? <em>(pick any)</em></legend>
           <div class="chips">
@@ -133,7 +146,10 @@
             <li>
               <span class="preview-time">{{ stop.time }}</span>
               <span class="preview-name">
-                {{ stop.venue.name if stop.venue else ('Free time' if stop.kind == 'bonus' else stop.kind|capitalize) }}
+                {% if stop.venue %}{{ stop.venue.name }}
+                {% elif stop.kind == 'leave' %}🚗 Leave your accommodation
+                {% elif stop.kind == 'bonus' %}Free time
+                {% else %}{{ stop.kind|capitalize }}{% endif %}
               </span>
             </li>
             {% endfor %}

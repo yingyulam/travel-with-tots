@@ -7,6 +7,8 @@ location calls without changing their signatures or the UI that calls them.
 
 from datetime import datetime
 
+from .filters import filter_by_features
+
 # Situation buttons shown on a chosen plan: (key, label).
 SITUATION_OPTIONS = [
     ("nap_happened", "Nap happened here"),
@@ -59,7 +61,32 @@ def _minutes_to_display(minutes):
     return datetime(2000, 1, 1, minutes // 60, minutes % 60).strftime("%-I:%M %p")
 
 
-def _apply_situation(situation, remaining, now):
+def _bonus_stop(minutes, venues, features, used_names):
+    """A stop to fill freed-up time: a real unused venue if one fits, else a
+    hint to use the 'Need something now?' panel."""
+    pool = filter_by_features(venues or [], features or [])
+    # Prefer an activity for the extra outing, then fall back to any match.
+    pick = next((v for v in pool if v["category"] == "activity"
+                 and v["name"] not in used_names), None)
+    pick = pick or next((v for v in pool if v["name"] not in used_names), None)
+    if pick:
+        used_names.add(pick["name"])
+        return {
+            "time": _minutes_to_display(minutes),
+            "kind": "bonus",
+            "venue": pick,
+            "reason": "✨ Extra stop added with the time you freed up finishing early.",
+        }
+    return {
+        "time": _minutes_to_display(minutes),
+        "kind": "bonus",
+        "venue": None,
+        "reason": "Freed-up time — fit in an extra nearby stop "
+                  "(try “Need something now?”).",
+    }
+
+
+def _apply_situation(situation, remaining, now, venues, features, used_names):
     """Re-decide the stops still ahead. Returns a fresh list of stop dicts."""
     if situation == "skip_next":
         # Drop the very next stop; leave the rest of the day as planned.
@@ -78,16 +105,10 @@ def _apply_situation(situation, remaining, now):
 
     if situation == "finished_early":
         # This stop wrapped up early. Keep going, just sooner: pull the rest of
-        # the day earlier to use the freed time, and offer a bonus stop with
-        # whatever time that opens up at the end.
+        # the day earlier to use the freed time, and — if the freed time opens a
+        # slot — fit a real extra stop into it.
         if not remaining:
-            return [{
-                "time": _minutes_to_display(now),
-                "kind": "bonus",
-                "venue": None,
-                "reason": "Finished early with time to spare — add a nearby stop "
-                          "from “Need something now?”.",
-            }]
+            return [_bonus_stop(now, venues, features, used_names)]
         starts = [_display_to_minutes(s["time"]) for s in remaining]
         shift = max(0, starts[0] - (now + FINISHED_EARLY_BUFFER))
         out = []
@@ -98,14 +119,8 @@ def _apply_situation(situation, remaining, now):
         out[0] = dict(out[0])
         out[0]["reason"] = "Moved up after finishing early. " + out[0]["reason"]
         if shift > 0:
-            # The old last slot is now free — suggest fitting an extra stop in.
-            out.append({
-                "time": _minutes_to_display(starts[-1]),
-                "kind": "bonus",
-                "venue": None,
-                "reason": "Freed-up time — fit in an extra nearby stop "
-                          "(try “Need something now?”).",
-            })
+            # The old last slot is now free — fit an extra stop into it.
+            out.append(_bonus_stop(starts[-1], venues, features, used_names))
         return out
 
     if situation == "nap_happened":
@@ -124,13 +139,15 @@ def _apply_situation(situation, remaining, now):
     return [dict(s) for s in remaining]
 
 
-def replan(plan, situation, current_time):
+def replan(plan, situation, current_time, venues=None, features=None):
     """Return a NEW proposed plan, re-deciding only the stops ahead of now.
 
     The stop happening now and everything before it are kept exactly as they
     were; only stops still ahead of ``current_time`` are re-decided based on
     ``situation``. The original plan is never mutated. ``current_time`` is an
-    'HH:MM' 24-hour string from the form.
+    'HH:MM' 24-hour string from the form. ``venues``/``features`` let a
+    situation fill freed time with a real, feature-matched venue that isn't
+    already in the day.
 
     This is a deterministic placeholder; a real implementation would hand the
     same inputs to an AI planner and return a plan in the same shape.
@@ -144,7 +161,11 @@ def replan(plan, situation, current_time):
     kept = [dict(s) for s in stops if _display_to_minutes(s["time"]) <= now]
     remaining = [s for s in stops if _display_to_minutes(s["time"]) > now]
 
-    new_stops = kept + _apply_situation(situation, remaining, now)
+    # Venues already in the day, so a bonus stop never repeats one.
+    used_names = {s["venue"]["name"] for s in stops if s.get("venue")}
+
+    new_stops = kept + _apply_situation(
+        situation, remaining, now, venues, features, used_names)
     new_stops.sort(key=lambda s: _display_to_minutes(s["time"]))
 
     label = plan.get("label", "Plan")
