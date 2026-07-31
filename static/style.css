@@ -468,6 +468,20 @@ textarea:focus {
   cursor: default;
 }
 
+.nap-prompt {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: #f3eefb;
+  border-left: 3px solid #9c7bd6;
+  border-radius: 8px;
+}
+
+.nap-prompt p {
+  font-weight: 600;
+  color: var(--navy);
+  margin-bottom: 0.6rem;
+}
+
 .need-other-row {
   display: flex;
   gap: 0.5rem;

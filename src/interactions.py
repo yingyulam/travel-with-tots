@@ -42,6 +42,8 @@ NEED_FILTERS = {
 RUNNING_BEHIND_DELAY = 45
 # Short breather before moving on to the next stop after finishing one early.
 FINISHED_EARLY_BUFFER = 15
+# Fallback nap length when the child's usual nap length isn't known.
+DEFAULT_NAP_LENGTH_MIN = 90
 
 
 def _display_to_minutes(text):
@@ -171,23 +173,45 @@ def _apply_situation(situation, remaining, now, venues, features, used_names):
             out.append(_bonus_stop(starts[-1], venues, features, used_names))
         return out
 
-    if situation == "nap_happened":
-        # The nap just happened, so drop the next planned nap and carry on.
-        out, dropped = [], False
-        for stop in remaining:
-            if not dropped and stop["kind"] == "nap":
-                dropped = True
-                continue
-            out.append(dict(stop))
-        if out:
-            out[0] = dict(out[0])
-            out[0]["reason"] = "After the nap: " + out[0]["reason"]
-        return out
-
+    # "nap_happened" is handled specially in replan() (it also extends the
+    # current stop and needs the bedtime), so it never reaches here.
     return [dict(s) for s in remaining]
 
 
-def replan(plan, situation, current_time, venues=None, features=None):
+def _nap_here(kept, remaining, bedtime_min, nap_length):
+    """Child fell asleep at the current stop: extend that stop by ``nap_length``,
+    push the remaining stops later to start after it, cancel any separately
+    scheduled nap, and drop stops that would then run past bedtime."""
+    kept = [dict(s) for s in kept]
+    # The scheduled nap is redundant now the nap has happened here.
+    remaining = [s for s in remaining if s["kind"] != "nap"]
+
+    if not kept:
+        return kept + [dict(s) for s in remaining]
+
+    current = kept[-1]
+    extended_end = _display_to_minutes(current["time"]) + nap_length
+    current["reason"] = (f"😴 Nap happened here — staying about {nap_length} min "
+                         f"longer while they sleep. " + current.get("reason", "")).strip()
+
+    out = []
+    if remaining:
+        # Shift just enough that the first remaining stop starts after the nap,
+        # preserving the gaps between the rest.
+        shift = max(0, extended_end - _display_to_minutes(remaining[0]["time"]))
+        for stop in remaining:
+            start = _display_to_minutes(stop["time"]) + shift
+            # Drop anything whose block would run past bedtime.
+            if bedtime_min is not None and start + stop_duration(stop["kind"]) > bedtime_min:
+                continue
+            moved = dict(stop)
+            moved["time"] = _minutes_to_display(start)
+            out.append(moved)
+    return kept + out
+
+
+def replan(plan, situation, current_time, venues=None, features=None,
+           bedtime=None, nap_length=None):
     """Return a NEW proposed plan, re-deciding only the stops ahead of now.
 
     The stop happening now and everything before it are kept exactly as they
@@ -195,7 +219,8 @@ def replan(plan, situation, current_time, venues=None, features=None):
     ``situation``. The original plan is never mutated. ``current_time`` is an
     'HH:MM' 24-hour string from the form. ``venues``/``features`` let a
     situation fill freed time with a real, feature-matched venue that isn't
-    already in the day.
+    already in the day. ``bedtime`` ('HH:MM') and ``nap_length`` (minutes) are
+    used by "nap happened here" to extend the current stop and cap the day.
 
     This is a deterministic placeholder; a real implementation would hand the
     same inputs to an AI planner and return a plan in the same shape.
@@ -212,12 +237,19 @@ def replan(plan, situation, current_time, venues=None, features=None):
     # Venues already in the day, so a bonus stop never repeats one.
     used_names = {s["venue"]["name"] for s in stops if s.get("venue")}
 
-    # Situations that re-time stops can push a venue past closing (or before
-    # opening); re-decide only the stops ahead so their venues still fit.
-    new_remaining = _enforce_hours(
-        _apply_situation(situation, remaining, now, venues, features, used_names),
-        venues, features)
-    new_stops = kept + new_remaining
+    if situation == "nap_happened":
+        # Extend the current stop for the nap and shift/cap the rest of the day.
+        bedtime_min = _clock_to_minutes(bedtime) if bedtime else None
+        length = int(nap_length) if nap_length else DEFAULT_NAP_LENGTH_MIN
+        new_stops = _enforce_hours(
+            _nap_here(kept, remaining, bedtime_min, length), venues, features)
+    else:
+        # Situations that re-time stops can push a venue past closing (or before
+        # opening); re-decide only the stops ahead so their venues still fit.
+        new_remaining = _enforce_hours(
+            _apply_situation(situation, remaining, now, venues, features, used_names),
+            venues, features)
+        new_stops = kept + new_remaining
     new_stops.sort(key=lambda s: _display_to_minutes(s["time"]))
 
     label = plan.get("label", "Plan")

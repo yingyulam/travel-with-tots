@@ -37,6 +37,24 @@
           <button type="button" class="tap-btn" data-situation="{{ key }}">{{ label }}</button>
           {% endfor %}
         </div>
+        <div class="nap-prompt" id="nap-prompt" hidden>
+          <div id="nap-ask">
+            <p>Your child fell asleep — want to stay at this stop longer while they nap?</p>
+            <div class="chips">
+              <button type="button" class="tap-btn" id="nap-yes">Yes</button>
+              <button type="button" class="tap-btn" id="nap-no">No</button>
+            </div>
+          </div>
+          <div id="nap-duration" hidden>
+            <p>How long will you stay at this stop?</p>
+            <div class="chips" id="nap-length-bar">
+              <button type="button" class="tap-btn" data-mins="30">30 min</button>
+              <button type="button" class="tap-btn" data-mins="60">1 hour</button>
+              <button type="button" class="tap-btn" data-mins="90">1.5 hours</button>
+              <button type="button" class="tap-btn" data-mins="120">2 hours</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 4. Need-nearby panel -->
@@ -182,31 +200,75 @@
 
     timeField.addEventListener("input", renderTimeline);
 
-    // Situation buttons -> POST /replan -> add a NEW version, keep the original.
+    // Run a re-plan and install the result as the single "Current" version.
+    // napLength (minutes) is only used by "nap happened here".
+    async function runReplan(situation, napLength) {
+      if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+      status.hidden = false;
+      status.textContent = "Re-planning…";
+      try {
+        const res = await fetch("/replan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan: PLANS[active],
+            situation: situation,
+            current_time: timeField.value,
+            features: tripData.features,
+            bedtime: tripData.bedtime,
+            nap_length: napLength || null,
+          }),
+        });
+        const newPlan = await res.json();
+        // Replace the single "Current" version (or create it the first time),
+        // so the switcher always shows exactly Original + Current.
+        PLANS[1] = newPlan;
+        active = 1;
+        renderTabs();
+        renderTimeline();
+        status.textContent = `Updated from ${newPlan.from_time || nowDisplay()} — tap “Original” to compare.`;
+      } catch (e) {
+        status.textContent = "Couldn't re-plan right now.";
+      }
+    }
+
+    // Nap prompt flow: ask -> (Yes) pick a stay length -> re-plan.
+    const napPrompt = document.getElementById("nap-prompt");
+    const napAsk = document.getElementById("nap-ask");
+    const napDuration = document.getElementById("nap-duration");
+    function hideNapPrompt() {
+      napPrompt.hidden = true;
+      napAsk.hidden = false;      // reset to the first step for next time
+      napDuration.hidden = true;
+    }
+
+    // Situation buttons. "Nap happened here" asks first; the rest re-plan now.
     document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-        btn.disabled = true;
-        try {
-          const res = await fetch("/replan", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ plan: PLANS[active], situation: btn.dataset.situation, current_time: timeField.value, features: tripData.features }),
-          });
-          const newPlan = await res.json();
-          // Replace the single "Current" version (or create it the first time),
-          // so the switcher always shows exactly Original + Current.
-          PLANS[1] = newPlan;
-          active = 1;
-          renderTabs();
-          renderTimeline();
-          status.hidden = false;
-          status.textContent = `Updated from ${newPlan.from_time || nowDisplay()} — tap “Original” to compare.`;
-        } catch (e) {
-          status.hidden = false;
-          status.textContent = "Couldn't re-plan right now.";
+      btn.addEventListener("click", () => {
+        if (btn.dataset.situation === "nap_happened") {
+          if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+          hideNapPrompt();            // reset, then open at step 1
+          napPrompt.hidden = false;
+          return;
         }
-        btn.disabled = false;
+        hideNapPrompt();
+        runReplan(btn.dataset.situation);
+      });
+    });
+
+    // Yes -> ask how long; No -> dismiss.
+    document.getElementById("nap-yes").addEventListener("click", () => {
+      napAsk.hidden = true;
+      napDuration.hidden = false;
+    });
+    document.getElementById("nap-no").addEventListener("click", hideNapPrompt);
+
+    // Pick a stay length -> extend the current stop by that long.
+    document.getElementById("nap-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mins = Number(btn.dataset.mins);
+        hideNapPrompt();
+        runReplan("nap_happened", mins);
       });
     });
 

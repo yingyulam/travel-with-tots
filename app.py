@@ -38,8 +38,8 @@ FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 # Sensible defaults so the form is usable on first load.
 DEFAULTS = {
     "wake_up": "07:00",
-    "bedtime": "19:00",
-    "nap_1": "12:30",
+    "bedtime": "20:00",
+    "nap_1": "",
     "nap_2": "",
     "age_years": "2",
     "age_months": "0",
@@ -112,6 +112,7 @@ def plan():
             "destination": form["destination"],
             "transit": form["transit"],
             "features": form["features"],
+            "bedtime": form["bedtime"],
         }
     else:
         form = dict(DEFAULTS)
@@ -149,6 +150,7 @@ def trip():
         destination=context.get("destination", "Vancouver"),
         transit=context.get("transit", []),
         features=context.get("features", []),
+        bedtime=context.get("bedtime", ""),
         original=Plan.from_dict(plan_data),
     )
     return render_template(
@@ -169,7 +171,8 @@ def replan_route():
     if not plan or not current_time:
         return jsonify({"error": "plan and current_time are required"}), 400
     return jsonify(replan(plan, data.get("situation", ""), current_time,
-                          VENUES, data.get("features") or []))
+                          VENUES, data.get("features") or [],
+                          bedtime=data.get("bedtime"), nap_length=data.get("nap_length")))
 
 
 @app.route("/find_nearby", methods=["POST"])
