@@ -12,13 +12,6 @@
     <div class="plan-option">
       <h3 class="plan-option-title">{{ child.name }}</h3>
       <p class="meta">{{ child.age_years }} yr {{ child.age_months }} mo</p>
-      {% if child.nap_1 or child.nap_2 %}
-      <p class="nap-notes">Nap window (from last trip):
-        <strong>{{ child.nap_1 or '—' }}{% if child.nap_2 %} / {{ child.nap_2 }}{% endif %}</strong>
-      </p>
-      {% else %}
-      <p class="empty-plan">Nap window: not logged yet.</p>
-      {% endif %}
     </div>
     {% endfor %}
   </div>

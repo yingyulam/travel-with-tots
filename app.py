@@ -216,21 +216,14 @@ def dashboard():
     trips = get_trips_for_parent(parent["id"])
     places = get_logged_venues_for_parent(parent["id"])
 
-    latest_trip_by_child = {}
-    for trip_row in trips:  # newest first, so the first hit per child sticks
-        latest_trip_by_child.setdefault(trip_row["child_id"], trip_row)
-
     child_profiles = []
     for child in children:
         years, months = compute_age(child["date_of_birth"])
-        latest_trip = latest_trip_by_child.get(child["id"])
         child_profiles.append({
             "id": child["id"],
             "name": child["name"],
             "age_years": years,
             "age_months": months,
-            "nap_1": latest_trip["nap_1"] if latest_trip else None,
-            "nap_2": latest_trip["nap_2"] if latest_trip else None,
         })
 
     return render_template(

@@ -328,18 +328,6 @@ textarea:focus {
   margin: 0.5rem 0;
 }
 
-.nap-notes {
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 0.6rem 0.9rem;
-  font-size: 0.92rem;
-  margin: 0.25rem 0 0.5rem;
-}
-
-.nap-notes strong {
-  color: var(--navy);
-}
-
 .help-btn {
   display: block;
   cursor: pointer;
