@@ -472,6 +472,16 @@ textarea:focus {
   margin-bottom: 0.25rem;
 }
 
+.plan-option-title a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+}
+
+.plan-option-title a:hover {
+  text-decoration-color: var(--navy);
+}
+
 .preview-list {
   list-style: none;
   margin: 0.5rem 0 1rem;

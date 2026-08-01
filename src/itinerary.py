@@ -29,6 +29,11 @@ CLOSING_BUFFER_MIN = 30
 # How long each kind of stop is assumed to take (used for the open-hours check).
 STOP_DURATION_MIN = {"activity": 60, "nap": 45, "meal": LUNCH_DURATION_MIN, "bonus": 60}
 
+# Lunch has to start somewhere in this window -- late enough that a stop or two
+# can come first, but not so late it stops being "lunch".
+LUNCH_WINDOW_START_MIN = 10 * 60 + 30  # 10:30am
+LUNCH_WINDOW_END_MIN = 13 * 60 + 30    # 1:30pm
+
 
 def _hhmm_to_min(text):
     """'09:00' -> minutes past midnight."""
@@ -64,8 +69,7 @@ def venue_open_for(venue, start_min, duration_min):
     return (start_min >= open_min
             and start_min + duration_min <= close_min
             and start_min <= close_min - CLOSING_BUFFER_MIN)
-# Stops whose hour falls in this range are treated as the midday meal.
-MIDDAY_START, MIDDAY_END = 11, 14
+
 
 # How many stops a plan has, before age adjustment, by pace.
 PACE_STOPS = {"relaxed": 2, "balanced": 3, "adventurous": 4}
@@ -178,9 +182,10 @@ def _lunch_time(stops, naps):
     occupied += [n.hour * 60 + n.minute for n in naps]
 
     target = 12 * 60  # aim for a noon lunch
-    for offset in range(0, 181, 15):
+    max_offset = max(target - LUNCH_WINDOW_START_MIN, LUNCH_WINDOW_END_MIN - target)
+    for offset in range(0, max_offset + 1, 15):
         for candidate in (target - offset, target + offset):
-            if not 10 * 60 + 30 <= candidate <= 14 * 60:
+            if not LUNCH_WINDOW_START_MIN <= candidate <= LUNCH_WINDOW_END_MIN:
                 continue
             before = max((o for o in occupied if o <= candidate), default=None)
             after = min((o for o in occupied if o > candidate), default=None)

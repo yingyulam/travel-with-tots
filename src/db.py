@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS trips (
     nap_notes     TEXT,
     extra_notes   TEXT,
     plan_label    TEXT,                   -- label of the generated plan the parent picked
+    plan_json     TEXT,                   -- full Plan.to_dict() (label, blurb, stops), so the
+                                           -- saved itinerary can be reopened from the dashboard
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -81,7 +83,7 @@ CREATE TABLE IF NOT EXISTS venues (
 TRIP_FIELDS = (
     "trip_date", "wake_up", "bedtime", "nap_1", "nap_2", "destination",
     "accommodation", "transit", "pace", "dining", "features",
-    "nap_notes", "extra_notes", "plan_label",
+    "nap_notes", "extra_notes", "plan_label", "plan_json",
 )
 
 
@@ -97,8 +99,18 @@ def init_db():
     """Create the tables if they don't exist and seed initial data once."""
     with closing(connect()) as conn:
         conn.executescript(SCHEMA)
+        _ensure_columns(conn)
         _seed_venues(conn)
         _seed_sample_data(conn)
+
+
+def _ensure_columns(conn):
+    """Add columns introduced after a table was first created -- SQLite has no
+    'ADD COLUMN IF NOT EXISTS', so existing databases need a manual patch."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trips)")}
+    if "plan_json" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips ADD COLUMN plan_json TEXT")
 
 
 def _seed_venues(conn):
@@ -225,13 +237,25 @@ def get_children(parent_id):
 
 
 def get_trips_for_parent(parent_id):
-    """All trips for every child of this parent, newest first."""
+    """Trips with a saved itinerary for every child of this parent, newest
+    first (older rows saved without a plan_json have nothing to open, so
+    they're excluded rather than shown as a dead link)."""
     with closing(connect()) as conn:
         return conn.execute(
             "SELECT trips.*, children.name AS child_name FROM trips "
             "JOIN children ON children.id = trips.child_id "
-            "WHERE children.parent_id = ? "
+            "WHERE children.parent_id = ? AND trips.plan_json IS NOT NULL "
             "ORDER BY trips.created_at DESC", (parent_id,)).fetchall()
+
+
+def get_trip_for_parent(parent_id, trip_id):
+    """One trip by id, scoped to this parent's children (ownership check)."""
+    with closing(connect()) as conn:
+        return conn.execute(
+            "SELECT trips.*, children.name AS child_name FROM trips "
+            "JOIN children ON children.id = trips.child_id "
+            "WHERE children.parent_id = ? AND trips.id = ?",
+            (parent_id, trip_id)).fetchone()
 
 
 def get_logged_venues_for_parent(parent_id):

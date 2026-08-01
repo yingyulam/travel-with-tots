@@ -35,6 +35,7 @@ from src.db import (
     get_logged_venues_for_parent,
     get_parent,
     get_parent_by_email,
+    get_trip_for_parent,
     get_trips_for_parent,
     init_db,
     update_child,
@@ -327,6 +328,7 @@ def save_trip():
     fields["transit"] = json.dumps(trip_form.get("transit", []))
     fields["features"] = json.dumps(trip_form.get("features", []))
     fields["plan_label"] = plan_data.get("label")
+    fields["plan_json"] = json.dumps(plan_data)
     fields["trip_date"] = date.today().isoformat()
     for child_id in child_ids:
         add_trip(int(child_id), **fields)
@@ -379,6 +381,28 @@ def plan():
     )
 
 
+def _build_trip(destination, transit, features, bedtime, plan_data):
+    """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
+    and reopening a saved itinerary from the dashboard."""
+    return Trip(
+        destination=destination or "Vancouver",
+        transit=transit,
+        features=features,
+        bedtime=bedtime,
+        original=Plan.from_dict(plan_data),
+    )
+
+
+def _render_trip(trip):
+    return render_template(
+        "trip.html",
+        trip=trip.to_dict(),
+        feature_options=FEATURE_OPTIONS,
+        situation_options=SITUATION_OPTIONS,
+        need_options=NEED_OPTIONS,
+    )
+
+
 @app.route("/trip", methods=["GET", "POST"])
 def trip():
     """In-trip page: render the chosen plan as a live, adjustable Trip.
@@ -394,20 +418,33 @@ def trip():
     except (ValueError, TypeError):
         return redirect(url_for("plan"))
 
-    trip = Trip(
-        destination=context.get("destination", "Vancouver"),
+    trip = _build_trip(
+        destination=context.get("destination"),
         transit=context.get("transit", []),
         features=context.get("features", []),
         bedtime=context.get("bedtime", ""),
-        original=Plan.from_dict(plan_data),
+        plan_data=plan_data,
     )
-    return render_template(
-        "trip.html",
-        trip=trip.to_dict(),
-        feature_options=FEATURE_OPTIONS,
-        situation_options=SITUATION_OPTIONS,
-        need_options=NEED_OPTIONS,
+    return _render_trip(trip)
+
+
+@app.route("/trip/<int:trip_id>")
+@login_required
+def view_trip(trip_id):
+    """Re-open a previously saved itinerary from the dashboard."""
+    parent = _current_parent()
+    row = get_trip_for_parent(parent["id"], trip_id)
+    if row is None or not row["plan_json"]:
+        flash("That saved trip doesn't have a full itinerary to show.")
+        return redirect(url_for("dashboard"))
+    trip = _build_trip(
+        destination=row["destination"],
+        transit=json.loads(row["transit"] or "[]"),
+        features=json.loads(row["features"] or "[]"),
+        bedtime=row["bedtime"] or "",
+        plan_data=json.loads(row["plan_json"]),
     )
+    return _render_trip(trip)
 
 
 @app.route("/replan", methods=["POST"])

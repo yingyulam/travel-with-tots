@@ -69,7 +69,7 @@
   <div class="plan-grid">
     {% for trip in trips %}
     <div class="plan-option">
-      <h3 class="plan-option-title">{{ trip.plan_label or 'Trip' }}</h3>
+      <h3 class="plan-option-title"><a href="{{ url_for('view_trip', trip_id=trip.id) }}">{{ trip.plan_label or 'Trip' }}</a></h3>
       <p class="plan-blurb">{{ trip.destination }} — for {{ trip.child_name }}</p>
       <p class="meta">{{ trip.trip_date }}</p>
     </div>
