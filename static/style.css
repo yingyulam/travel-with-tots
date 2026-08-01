@@ -276,6 +276,42 @@ textarea:focus {
   background: #1565c0;
 }
 
+.cta-danger {
+  border: none;
+  cursor: pointer;
+  background: none;
+  color: #c0392b;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.cta-danger:hover {
+  text-decoration: underline;
+}
+
+.child-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.child-actions summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.child-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  min-width: 200px;
+}
+
 .save-plan-form {
   display: flex;
   align-items: center;

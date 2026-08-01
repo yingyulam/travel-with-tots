@@ -30,12 +30,14 @@ from src.db import (
     add_trip,
     add_venue,
     compute_age,
+    delete_child,
     get_children,
     get_logged_venues_for_parent,
     get_parent,
     get_parent_by_email,
     get_trips_for_parent,
     init_db,
+    update_child,
 )
 from src.interactions import (
     NEED_OPTIONS,
@@ -82,6 +84,8 @@ DEFAULTS = {
     "nap_notes": "",
     "extra_notes": "",
     "features": ["kid_friendly"],
+    "child_ids": [],
+    "plan_child_id": "",
 }
 
 
@@ -103,6 +107,12 @@ def _read_age(form):
     return str(years), str(months)
 
 
+def _total_months(date_of_birth):
+    """A child's age in total months, for comparing who's youngest."""
+    years, months = compute_age(date_of_birth)
+    return years * 12 + months
+
+
 def _read_form(form):
     """Normalise the raw request form into the shape the logic expects."""
     age_years, age_months = _read_age(form)
@@ -121,6 +131,8 @@ def _read_form(form):
         "nap_notes": form.get("nap_notes", ""),
         "extra_notes": form.get("extra_notes", ""),
         "features": form.getlist("features"),
+        "child_ids": form.getlist("child_ids"),
+        "plan_child_id": form.get("plan_child_id", ""),
     }
     values["nap_times"] = [n for n in (values["nap_1"], values["nap_2"]) if n]
     return values
@@ -144,11 +156,23 @@ def login_required(view):
 
 @app.context_processor
 def inject_current_parent():
-    """Make the logged-in parent (and their children) available to every
-    template, so the masthead auth-status link works without threading it
-    through each render_template call."""
+    """Make the logged-in parent (and their children, with computed age)
+    available to every template, so the masthead auth-status link and the
+    child pickers work without threading them through each render_template
+    call."""
     parent = _current_parent()
-    children = get_children(parent["id"]) if parent else []
+    children = []
+    if parent:
+        for child in get_children(parent["id"]):
+            years, months = compute_age(child["date_of_birth"])
+            children.append({
+                "id": child["id"],
+                "name": child["name"],
+                "gender": child["gender"],
+                "date_of_birth": child["date_of_birth"],
+                "age_years": years,
+                "age_months": months,
+            })
     return {"current_parent": parent, "current_parent_children": children}
 
 
@@ -212,23 +236,10 @@ def logout():
 def dashboard():
     """The logged-in parent's saved children, trips, and logged places."""
     parent = _current_parent()
-    children = get_children(parent["id"])
     trips = get_trips_for_parent(parent["id"])
     places = get_logged_venues_for_parent(parent["id"])
 
-    child_profiles = []
-    for child in children:
-        years, months = compute_age(child["date_of_birth"])
-        child_profiles.append({
-            "id": child["id"],
-            "name": child["name"],
-            "age_years": years,
-            "age_months": months,
-        })
-
-    return render_template(
-        "dashboard.html", parent=parent, children=child_profiles,
-        trips=trips, places=places)
+    return render_template("dashboard.html", parent=parent, trips=trips, places=places)
 
 
 @app.route("/add-child", methods=["POST"])
@@ -242,6 +253,35 @@ def add_child_route():
         flash("A child needs both a name and a date of birth.")
         return redirect(url_for("dashboard"))
     add_child(parent["id"], name, request.form.get("gender") or None, date_of_birth)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/edit-child/<int:child_id>", methods=["POST"])
+@login_required
+def edit_child_route(child_id):
+    """Update one of the logged-in parent's children."""
+    parent = _current_parent()
+    if child_id not in {child["id"] for child in get_children(parent["id"])}:
+        flash("Child not found.")
+        return redirect(url_for("dashboard"))
+    name = request.form.get("child_name", "").strip()
+    date_of_birth = request.form.get("date_of_birth", "")
+    if not name or not date_of_birth:
+        flash("A child needs both a name and a date of birth.")
+        return redirect(url_for("dashboard"))
+    update_child(child_id, name, request.form.get("gender") or None, date_of_birth)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/delete-child/<int:child_id>", methods=["POST"])
+@login_required
+def delete_child_route(child_id):
+    """Remove one of the logged-in parent's children (their saved trips go with them)."""
+    parent = _current_parent()
+    if child_id not in {child["id"] for child in get_children(parent["id"])}:
+        flash("Child not found.")
+        return redirect(url_for("dashboard"))
+    delete_child(child_id)
     return redirect(url_for("dashboard"))
 
 
@@ -270,17 +310,17 @@ def log_place():
 @app.route("/save-trip", methods=["POST"])
 @login_required
 def save_trip():
-    """Persist a generated plan as a trip for one of the logged-in parent's
-    children, so it shows up on the dashboard."""
+    """Persist a generated plan as a trip for each child the logged-in parent
+    picked on the planning page, so it shows up on the dashboard."""
     parent = _current_parent()
-    child_ids = {child["id"] for child in get_children(parent["id"])}
+    valid_ids = {str(child["id"]) for child in get_children(parent["id"])}
     try:
-        child_id = int(request.form.get("child_id", ""))
         plan_data = json.loads(request.form.get("plan", ""))
         trip_form = json.loads(request.form.get("trip_form", "{}"))
     except (TypeError, ValueError):
         return redirect(url_for("plan"))
-    if child_id not in child_ids:
+    child_ids = [cid for cid in trip_form.get("child_ids", []) if cid in valid_ids]
+    if not child_ids:
         return redirect(url_for("plan"))
 
     fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
@@ -288,7 +328,8 @@ def save_trip():
     fields["features"] = json.dumps(trip_form.get("features", []))
     fields["plan_label"] = plan_data.get("label")
     fields["trip_date"] = date.today().isoformat()
-    add_trip(child_id, **fields)
+    for child_id in child_ids:
+        add_trip(int(child_id), **fields)
     return redirect(url_for("dashboard"))
 
 
@@ -297,6 +338,23 @@ def plan():
     """Planning page: the trip form and, after generating, comparable plans."""
     if request.method == "POST":
         form = _read_form(request.form)
+    else:
+        form = dict(DEFAULTS)
+
+    parent = _current_parent()
+    children_by_id = {str(c["id"]): c for c in get_children(parent["id"])} if parent else {}
+    if children_by_id:
+        checked_ids = [cid for cid in form["child_ids"] if cid in children_by_id] \
+            or list(children_by_id)
+        plan_child_id = form["plan_child_id"] if form["plan_child_id"] in checked_ids else None
+        if not plan_child_id:
+            plan_child_id = min(checked_ids,
+                                 key=lambda cid: _total_months(children_by_id[cid]["date_of_birth"]))
+        form["child_ids"], form["plan_child_id"] = checked_ids, plan_child_id
+        years, months = compute_age(children_by_id[plan_child_id]["date_of_birth"])
+        form["age_years"], form["age_months"] = str(years), str(months)
+
+    if request.method == "POST":
         plans = generate_plans(VENUES, form)
         # Context carried to the in-trip page when a plan is chosen.
         trip_context = {
@@ -306,7 +364,6 @@ def plan():
             "bedtime": form["bedtime"],
         }
     else:
-        form = dict(DEFAULTS)
         plans = None
         trip_context = None
 

@@ -6,12 +6,36 @@
 {% block content %}
 <section class="card">
   <h2>Your children</h2>
-  {% if children %}
+  {% if current_parent_children %}
   <div class="plan-grid">
-    {% for child in children %}
+    {% for child in current_parent_children %}
     <div class="plan-option">
       <h3 class="plan-option-title">{{ child.name }}</h3>
       <p class="meta">{{ child.age_years }} yr {{ child.age_months }} mo</p>
+      <div class="child-actions">
+        <details>
+          <summary>Edit</summary>
+          <form method="post" action="{{ url_for('edit_child_route', child_id=child.id) }}" class="child-edit-form">
+            <label class="field">
+              <span>Child's name</span>
+              <input type="text" name="child_name" value="{{ child.name }}" required>
+            </label>
+            <label class="field">
+              <span>Date of birth</span>
+              <input type="date" name="date_of_birth" value="{{ child.date_of_birth }}" required>
+            </label>
+            <label class="field">
+              <span>Gender <em>(optional)</em></span>
+              <input type="text" name="gender" value="{{ child.gender or '' }}">
+            </label>
+            <button type="submit" class="cta-secondary">Save changes</button>
+          </form>
+        </details>
+        <form method="post" action="{{ url_for('delete_child_route', child_id=child.id) }}"
+              onsubmit="return confirm('Remove ' + {{ child.name|tojson }} + '? This also deletes their saved trips.');">
+          <button type="submit" class="cta-danger">Remove</button>
+        </form>
+      </div>
     </div>
     {% endfor %}
   </div>

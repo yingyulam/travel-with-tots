@@ -25,6 +25,34 @@
     <section class="card form-card">
       <h2>Your trip</h2>
       <form method="post" action="{{ url_for('plan') }}">
+        {% if current_parent and current_parent_children %}
+        <fieldset class="group">
+          <legend>Who's on this trip? <em>(pick one or more)</em></legend>
+          <div class="chips">
+            {% for child in current_parent_children %}
+            <label class="chip">
+              <input type="checkbox" name="child_ids" value="{{ child.id }}"
+                     {% if child.id|string in form.child_ids %}checked{% endif %}>
+              <span>{{ child.name }} ({{ child.age_years }} yr {{ child.age_months }} mo)</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Who should we plan around?</legend>
+          <div class="chips">
+            {% for child in current_parent_children %}
+            <label class="chip">
+              <input type="radio" name="plan_child_id" value="{{ child.id }}"
+                     {% if form.plan_child_id == child.id|string %}checked{% endif %}>
+              <span>{{ child.name }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        {% endif %}
+
         <div class="field-row">
           <label class="field">
             <span>Wake-up time</span>
@@ -54,6 +82,7 @@
         </label>
 
         <div class="field-row">
+          {% if not (current_parent and current_parent_children) %}
           <label class="field">
             <span>Kid's age</span>
             <div class="age-input">
@@ -69,6 +98,7 @@
               </span>
             </div>
           </label>
+          {% endif %}
           <label class="field">
             <span>Destination</span>
             <input type="text" name="destination" value="{{ form.destination }}">
@@ -183,19 +213,10 @@
             <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
             <button type="submit" class="cta">Start this day</button>
           </form>
-          {% if current_parent and current_parent_children %}
+          {% if current_parent and form.child_ids %}
           <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
             <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
             <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
-            {% if current_parent_children|length > 1 %}
-            <select name="child_id">
-              {% for child in current_parent_children %}
-              <option value="{{ child.id }}">{{ child.name }}</option>
-              {% endfor %}
-            </select>
-            {% else %}
-            <input type="hidden" name="child_id" value="{{ current_parent_children[0].id }}">
-            {% endif %}
             <button type="submit" class="cta-secondary">💾 Save this plan</button>
           </form>
           {% elif current_parent %}

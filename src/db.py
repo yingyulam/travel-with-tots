@@ -163,6 +163,17 @@ def add_child(parent_id, name, gender, date_of_birth):
         "VALUES (?, ?, ?, ?)", (parent_id, name, gender, date_of_birth))
 
 
+def update_child(child_id, name, gender, date_of_birth):
+    _write(
+        "UPDATE children SET name = ?, gender = ?, date_of_birth = ? WHERE id = ?",
+        (name, gender, date_of_birth, child_id))
+
+
+def delete_child(child_id):
+    """Remove a child; their trips cascade-delete via the FK constraint."""
+    _write("DELETE FROM children WHERE id = ?", (child_id,))
+
+
 def add_trip(child_id, **fields):
     """Insert a trip. Only known columns (TRIP_FIELDS) are accepted, so the
     column names are never user-controlled and the values stay parameterized."""
