@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots — Sign up{% endblock %}
+{% block heading %}Create your account{% endblock %}
+{% block tagline %}Save trip plans and favourite places for your family.{% endblock %}
+
+{% block content %}
+<section class="card form-card">
+  <form method="post" action="{{ url_for('signup') }}">
+    <h2>You</h2>
+    <div class="field-row">
+      <label class="field">
+        <span>Your name</span>
+        <input type="text" name="parent_name" value="{{ form.parent_name }}" required>
+      </label>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" value="{{ form.email }}" required>
+      </label>
+    </div>
+    <div class="field-row">
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" required>
+      </label>
+      <label class="field">
+        <span>Confirm password</span>
+        <input type="password" name="confirm_password" required>
+      </label>
+    </div>
+
+    <button type="submit" class="cta">Create account</button>
+  </form>
+  <p class="field-hint">Already have an account? <a href="{{ url_for('login') }}">Log in</a>.</p>
+</section>
+{% endblock %}

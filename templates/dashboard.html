@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots — Dashboard{% endblock %}
+{% block heading %}Hi, {{ parent.name or parent.email }}{% endblock %}
+{% block tagline %}Your saved children, trips, and places.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>Your children</h2>
+  {% if children %}
+  <div class="plan-grid">
+    {% for child in children %}
+    <div class="plan-option">
+      <h3 class="plan-option-title">{{ child.name }}</h3>
+      <p class="meta">{{ child.age_years }} yr {{ child.age_months }} mo</p>
+      {% if child.nap_1 or child.nap_2 %}
+      <p class="nap-notes">Nap window (from last trip):
+        <strong>{{ child.nap_1 or '—' }}{% if child.nap_2 %} / {{ child.nap_2 }}{% endif %}</strong>
+      </p>
+      {% else %}
+      <p class="empty-plan">Nap window: not logged yet.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-plan">No children saved yet.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('add_child_route') }}" class="section-form">
+    <h2>Add a child</h2>
+    <div class="field-row">
+      <label class="field">
+        <span>Child's name</span>
+        <input type="text" name="child_name" required>
+      </label>
+      <label class="field">
+        <span>Date of birth</span>
+        <input type="date" name="date_of_birth" required>
+      </label>
+      <label class="field">
+        <span>Gender <em>(optional)</em></span>
+        <input type="text" name="gender">
+      </label>
+    </div>
+    <button type="submit" class="cta">Add child</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Your saved trips</h2>
+  {% if trips %}
+  <div class="plan-grid">
+    {% for trip in trips %}
+    <div class="plan-option">
+      <h3 class="plan-option-title">{{ trip.plan_label or 'Trip' }}</h3>
+      <p class="plan-blurb">{{ trip.destination }} — for {{ trip.child_name }}</p>
+      <p class="meta">{{ trip.trip_date }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-plan">No trips saved yet. Generate a plan and tap "Save this plan".</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Family &amp; nursing rooms you've logged</h2>
+  {% if places %}
+  <div class="plan-grid">
+    {% for place in places %}
+    <div class="plan-option">
+      <h3 class="plan-option-title">{{ place.name }}</h3>
+      <p class="meta">{{ place.neighbourhood or place.type or '' }}</p>
+      <div class="badges">
+        {% if place.kid_friendly %}<span class="badge">Kid-friendly</span>{% endif %}
+        {% if place.has_family_room %}<span class="badge">Family room</span>{% endif %}
+        {% if place.has_nursing_room %}<span class="badge badge-nap">Nursing room</span>{% endif %}
+        {% if place.stroller_accessible %}<span class="badge">Stroller accessible</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-plan">No places logged yet.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('log_place') }}" class="section-form">
+    <h2>Log a place</h2>
+    <div class="field-row">
+      <label class="field">
+        <span>Name</span>
+        <input type="text" name="name" required>
+      </label>
+      <label class="field">
+        <span>Type <em>(optional)</em></span>
+        <input type="text" name="venue_type" placeholder="e.g. cafe, mall, park">
+      </label>
+      <label class="field">
+        <span>Neighbourhood <em>(optional)</em></span>
+        <input type="text" name="neighbourhood">
+      </label>
+    </div>
+    <div class="chips">
+      <label class="chip">
+        <input type="checkbox" name="kid_friendly">
+        <span>Kid-friendly</span>
+      </label>
+      <label class="chip">
+        <input type="checkbox" name="has_family_room">
+        <span>Family room</span>
+      </label>
+      <label class="chip">
+        <input type="checkbox" name="has_nursing_room">
+        <span>Nursing room</span>
+      </label>
+      <label class="chip">
+        <input type="checkbox" name="stroller_accessible">
+        <span>Stroller accessible</span>
+      </label>
+    </div>
+    <button type="submit" class="cta">Log this place</button>
+  </form>
+</section>
+{% endblock %}

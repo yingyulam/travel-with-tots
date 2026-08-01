@@ -9,6 +9,13 @@
 <body>
   {% set transit_label = trip.transit | map('capitalize') | join(', ') %}
   <header class="masthead">
+    <div class="auth-status">
+      {% if current_parent %}
+      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('logout') }}">Log out</a>
+      {% else %}
+      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
+      {% endif %}
+    </div>
     <a class="home-link" href="{{ url_for('plan') }}">← New plan</a>
     <h1 class="app-name">Your day in {{ trip.destination }}</h1>
     <p class="tagline">🚕 Getting around by {{ transit_label or 'Not specified' }}</p>

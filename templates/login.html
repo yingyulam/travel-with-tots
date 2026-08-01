@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots — Log in{% endblock %}
+{% block heading %}Log in{% endblock %}
+{% block tagline %}Welcome back.{% endblock %}
+
+{% block content %}
+<section class="card form-card">
+  <form method="post" action="{{ url_for('login') }}">
+    <div class="field-row">
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" value="{{ email }}" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" required>
+      </label>
+    </div>
+    <button type="submit" class="cta">Log in</button>
+  </form>
+  <p class="field-hint">New here? <a href="{{ url_for('signup') }}">Create an account</a>.</p>
+</section>
+{% endblock %}

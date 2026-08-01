@@ -85,9 +85,11 @@ Then open **http://localhost:8016** in your browser.
 travel-with-tots/
 ├── app.py                # Flask entry point (routes + form handling)
 ├── data/
-│   └── venues.json       # ~12 hardcoded Vancouver venues
+│   ├── venues.json       # ~12 hardcoded Vancouver venues
+│   └── app.db            # SQLite database (generated on first run; git-ignored)
 ├── src/                  # Application logic
 │   ├── data_loader.py    # loads venue data, builds Google Maps links
+│   ├── db.py             # SQLite data layer (schema, connection, safe writes)
 │   ├── filters.py        # filters venues by selected features
 │   ├── models.py         # Plan and Trip domain objects
 │   ├── itinerary.py      # generate_plans: themed candidate Plan objects
@@ -102,6 +104,25 @@ travel-with-tots/
 ├── requirements.txt
 └── README.md
 ```
+
+### Database
+
+A small SQLite database (`data/app.db`) is created automatically on start-up by
+[`src/db.py`](src/db.py) — a self-contained data layer kept separate from the
+routes. Tables (created only if missing):
+
+- **parents** — one row per account (email login).
+- **children** — name, gender, and **date of birth** (age is computed from the
+  DOB via `compute_age`, never stored). References `parents`.
+- **trips** — a single outing's nap schedule and details. References `children`.
+- **venues** — kid-friendly places, seeded from `venues.json` and open to
+  user submissions. A `source` column is constrained by a `CHECK` to
+  `municipal_open_data` | `user_submitted` | `curated`.
+
+Parent→child→trip relationships use `FOREIGN KEY` constraints with
+`PRAGMA foreign_keys = ON` (enabled per connection). All writes are
+parameterized and run inside a transaction. Itinerary/stop tables are
+deliberately deferred to a later stage.
 
 ### Routes
 

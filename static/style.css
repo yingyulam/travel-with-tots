@@ -26,10 +26,29 @@ body {
 
 /* Masthead */
 .masthead {
+  position: relative;
   text-align: center;
   color: #fff;
   padding: 2.5rem 1.5rem;
   background: linear-gradient(135deg, var(--navy), #2a5580);
+}
+
+.auth-status {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.auth-status a {
+  color: #fff;
+  opacity: 0.85;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-status a:hover {
+  opacity: 1;
 }
 
 .home-link {
@@ -114,6 +133,9 @@ body {
 input[type="time"],
 input[type="number"],
 input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
 select,
 textarea {
   padding: 0.65rem 0.75rem;
@@ -233,6 +255,63 @@ textarea:focus {
 .cta:hover {
   background: var(--cta-dark);
   transform: translateY(-2px);
+}
+
+.cta-secondary {
+  display: inline-block;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 0.7rem 1.5rem;
+  border-radius: 999px;
+  margin-top: 0.5rem;
+  transition: background 0.15s ease;
+}
+
+.cta-secondary:hover {
+  background: #1565c0;
+}
+
+.save-plan-form {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.save-plan-form select {
+  flex: 1;
+}
+
+.save-plan-hint {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #7a8899;
+}
+
+.save-plan-hint a {
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.section-form {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.section-form h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.flash {
+  border-left: 4px solid var(--orange);
+  color: var(--navy);
+  font-weight: 600;
 }
 
 /* Plan */

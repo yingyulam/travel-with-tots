@@ -12,6 +12,7 @@ body {
 
 /* Banner / hero */
 .hero {
+  position: relative;
   min-height: 70vh;
   display: flex;
   align-items: center;
@@ -23,6 +24,25 @@ body {
       center/cover no-repeat;
   color: #fff;
   padding: 2rem;
+}
+
+.auth-status {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.75rem;
+  font-size: 0.9rem;
+}
+
+.auth-status a {
+  color: #fff;
+  opacity: 0.9;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-status a:hover {
+  opacity: 1;
+  text-decoration: underline;
 }
 
 .hero-overlay {

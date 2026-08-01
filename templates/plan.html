@@ -8,6 +8,13 @@
 </head>
 <body>
   <header class="masthead">
+    <div class="auth-status">
+      {% if current_parent %}
+      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('logout') }}">Log out</a>
+      {% else %}
+      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
+      {% endif %}
+    </div>
     <a class="home-link" href="{{ url_for('home') }}">← Home</a>
     <h1 class="app-name">Travel with Tots</h1>
     <p class="tagline">Build a nap-friendly day plan for little ones 0–5.</p>
@@ -176,6 +183,26 @@
             <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
             <button type="submit" class="cta">Start this day</button>
           </form>
+          {% if current_parent and current_parent_children %}
+          <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
+            <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
+            <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
+            {% if current_parent_children|length > 1 %}
+            <select name="child_id">
+              {% for child in current_parent_children %}
+              <option value="{{ child.id }}">{{ child.name }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <input type="hidden" name="child_id" value="{{ current_parent_children[0].id }}">
+            {% endif %}
+            <button type="submit" class="cta-secondary">💾 Save this plan</button>
+          </form>
+          {% elif current_parent %}
+          <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
+          {% else %}
+          <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
+          {% endif %}
         </div>
         {% endfor %}
       </div>

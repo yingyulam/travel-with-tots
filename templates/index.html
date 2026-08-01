@@ -8,6 +8,13 @@
 </head>
 <body>
   <main class="hero">
+    <div class="auth-status">
+      {% if current_parent %}
+      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('logout') }}">Log out</a>
+      {% else %}
+      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
+      {% endif %}
+    </div>
     <div class="hero-overlay">
       <h1 class="app-name">Travel with Tots</h1>
       <p class="tagline">Stress-free itineraries for parents adventuring with children 0–5.</p>

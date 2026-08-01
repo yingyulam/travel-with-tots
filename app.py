@@ -6,10 +6,37 @@ the src/ package; this file just wires HTTP requests to that logic.
 """
 
 import json
+import os
+from datetime import date
+from functools import wraps
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from src.data_loader import FEATURE_LABELS, load_venues
+from src.db import (
+    TRIP_FIELDS,
+    add_child,
+    add_parent,
+    add_trip,
+    add_venue,
+    compute_age,
+    get_children,
+    get_logged_venues_for_parent,
+    get_parent,
+    get_parent_by_email,
+    get_trips_for_parent,
+    init_db,
+)
 from src.interactions import (
     NEED_OPTIONS,
     SITUATION_OPTIONS,
@@ -20,6 +47,10 @@ from src.itinerary import generate_plans
 from src.models import Plan, Trip
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
+# Create the SQLite tables (data/app.db) on startup if they don't exist yet.
+init_db()
 
 # Venue data never changes at runtime, so load it once at startup.
 VENUES = load_venues()
@@ -95,10 +126,177 @@ def _read_form(form):
     return values
 
 
+def _current_parent():
+    """The logged-in parent's row, or None if no one is logged in."""
+    parent_id = session.get("parent_id")
+    return get_parent(parent_id) if parent_id else None
+
+
+def login_required(view):
+    """Redirect anonymous visitors to the login page instead of the view."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if _current_parent() is None:
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.context_processor
+def inject_current_parent():
+    """Make the logged-in parent (and their children) available to every
+    template, so the masthead auth-status link works without threading it
+    through each render_template call."""
+    parent = _current_parent()
+    children = get_children(parent["id"]) if parent else []
+    return {"current_parent": parent, "current_parent_children": children}
+
+
 @app.route("/")
 def home():
     """Marketing landing page."""
     return render_template("index.html")
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    """Create a parent account. Children are added afterward from the dashboard."""
+    if request.method == "POST":
+        form = request.form
+        required = ("parent_name", "email", "password", "confirm_password")
+        if any(not form.get(field, "").strip() for field in required):
+            flash("Please fill in every field.")
+            return render_template("signup.html", form=form)
+        if form["password"] != form["confirm_password"]:
+            flash("Passwords do not match.")
+            return render_template("signup.html", form=form)
+        email = form["email"].strip().lower()
+        if get_parent_by_email(email) is not None:
+            flash("An account with this email already exists.")
+            return render_template("signup.html", form=form)
+
+        parent_id = add_parent(
+            email, generate_password_hash(form["password"]),
+            name=form["parent_name"].strip())
+        session["parent_id"] = parent_id
+        return redirect(url_for("dashboard"))
+
+    return render_template("signup.html", form={})
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Log an existing parent in."""
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        parent = get_parent_by_email(email)
+        if parent is None or not check_password_hash(parent["password_hash"], password):
+            flash("Incorrect email or password.")
+            return render_template("login.html", email=email)
+        session["parent_id"] = parent["id"]
+        return redirect(url_for("dashboard"))
+
+    return render_template("login.html", email="")
+
+
+@app.route("/logout")
+def logout():
+    """Log the current parent out."""
+    session.clear()
+    return redirect(url_for("home"))
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    """The logged-in parent's saved children, trips, and logged places."""
+    parent = _current_parent()
+    children = get_children(parent["id"])
+    trips = get_trips_for_parent(parent["id"])
+    places = get_logged_venues_for_parent(parent["id"])
+
+    latest_trip_by_child = {}
+    for trip_row in trips:  # newest first, so the first hit per child sticks
+        latest_trip_by_child.setdefault(trip_row["child_id"], trip_row)
+
+    child_profiles = []
+    for child in children:
+        years, months = compute_age(child["date_of_birth"])
+        latest_trip = latest_trip_by_child.get(child["id"])
+        child_profiles.append({
+            "id": child["id"],
+            "name": child["name"],
+            "age_years": years,
+            "age_months": months,
+            "nap_1": latest_trip["nap_1"] if latest_trip else None,
+            "nap_2": latest_trip["nap_2"] if latest_trip else None,
+        })
+
+    return render_template(
+        "dashboard.html", parent=parent, children=child_profiles,
+        trips=trips, places=places)
+
+
+@app.route("/add-child", methods=["POST"])
+@login_required
+def add_child_route():
+    """Add another child to the logged-in parent's account."""
+    parent = _current_parent()
+    name = request.form.get("child_name", "").strip()
+    date_of_birth = request.form.get("date_of_birth", "")
+    if not name or not date_of_birth:
+        flash("A child needs both a name and a date of birth.")
+        return redirect(url_for("dashboard"))
+    add_child(parent["id"], name, request.form.get("gender") or None, date_of_birth)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/log-place", methods=["POST"])
+@login_required
+def log_place():
+    """Log a kid-friendly place, family room, or nursing room."""
+    parent = _current_parent()
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("A place needs a name.")
+        return redirect(url_for("dashboard"))
+    add_venue(
+        name,
+        source="user_submitted",
+        parent_id=parent["id"],
+        venue_type=request.form.get("venue_type") or None,
+        neighbourhood=request.form.get("neighbourhood") or None,
+        kid_friendly=bool(request.form.get("kid_friendly")),
+        has_family_room=bool(request.form.get("has_family_room")),
+        has_nursing_room=bool(request.form.get("has_nursing_room")),
+        stroller_accessible=bool(request.form.get("stroller_accessible")))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/save-trip", methods=["POST"])
+@login_required
+def save_trip():
+    """Persist a generated plan as a trip for one of the logged-in parent's
+    children, so it shows up on the dashboard."""
+    parent = _current_parent()
+    child_ids = {child["id"] for child in get_children(parent["id"])}
+    try:
+        child_id = int(request.form.get("child_id", ""))
+        plan_data = json.loads(request.form.get("plan", ""))
+        trip_form = json.loads(request.form.get("trip_form", "{}"))
+    except (TypeError, ValueError):
+        return redirect(url_for("plan"))
+    if child_id not in child_ids:
+        return redirect(url_for("plan"))
+
+    fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
+    fields["transit"] = json.dumps(trip_form.get("transit", []))
+    fields["features"] = json.dumps(trip_form.get("features", []))
+    fields["plan_label"] = plan_data.get("label")
+    fields["trip_date"] = date.today().isoformat()
+    add_trip(child_id, **fields)
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/plan", methods=["GET", "POST"])

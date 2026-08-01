@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Travel with Tots{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="masthead">
+    <div class="auth-status">
+      {% if current_parent %}
+      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('logout') }}">Log out</a>
+      {% else %}
+      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
+      {% endif %}
+    </div>
+    <a class="home-link" href="{{ url_for('home') }}">← Home</a>
+    <h1 class="app-name">{% block heading %}Travel with Tots{% endblock %}</h1>
+    <p class="tagline">{% block tagline %}{% endblock %}</p>
+  </header>
+
+  <main class="layout">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <section class="card flash">
+      {% for message in messages %}
+      <p>{{ message }}</p>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <p>Travel with Tots — stress-free adventures for little ones.</p>
+  </footer>
+</body>
+</html>
