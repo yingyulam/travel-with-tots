@@ -10,6 +10,7 @@ import os
 from datetime import date
 from functools import wraps
 
+import requests
 from flask import (
     Flask,
     flash,
@@ -22,6 +23,7 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL, ask_website_chatbot
 from src.data_loader import FEATURE_LABELS, load_venues
 from src.db import (
     TRIP_FIELDS,
@@ -466,6 +468,28 @@ def find_nearby_route():
     data = request.get_json(silent=True) or {}
     venues = find_nearby(data.get("need", ""), VENUES)
     return jsonify({"need": data.get("need", ""), "venues": venues})
+
+
+@app.route("/chatbot", methods=["POST"])
+def chatbot_route():
+    """Answer a question about how the website works, as JSON."""
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    model = data.get("model")
+    if model not in ALLOWED_CHAT_MODELS:
+        model = DEFAULT_MODEL
+
+    try:
+        reply = ask_website_chatbot(message, model=model, history=data.get("history") or [])
+    except KeyError:
+        return jsonify({"error": "The chatbot isn't configured yet."}), 500
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "The chatbot is unavailable right now. Please try again."}), 502
+
+    return jsonify({"reply": reply})
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Travel with Tots — Plan your day</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
 </head>
 <body>
   <header class="masthead">
@@ -255,5 +256,8 @@
       syncAgeCap();
     }
   </script>
+
+  {% include "_chatbot_widget.html" %}
+  <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
 </body>
 </html>

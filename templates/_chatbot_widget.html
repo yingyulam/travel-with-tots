@@ -1,0 +1,23 @@
+<div class="twt-chatbot">
+  <button type="button" class="twt-chatbot-bubble" aria-label="Open help chat">💬</button>
+
+  <div class="twt-chatbot-panel" hidden>
+    <div class="twt-chatbot-header">Ask about Travel with Tots</div>
+
+    <div class="twt-chatbot-model-row">
+      <select>
+        <option value="openai/gpt-oss-20b:free" selected>GPT-OSS 20B (free)</option>
+        <option value="openai/gpt-4o-mini">GPT-4o mini</option>
+        <option value="anthropic/claude-sonnet-5">Claude Sonnet 5</option>
+      </select>
+      <a href="https://openrouter.ai/models" target="_blank" rel="noopener">More models ↗</a>
+    </div>
+
+    <div class="twt-chatbot-messages"></div>
+
+    <form class="twt-chatbot-form">
+      <input type="text" placeholder="Ask a question…" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+</div>

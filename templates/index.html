@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Travel with Tots</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
 </head>
 <body>
   <main class="hero">
@@ -41,5 +42,8 @@
     <p>Travel with Tots — stress-free adventures for little ones.</p>
     <p>&copy; 2026 Travel with Tots. All rights reserved.</p>
   </footer>
+
+  {% include "_chatbot_widget.html" %}
+  <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
 </body>
 </html>

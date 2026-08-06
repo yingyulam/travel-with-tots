@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Travel with Tots{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
 </head>
 <body>
   {% set is_dashboard = request.endpoint == 'dashboard' %}
@@ -44,5 +45,8 @@
   <footer class="footer">
     <p>Travel with Tots — stress-free adventures for little ones.</p>
   </footer>
+
+  {% include "_chatbot_widget.html" %}
+  <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
 </body>
 </html>
