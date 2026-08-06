@@ -4,6 +4,12 @@ What the site does: Travel with Tots plans realistic, low-stress single-day outi
 
 Who it's for: parents of young children, especially those visiting Vancouver and unfamiliar with the city.
 
+Account & data: parents sign up / log in to save their info. From the
+dashboard, they can add, edit, or remove a child's profile (name, age),
+and reopen any previously saved trip itinerary. The trip-planning form
+itself also lets you enter a child's details on the spot if you haven't
+saved one yet.
+
 Main features:
 1. Itinerary generation: parents enter their child's age and trip details, and the site generates a few candidate day plans paced around naps and feedings.
 2. Re-planning mid-day: if something changes (a nap runs long, the family falls behind schedule), the app proposes a new plan for the rest of the day. The original plan isn't lost — parents can switch back to it anytime.
