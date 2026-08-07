@@ -2,10 +2,11 @@
 
 import os
 import time
-from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+
+from . import rag
 
 load_dotenv()
 
@@ -20,8 +21,7 @@ ALLOWED_CHAT_MODELS = {
 
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
-KNOWLEDGE_BASE_PATH = Path(__file__).resolve().parent.parent / "data" / "knowledge_base.md"
-_WEBSITE_CHATBOT_PROMPT = None
+_WEBSITE_CHATBOT_TEMPLATE = None
 
 
 def _print_usage_report(model: str, usage: dict | None, elapsed: float) -> None:
@@ -63,32 +63,44 @@ def ask(message: str, model: str = DEFAULT_MODEL) -> str:
     return _call_openrouter([{"role": "user", "content": message}], model)
 
 
-def _load_website_chatbot_prompt() -> str:
+def _load_website_chatbot_template() -> str:
     with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
-        template = f.read()
-    knowledge_base = KNOWLEDGE_BASE_PATH.read_text()
-    return template.replace("{knowledge_base}", knowledge_base)
+        return f.read()
 
 
 def reload_website_chatbot_prompt() -> None:
-    """Force the next ask_website_chatbot call to re-read the prompt/knowledge base from disk."""
-    global _WEBSITE_CHATBOT_PROMPT
-    _WEBSITE_CHATBOT_PROMPT = None
+    """Force the next ask_website_chatbot call to re-read the prompt template from disk."""
+    global _WEBSITE_CHATBOT_TEMPLATE
+    _WEBSITE_CHATBOT_TEMPLATE = None
+
+
+def _format_sources(sources: list[dict]) -> str:
+    if not sources:
+        return "No relevant information was found in the knowledge base."
+    return "\n\n".join(
+        f"[Source {s['index']}] ({s['section']}, similarity {s['score']:.2f})\n{s['text']}"
+        for s in sources
+    )
 
 
 def ask_website_chatbot(
     message: str, model: str = DEFAULT_MODEL, history: list[dict] | None = None
-) -> str:
-    """Answer a question about the Travel with Tots website, using the
-    website_chatbot system prompt (with the knowledge base substituted in)
-    plus any prior turns in `history`."""
-    global _WEBSITE_CHATBOT_PROMPT
-    if _WEBSITE_CHATBOT_PROMPT is None:
-        _WEBSITE_CHATBOT_PROMPT = _load_website_chatbot_prompt()
+) -> dict:
+    """Answer a question about the Travel with Tots website, grounded only in
+    the top chunks retrieved from the knowledge base for this question.
+    Returns {"reply": str, "sources": list[dict]}."""
+    global _WEBSITE_CHATBOT_TEMPLATE
+    if _WEBSITE_CHATBOT_TEMPLATE is None:
+        _WEBSITE_CHATBOT_TEMPLATE = _load_website_chatbot_template()
+
+    sources = rag.retrieve(message)
+    system_prompt = _WEBSITE_CHATBOT_TEMPLATE.replace(
+        "{retrieved_chunks}", _format_sources(sources))
 
     messages = (
-        [{"role": "system", "content": _WEBSITE_CHATBOT_PROMPT}]
+        [{"role": "system", "content": system_prompt}]
         + (history or [])
         + [{"role": "user", "content": message}]
     )
-    return _call_openrouter(messages, model)
+    reply = _call_openrouter(messages, model)
+    return {"reply": reply, "sources": sources}

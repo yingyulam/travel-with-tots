@@ -23,10 +23,10 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from src import rag
 from src.agents import (
     ALLOWED_CHAT_MODELS,
     DEFAULT_MODEL,
-    KNOWLEDGE_BASE_PATH,
     WEBSITE_CHATBOT_PROMPT_PATH,
     ask_website_chatbot,
     reload_website_chatbot_prompt,
@@ -63,6 +63,10 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
 init_db()
+
+# Chunk + embed the knowledge base in the background; the chatbot widget
+# polls /rag/status and shows a progress animation until this finishes.
+rag.init_index_async()
 
 # Venue data never changes at runtime, so load it once at startup.
 VENUES = load_venues()
@@ -269,7 +273,7 @@ def dashboard():
 @admin_required
 def settings():
     """Edit the chatbot's knowledge base and system prompt."""
-    knowledge_base = KNOWLEDGE_BASE_PATH.read_text()
+    knowledge_base = rag.KNOWLEDGE_BASE_PATH.read_text()
     with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
         prompt = f.read()
     return render_template("settings.html", knowledge_base=knowledge_base, prompt=prompt)
@@ -279,11 +283,11 @@ def settings():
 @login_required
 @admin_required
 def save_knowledge_base():
-    """Save the chatbot's knowledge base."""
+    """Save the chatbot's knowledge base and re-chunk/re-embed it in the background."""
     content = request.form.get("content", "").replace("\r\n", "\n")
-    KNOWLEDGE_BASE_PATH.write_text(content)
-    reload_website_chatbot_prompt()
-    flash("Knowledge base saved.")
+    rag.KNOWLEDGE_BASE_PATH.write_text(content)
+    rag.rebuild_index(rag.get_chunk_size())
+    flash("Knowledge base saved. Re-indexing in the background.")
     return redirect(url_for("settings"))
 
 
@@ -298,6 +302,32 @@ def save_prompt():
     reload_website_chatbot_prompt()
     flash("Chatbot prompt saved.")
     return redirect(url_for("settings"))
+
+
+@app.route("/rag/status")
+def rag_status():
+    """Poll-able indexing status, used by the chatbot widget and Chunks page."""
+    return jsonify(rag.get_status())
+
+
+@app.route("/chunks")
+@login_required
+@admin_required
+def chunks():
+    """List every chunk the knowledge base was split into."""
+    return render_template(
+        "chunks.html", chunks=rag.list_chunks(), chunk_size=rag.get_chunk_size())
+
+
+@app.route("/chunks/rerun", methods=["POST"])
+@login_required
+@admin_required
+def chunks_rerun():
+    """Re-chunk and re-embed the knowledge base with a different chunk size."""
+    data = request.get_json(silent=True) or {}
+    chunk_size = _clamp_int(data.get("chunk_size"), 20, 2000, rag.DEFAULT_CHUNK_SIZE)
+    rag.rebuild_index(chunk_size)
+    return jsonify({"status": "started"})
 
 
 @app.route("/add-child", methods=["POST"])
@@ -537,14 +567,17 @@ def chatbot_route():
     if model not in ALLOWED_CHAT_MODELS:
         model = DEFAULT_MODEL
 
+    if rag.get_status()["state"] != "ready":
+        return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
+
     try:
-        reply = ask_website_chatbot(message, model=model, history=data.get("history") or [])
+        result = ask_website_chatbot(message, model=model, history=data.get("history") or [])
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except requests.exceptions.RequestException:
         return jsonify({"error": "The chatbot is unavailable right now. Please try again."}), 502
 
-    return jsonify({"reply": reply})
+    return jsonify(result)
 
 
 if __name__ == "__main__":

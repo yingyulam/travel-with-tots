@@ -19,6 +19,10 @@ instance/
 *.sqlite3
 data/app.db
 
+# RAG index (rebuildable from data/knowledge_base.md)
+data/chroma/
+data/rag_config.json
+
 # Environment variables
 .env
 .flaskenv

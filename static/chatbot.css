@@ -1,7 +1,7 @@
 /* Site-wide help chatbot widget. Self-contained (no dependency on style.css
    or landing.css variables, since not every page loads those). */
 
-.twt-chatbot {
+:root {
   --twt-navy: #1e3c5a;
   --twt-orange: #ff7043;
   --twt-orange-dark: #f4511e;
@@ -9,6 +9,9 @@
   --twt-line: #e2e8ef;
   --twt-surface: #f7f9fb;
   --twt-ink: #2b2b2b;
+}
+
+.twt-chatbot {
   font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   position: fixed;
   right: 20px;
@@ -17,6 +20,7 @@
 }
 
 .twt-chatbot-bubble {
+  position: relative;
   width: 56px;
   height: 56px;
   border-radius: 999px;
@@ -30,6 +34,19 @@
 
 .twt-chatbot-bubble:hover {
   background: var(--twt-orange-dark);
+}
+
+.twt-chatbot-bubble.indexing::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--twt-blue);
+  border: 2px solid #fff;
+  animation: twt-pulse 1.1s ease-in-out infinite;
 }
 
 .twt-chatbot-panel {
@@ -121,10 +138,13 @@
 }
 
 .twt-chatbot-form {
-  display: flex;
   gap: 6px;
   padding: 10px;
   border-top: 1px solid var(--twt-line);
+}
+
+.twt-chatbot-form:not([hidden]) {
+  display: flex;
 }
 
 .twt-chatbot-form input {
@@ -149,4 +169,105 @@
 .twt-chatbot-form button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Reusable RAG-indexing progress indicator (chatbot widget + Chunks page). */
+
+.twt-progress {
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: var(--twt-ink);
+}
+
+.twt-progress:not([hidden]) {
+  display: flex;
+}
+
+.twt-progress-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--twt-orange);
+  display: inline-block;
+  margin: 0 2px;
+  animation: twt-pulse 1.1s ease-in-out infinite;
+}
+
+.twt-progress-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.twt-progress-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes twt-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+.twt-progress.error .twt-progress-label {
+  color: #b3261e;
+}
+
+.twt-progress button {
+  border: none;
+  border-radius: 999px;
+  background: var(--twt-orange);
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Clickable [Source N] citations in chat replies. */
+
+.twt-citation {
+  display: inline-block;
+  border: none;
+  background: var(--twt-blue);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 5px;
+  border-radius: 999px;
+  margin: 0 1px;
+  cursor: pointer;
+}
+
+.twt-citation-detail {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #fff;
+  border-left: 3px solid var(--twt-orange);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.twt-citation-detail-meta {
+  color: var(--twt-navy);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* Chunks admin page. */
+
+.twt-chunk-row {
+  border-bottom: 1px solid var(--twt-line);
+  padding: 8px 0;
+}
+
+.twt-chunk-row summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--twt-navy);
+}
+
+.twt-chunk-text {
+  margin: 8px 0 0;
+  font-size: 13px;
+  white-space: pre-wrap;
 }

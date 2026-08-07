@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots — Chunks{% endblock %}
+{% block heading %}Knowledge base chunks{% endblock %}
+{% block tagline %}See exactly how the knowledge base was split up, and re-run chunking with a different size.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>Re-chunk knowledge base</h2>
+  <p class="meta">Current chunk size: {{ chunk_size }} tokens. {{ chunks|length }} chunks currently indexed.</p>
+  <form id="rerun-form" class="section-form">
+    <label class="field">
+      <span>Chunk size (tokens)</span>
+      <input type="number" name="chunk_size" value="{{ chunk_size }}" min="20" max="2000">
+    </label>
+    <button type="submit" class="cta" id="rerun-btn">Re-run chunking</button>
+  </form>
+  <div class="twt-progress" id="rerun-progress" hidden></div>
+</section>
+
+<section class="card">
+  <h2>Chunks ({{ chunks|length }})</h2>
+  <div class="twt-chunk-list">
+    {% for c in chunks %}
+    <details class="twt-chunk-row">
+      <summary>#{{ c.index }} · {{ c.section }} · {{ c.token_count }} tokens</summary>
+      <p class="twt-chunk-text">{{ c.text }}</p>
+    </details>
+    {% else %}
+    <p class="empty-plan">No chunks yet — the knowledge base may still be indexing.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='chunks.js') }}"></script>
+{% endblock %}

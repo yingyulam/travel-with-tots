@@ -15,7 +15,12 @@
 
     <div class="twt-chatbot-messages"></div>
 
-    <form class="twt-chatbot-form">
+    <div class="twt-progress" hidden>
+      <span class="twt-progress-dots"><span></span><span></span><span></span></span>
+      <span class="twt-progress-label">Preparing knowledge base…</span>
+    </div>
+
+    <form class="twt-chatbot-form" hidden>
       <input type="text" placeholder="Ask a question…" autocomplete="off">
       <button type="submit">Send</button>
     </form>
