@@ -164,6 +164,18 @@ def login_required(view):
     return wrapped
 
 
+def admin_required(view):
+    """Redirect logged-in non-admins away from admin-only pages. Stack under
+    @login_required, which already handles anonymous visitors."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _current_parent()["is_admin"]:
+            flash("You don't have access to that page.")
+            return redirect(url_for("dashboard"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
 @app.context_processor
 def inject_current_parent():
     """Make the logged-in parent (and their children, with computed age)
@@ -254,6 +266,7 @@ def dashboard():
 
 @app.route("/settings")
 @login_required
+@admin_required
 def settings():
     """Edit the chatbot's knowledge base and system prompt."""
     knowledge_base = KNOWLEDGE_BASE_PATH.read_text()
@@ -264,6 +277,7 @@ def settings():
 
 @app.route("/settings/knowledge-base", methods=["POST"])
 @login_required
+@admin_required
 def save_knowledge_base():
     """Save the chatbot's knowledge base."""
     content = request.form.get("content", "").replace("\r\n", "\n")
@@ -275,6 +289,7 @@ def save_knowledge_base():
 
 @app.route("/settings/prompt", methods=["POST"])
 @login_required
+@admin_required
 def save_prompt():
     """Save the chatbot's system prompt."""
     content = request.form.get("content", "").replace("\r\n", "\n")

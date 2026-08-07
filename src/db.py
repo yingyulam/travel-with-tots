@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS parents (
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     name          TEXT,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -102,6 +103,7 @@ def init_db():
         _ensure_columns(conn)
         _seed_venues(conn)
         _seed_sample_data(conn)
+        _seed_admin(conn)
 
 
 def _ensure_columns(conn):
@@ -111,6 +113,11 @@ def _ensure_columns(conn):
     if "plan_json" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN plan_json TEXT")
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(parents)")}
+    if "is_admin" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE parents ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
 
 
 def _seed_venues(conn):
@@ -155,6 +162,18 @@ def _seed_sample_data(conn):
              json.dumps(["stroller", "bus"]), "balanced", "dine_out",
              json.dumps(["kid_friendly", "has_nursing_room"]),
              "Naps well in the stroller.", "Loves parks and open space."))
+
+
+def _seed_admin(conn):
+    """Insert a default admin account once, so someone can log in to the
+    settings page. Idempotent: skipped once any admin account exists."""
+    if conn.execute("SELECT COUNT(*) FROM parents WHERE is_admin = 1").fetchone()[0]:
+        return
+    with conn:
+        conn.execute(
+            "INSERT INTO parents (email, password_hash, name, is_admin) "
+            "VALUES (?, ?, ?, 1)",
+            ("admin@travelwithtots.app", generate_password_hash("admin1234"), "Admin"))
 
 
 def _write(sql, params):
