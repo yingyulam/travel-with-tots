@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots — Settings{% endblock %}
+{% block heading %}Chatbot settings{% endblock %}
+{% block tagline %}Edit what the chatbot knows and how it answers.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <form method="post" action="{{ url_for('save_knowledge_base') }}" class="section-form">
+    <h2>Knowledge base</h2>
+    <p class="meta">Facts the chatbot uses to answer questions (data/knowledge_base.md).</p>
+    <label class="field field-full">
+      <textarea name="content" rows="20">{{ knowledge_base }}</textarea>
+    </label>
+    <button type="submit" class="cta">Save knowledge base</button>
+  </form>
+</section>
+
+<section class="card">
+  <form method="post" action="{{ url_for('save_prompt') }}" class="section-form">
+    <h2>Chatbot prompt</h2>
+    <p class="meta">The chatbot's role and instructions (src/prompts/website_chatbot.txt).</p>
+    <label class="field field-full">
+      <textarea name="content" rows="20">{{ prompt }}</textarea>
+    </label>
+    <button type="submit" class="cta">Save prompt</button>
+  </form>
+</section>
+{% endblock %}

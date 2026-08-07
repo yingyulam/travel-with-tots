@@ -38,12 +38,15 @@
   bottom: 68px;
   width: 350px;
   max-height: 440px;
-  display: flex;
   flex-direction: column;
   background: #fff;
   border-radius: 18px;
   box-shadow: 0 6px 24px rgba(30, 60, 90, 0.18);
   overflow: hidden;
+}
+
+.twt-chatbot-panel:not([hidden]) {
+  display: flex;
 }
 
 .twt-chatbot-header {

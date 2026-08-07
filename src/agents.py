@@ -19,6 +19,7 @@ ALLOWED_CHAT_MODELS = {
 }
 
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
 KNOWLEDGE_BASE_PATH = Path(__file__).resolve().parent.parent / "data" / "knowledge_base.md"
 _WEBSITE_CHATBOT_PROMPT = None
 
@@ -63,10 +64,16 @@ def ask(message: str, model: str = DEFAULT_MODEL) -> str:
 
 
 def _load_website_chatbot_prompt() -> str:
-    with open(os.path.join(PROMPTS_DIR, "website_chatbot.txt")) as f:
+    with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
         template = f.read()
     knowledge_base = KNOWLEDGE_BASE_PATH.read_text()
     return template.replace("{knowledge_base}", knowledge_base)
+
+
+def reload_website_chatbot_prompt() -> None:
+    """Force the next ask_website_chatbot call to re-read the prompt/knowledge base from disk."""
+    global _WEBSITE_CHATBOT_PROMPT
+    _WEBSITE_CHATBOT_PROMPT = None
 
 
 def ask_website_chatbot(

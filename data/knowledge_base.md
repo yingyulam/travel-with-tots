@@ -61,8 +61,3 @@ yingyu.rain.lin@gmail.com
 <!-- e.g. cancellation/refund policy, privacy notes, terms of use -->
 
 ## FAQs
-
-<!-- Add Q&A pairs here for things not already covered above (e.g. support,
-     billing, or policy questions). No need to restate facts that are
-     already in Features / Account & Data — the chatbot can answer those
-     directly from those sections. -->

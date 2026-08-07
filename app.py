@@ -23,7 +23,14 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL, ask_website_chatbot
+from src.agents import (
+    ALLOWED_CHAT_MODELS,
+    DEFAULT_MODEL,
+    KNOWLEDGE_BASE_PATH,
+    WEBSITE_CHATBOT_PROMPT_PATH,
+    ask_website_chatbot,
+    reload_website_chatbot_prompt,
+)
 from src.data_loader import FEATURE_LABELS, load_venues
 from src.db import (
     TRIP_FIELDS,
@@ -243,6 +250,39 @@ def dashboard():
     places = get_logged_venues_for_parent(parent["id"])
 
     return render_template("dashboard.html", parent=parent, trips=trips, places=places)
+
+
+@app.route("/settings")
+@login_required
+def settings():
+    """Edit the chatbot's knowledge base and system prompt."""
+    knowledge_base = KNOWLEDGE_BASE_PATH.read_text()
+    with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
+        prompt = f.read()
+    return render_template("settings.html", knowledge_base=knowledge_base, prompt=prompt)
+
+
+@app.route("/settings/knowledge-base", methods=["POST"])
+@login_required
+def save_knowledge_base():
+    """Save the chatbot's knowledge base."""
+    content = request.form.get("content", "").replace("\r\n", "\n")
+    KNOWLEDGE_BASE_PATH.write_text(content)
+    reload_website_chatbot_prompt()
+    flash("Knowledge base saved.")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/prompt", methods=["POST"])
+@login_required
+def save_prompt():
+    """Save the chatbot's system prompt."""
+    content = request.form.get("content", "").replace("\r\n", "\n")
+    with open(WEBSITE_CHATBOT_PROMPT_PATH, "w") as f:
+        f.write(content)
+    reload_website_chatbot_prompt()
+    flash("Chatbot prompt saved.")
+    return redirect(url_for("settings"))
 
 
 @app.route("/add-child", methods=["POST"])
