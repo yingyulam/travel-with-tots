@@ -32,3 +32,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Claude Code
+CLAUDE.md
