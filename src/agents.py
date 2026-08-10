@@ -74,6 +74,19 @@ def reload_website_chatbot_prompt() -> None:
     _WEBSITE_CHATBOT_TEMPLATE = None
 
 
+def _space_out_bullets(text: str) -> str:
+    """Ensure a blank line before every '- ' bullet line. Models don't always
+    follow the prompt's spacing instructions reliably, so this guarantees
+    lists never render as one dense block regardless of model compliance."""
+    lines = text.split("\n")
+    spaced = []
+    for line in lines:
+        if line.strip().startswith("- ") and spaced and spaced[-1].strip() != "":
+            spaced.append("")
+        spaced.append(line)
+    return "\n".join(spaced)
+
+
 def _format_sources(sources: list[dict]) -> str:
     if not sources:
         return "No relevant information was found in the knowledge base."
@@ -102,5 +115,5 @@ def ask_website_chatbot(
         + (history or [])
         + [{"role": "user", "content": message}]
     )
-    reply = _call_openrouter(messages, model)
+    reply = _space_out_bullets(_call_openrouter(messages, model))
     return {"reply": reply, "sources": sources}
