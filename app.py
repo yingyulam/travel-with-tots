@@ -27,8 +27,12 @@ from src import rag
 from src.agents import (
     ALLOWED_CHAT_MODELS,
     DEFAULT_MODEL,
+    PLANNER_PROMPT_PATH,
     WEBSITE_CHATBOT_PROMPT_PATH,
+    PlanningAgent,
+    PlanningAgentError,
     ask_website_chatbot,
+    reload_planner_prompt,
     reload_website_chatbot_prompt,
 )
 from src.data_loader import FEATURE_LABELS, load_venues
@@ -89,6 +93,8 @@ DEFAULTS = {
     "bedtime": "20:00",
     "nap_1": "",
     "nap_2": "",
+    "feeding_1": "",
+    "feeding_2": "",
     "age_years": "2",
     "age_months": "0",
     "destination": "Vancouver",
@@ -136,6 +142,8 @@ def _read_form(form):
         "bedtime": form.get("bedtime") or DEFAULTS["bedtime"],
         "nap_1": form.get("nap_1", ""),
         "nap_2": form.get("nap_2", ""),
+        "feeding_1": form.get("feeding_1", ""),
+        "feeding_2": form.get("feeding_2", ""),
         "age_years": age_years,
         "age_months": age_months,
         "destination": form.get("destination") or DEFAULTS["destination"],
@@ -277,7 +285,11 @@ def settings():
     knowledge_base = rag.KNOWLEDGE_BASE_PATH.read_text()
     with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
         prompt = f.read()
-    return render_template("settings.html", knowledge_base=knowledge_base, prompt=prompt)
+    with open(PLANNER_PROMPT_PATH) as f:
+        planner_prompt = f.read()
+    return render_template(
+        "settings.html", knowledge_base=knowledge_base, prompt=prompt,
+        planner_prompt=planner_prompt)
 
 
 @app.route("/settings/knowledge-base", methods=["POST"])
@@ -302,6 +314,19 @@ def save_prompt():
         f.write(content)
     reload_website_chatbot_prompt()
     flash("Chatbot prompt saved.")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/planner-prompt", methods=["POST"])
+@login_required
+@admin_required
+def save_planner_prompt():
+    """Save the AI itinerary planner's system prompt."""
+    content = request.form.get("content", "").replace("\r\n", "\n")
+    with open(PLANNER_PROMPT_PATH, "w") as f:
+        f.write(content)
+    reload_planner_prompt()
+    flash("Planner prompt saved.")
     return redirect(url_for("settings"))
 
 
@@ -441,6 +466,26 @@ def save_trip():
     return redirect(url_for("dashboard"))
 
 
+def _resolve_plan_child(form, parent):
+    """If the parent is logged in and has children, pick which child's age
+    drives the plan (respecting any checked child_ids / plan_child_id in the
+    form) and overwrite the form's age fields to match. No-op otherwise.
+    Shared by /plan and /plan/ai so both read the same child."""
+    children_by_id = {str(c["id"]): c for c in get_children(parent["id"])} if parent else {}
+    if not children_by_id:
+        return form
+    checked_ids = [cid for cid in form["child_ids"] if cid in children_by_id] \
+        or list(children_by_id)
+    plan_child_id = form["plan_child_id"] if form["plan_child_id"] in checked_ids else None
+    if not plan_child_id:
+        plan_child_id = min(checked_ids,
+                             key=lambda cid: _total_months(children_by_id[cid]["date_of_birth"]))
+    form["child_ids"], form["plan_child_id"] = checked_ids, plan_child_id
+    years, months = compute_age(children_by_id[plan_child_id]["date_of_birth"])
+    form["age_years"], form["age_months"] = str(years), str(months)
+    return form
+
+
 @app.route("/plan", methods=["GET", "POST"])
 def plan():
     """Planning page: the trip form and, after generating, comparable plans."""
@@ -449,18 +494,7 @@ def plan():
     else:
         form = dict(DEFAULTS)
 
-    parent = _current_parent()
-    children_by_id = {str(c["id"]): c for c in get_children(parent["id"])} if parent else {}
-    if children_by_id:
-        checked_ids = [cid for cid in form["child_ids"] if cid in children_by_id] \
-            or list(children_by_id)
-        plan_child_id = form["plan_child_id"] if form["plan_child_id"] in checked_ids else None
-        if not plan_child_id:
-            plan_child_id = min(checked_ids,
-                                 key=lambda cid: _total_months(children_by_id[cid]["date_of_birth"]))
-        form["child_ids"], form["plan_child_id"] = checked_ids, plan_child_id
-        years, months = compute_age(children_by_id[plan_child_id]["date_of_birth"])
-        form["age_years"], form["age_months"] = str(years), str(months)
+    _resolve_plan_child(form, _current_parent())
 
     if request.method == "POST":
         plans = generate_plans(VENUES, form)
@@ -485,6 +519,50 @@ def plan():
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
     )
+
+
+@app.route("/plan/ai", methods=["POST"])
+def plan_ai():
+    """One AI-assisted plan for a single theme, as JSON. Per-theme and on
+    demand so a parent only spends a model call on the topic they asked for."""
+    form = _read_form(request.form)
+    _resolve_plan_child(form, _current_parent())
+
+    theme = request.form.get("ai_theme", "")
+    model = request.form.get("ai_model")
+    if model not in ALLOWED_CHAT_MODELS:
+        model = DEFAULT_MODEL
+    age_months = int(form["age_years"]) * 12 + int(form["age_months"])
+
+    try:
+        result = PlanningAgent(model=model).generate_plan_for_theme(
+            theme,
+            destination=form["destination"], age_months=age_months,
+            nap_1=form["nap_1"], nap_2=form["nap_2"],
+            feeding_1=form["feeding_1"], feeding_2=form["feeding_2"],
+            pace=form["pace"], wake_up=form["wake_up"], bedtime=form["bedtime"],
+            features=form["features"], extra_notes=form["extra_notes"])
+    except KeyError:
+        return jsonify({"error": "The AI planner isn't configured yet."}), 500
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "The AI planner is unavailable right now. Please try again."}), 502
+    except PlanningAgentError as e:
+        return jsonify({"error": str(e)}), 502
+
+    plan_obj = Plan(label=result["label"], blurb=result["blurb"],
+                    stops=result["stops"], source="ai")
+    return jsonify({
+        "plan": plan_obj.to_dict(),
+        "context": {
+            "destination": form["destination"],
+            "transit": form["transit"],
+            "features": form["features"],
+            "bedtime": form["bedtime"],
+        },
+        "trip_form": form,
+        "model": result["model"],
+        "response_time": result["response_time"],
+    })
 
 
 def _build_trip(destination, transit, features, bedtime, plan_data):

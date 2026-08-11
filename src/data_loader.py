@@ -21,9 +21,9 @@ FEATURE_LABELS = {
 FEATURE_KEYS = tuple(FEATURE_LABELS)
 
 
-def _maps_url(name):
-    """Build a Google Maps search link from a venue name."""
-    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', Vancouver')}"
+def maps_url(name, city="Vancouver"):
+    """Build a Google Maps search link from a venue name and city."""
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 
 
 def load_venues():
@@ -31,5 +31,5 @@ def load_venues():
     with open(DATA_FILE, encoding="utf-8") as f:
         venues = json.load(f)
     for venue in venues:
-        venue["maps_url"] = _maps_url(venue["name"])
+        venue["maps_url"] = maps_url(venue["name"])
     return venues

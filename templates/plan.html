@@ -21,7 +21,7 @@
     <!-- Trip details form -->
     <section class="card form-card">
       <h2>Your trip</h2>
-      <form method="post" action="{{ url_for('plan') }}">
+      <form method="post" action="{{ url_for('plan') }}" id="plan-form">
         {% if current_parent and current_parent_children %}
         <fieldset class="group">
           <legend>Who's on this trip? <em>(pick one or more)</em></legend>
@@ -69,6 +69,17 @@
           <label class="field">
             <span>Nap time 2 <em>(optional)</em></span>
             <input type="time" name="nap_2" value="{{ form.nap_2 }}">
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Feeding time 1 <em>(optional)</em></span>
+            <input type="time" name="feeding_1" value="{{ form.feeding_1 }}">
+          </label>
+          <label class="field">
+            <span>Feeding time 2 <em>(optional)</em></span>
+            <input type="time" name="feeding_2" value="{{ form.feeding_2 }}">
           </label>
         </div>
 
@@ -173,7 +184,7 @@
                     placeholder="e.g. do not like staying in stroller all the time">{{ form.extra_notes }}</textarea>
         </label>
 
-        <button type="submit" class="cta">Generate my day</button>
+        <button type="submit" class="cta">Plan my day</button>
       </form>
     </section>
 
@@ -183,10 +194,22 @@
       <h2>Compare your options</h2>
       {% if plans %}
       <p class="picker-hint">Pick a plan and tap “Start this day”.</p>
-      <div class="plan-grid">
+      <div class="ai-model-row">
+        <label for="ai-model-select">AI model</label>
+        <select id="ai-model-select">
+          <option value="google/gemma-4-26b-a4b-it:free" selected>Gemma 4 26B (free)</option>
+          <option value="openai/gpt-4o-mini">GPT-4o mini</option>
+          <option value="anthropic/claude-sonnet-5">Claude Sonnet 5</option>
+        </select>
+        <a href="https://openrouter.ai/models" target="_blank" rel="noopener">More models ↗</a>
+      </div>
+      <div class="plan-grid" id="plan-grid">
         {% for plan in plans %}
-        <div class="plan-option">
-          <h3 class="plan-option-title">{{ plan.label }}</h3>
+        <div class="plan-option" data-theme="{{ plan.label }}" data-source="{{ plan.source }}">
+          <h3 class="plan-option-title">
+            {{ plan.label }}
+            {% if plan.source == 'ai' %}<span class="badge">✨ AI-suggested plan</span>{% endif %}
+          </h3>
           <p class="plan-blurb">{{ plan.blurb }}</p>
           <ol class="preview-list">
             {% for stop in plan.preview() %}
@@ -221,6 +244,12 @@
           {% else %}
           <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
           {% endif %}
+          {% if plan.source != 'ai' %}
+          <div class="ai-plan-trigger">
+            <button type="button" class="cta-secondary ai-theme-btn" data-theme="{{ plan.label }}">✨ Try AI-assisted day</button>
+            <p class="ai-theme-status" hidden></p>
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -251,6 +280,93 @@
       years.addEventListener("input", syncAgeCap);
       syncAgeCap();
     }
+
+    // Per-theme AI plans, generated only when asked for, so no model call is
+    // spent on a topic the parent isn't interested in.
+    const CAN_SAVE = {{ (current_parent and form.child_ids) | tojson }};
+    const TRIP_URL = "{{ url_for('trip') }}";
+    const SAVE_URL = "{{ url_for('save_trip') }}";
+    const AI_URL = "{{ url_for('plan_ai') }}";
+    const modelSelect = document.getElementById("ai-model-select");
+
+    function esc(text) {
+      const div = document.createElement("div");
+      div.textContent = text == null ? "" : String(text);
+      return div.innerHTML;
+    }
+
+    function previewName(stop) {
+      if (stop.kind === "meal") {
+        return "🍽 Lunch break" + (stop.venue ? " · " + esc(stop.venue.name) : "");
+      }
+      if (stop.venue) return esc(stop.venue.name);
+      if (stop.kind === "leave") return "🚗 Leave your accommodation";
+      if (stop.kind === "bonus") return "Free time";
+      return esc(stop.kind);
+    }
+
+    function buildAiCard(data) {
+      const plan = data.plan;
+      const preview = plan.stops.slice(0, 3);
+      const moreCount = plan.stops.length - preview.length;
+      const items = preview.map((stop) =>
+        `<li><span class="preview-time">${esc(stop.time)}</span>` +
+        `<span class="preview-name">${previewName(stop)}</span></li>`).join("");
+      const more = moreCount > 0
+        ? `<li class="preview-more">+ ${moreCount} more…</li>` : "";
+      const saveBlock = CAN_SAVE
+        ? `<form method="post" action="${SAVE_URL}" class="save-plan-form">
+             <textarea name="plan" hidden>${esc(JSON.stringify(plan))}</textarea>
+             <textarea name="trip_form" hidden>${esc(JSON.stringify(data.trip_form))}</textarea>
+             <button type="submit" class="cta-secondary">💾 Save this plan</button>
+           </form>` : "";
+
+      const card = document.createElement("div");
+      card.className = "plan-option";
+      card.dataset.theme = plan.label;
+      card.dataset.source = "ai";
+      card.innerHTML =
+        `<h3 class="plan-option-title">${esc(plan.label)} <span class="badge">✨ AI-suggested plan</span></h3>
+         <p class="plan-blurb">${esc(plan.blurb)}</p>
+         <ol class="preview-list">${items}${more}</ol>
+         <form method="post" action="${TRIP_URL}">
+           <textarea name="plan" hidden>${esc(JSON.stringify(plan))}</textarea>
+           <textarea name="context" hidden>${esc(JSON.stringify(data.context))}</textarea>
+           <button type="submit" class="cta">Start this day</button>
+         </form>
+         ${saveBlock}
+         <p class="save-plan-hint">Generated by ${esc(data.model)} in ${esc(data.response_time)}s.</p>`;
+      return card;
+    }
+
+    document.querySelectorAll(".ai-theme-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const theme = btn.dataset.theme;
+        const status = btn.parentElement.querySelector(".ai-theme-status");
+        const ruleCard = btn.closest(".plan-option");
+        btn.disabled = true;
+        status.hidden = false;
+        status.textContent = `Building an AI ${theme} day…`;
+        try {
+          const body = new FormData(document.getElementById("plan-form"));
+          body.append("ai_theme", theme);
+          body.append("ai_model", modelSelect.value);
+          const res = await fetch(AI_URL, { method: "POST", body });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Something went wrong.");
+          // Replace any previous AI card for this theme rather than piling up.
+          const existing = document.querySelector(
+            `.plan-option[data-source="ai"][data-theme="${CSS.escape(theme)}"]`);
+          if (existing) existing.remove();
+          ruleCard.after(buildAiCard(data));
+          status.hidden = true;
+        } catch (e) {
+          status.textContent = e.message || "Couldn't build an AI plan right now.";
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
   </script>
 
   {% include "_chatbot_widget.html" %}

@@ -20,13 +20,15 @@ class Plan:
     label: str
     blurb: str
     stops: list  # list of stop dicts: {time, kind, venue, reason}
+    source: str = "rule"  # "rule" or "ai" -- which planner produced this
 
     def preview(self, limit=3):
         """First few stops, for the comparison card on the planning page."""
         return self.stops[:limit]
 
     def to_dict(self):
-        return {"label": self.label, "blurb": self.blurb, "stops": self.stops}
+        return {"label": self.label, "blurb": self.blurb, "stops": self.stops,
+                "source": self.source}
 
     @classmethod
     def from_dict(cls, data):
@@ -34,6 +36,7 @@ class Plan:
             label=data.get("label", "Plan"),
             blurb=data.get("blurb", ""),
             stops=data.get("stops", []),
+            source=data.get("source", "rule"),
         )
 
 

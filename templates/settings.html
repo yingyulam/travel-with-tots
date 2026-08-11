@@ -25,4 +25,15 @@
     <button type="submit" class="cta">Save prompt</button>
   </form>
 </section>
+
+<section class="card">
+  <form method="post" action="{{ url_for('save_planner_prompt') }}" class="section-form">
+    <h2>Planner prompt</h2>
+    <p class="meta">The AI itinerary planner's role and instructions (src/prompts/planner.txt).</p>
+    <label class="field field-full">
+      <textarea name="content" rows="20">{{ planner_prompt }}</textarea>
+    </label>
+    <button type="submit" class="cta">Save planner prompt</button>
+  </form>
+</section>
 {% endblock %}

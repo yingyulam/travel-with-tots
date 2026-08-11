@@ -4,12 +4,12 @@ A web app that builds a **nap-friendly, single-day itinerary** for parents
 travelling with young children (ages 0-5), backed by parent accounts and an
 AI chatbot that answers questions about how the site works.
 
-A parent enters their day's shape: wake-up time, bedtime, nap time(s), the
-kid's age, destination, how they're getting around, and which family-friendly
-features matter, and the app arranges a timed list of suitable stops between
-wake-up and bedtime. Parents can create an account to save children's
-profiles and past trips, and a chatbot widget on every page can answer
-questions about how the site works.
+A parent enters their day's shape: wake-up time, bedtime, nap time(s),
+feeding time(s), the kid's age, destination, how they're getting around, and
+which family-friendly features matter, and the app arranges a timed list of
+suitable stops between wake-up and bedtime. Parents can create an account to
+save children's profiles and past trips, and a chatbot widget on every page
+can answer questions about how the site works.
 
 The core planning flow is split into **two pages** so planning and doing stay
 separate.
@@ -29,6 +29,24 @@ separate.
 - Each card has a **"Start this day"** button that carries the chosen plan to
   the in-trip page. `generate_plans` produces `Plan` objects; picking one
   creates a `Trip`.
+- Each themed card also has a **"✨ Try AI-assisted day"** button that builds
+  an AI-generated plan **for that topic only**, on demand, so no model call is
+  spent on a topic the parent isn't interested in. It's powered by
+  `PlanningAgent` (`src/agents.py`) instead of the rule-based `generate_plans`,
+  with a shared model dropdown (free/paid) and a system prompt
+  (`src/prompts/planner.txt`, editable from `/settings`). Before calling the
+  model, it queries the `venues` table for **curated** venues matching the
+  destination and the child's age range, and passes only that list into the
+  prompt; the model must choose exclusively from those `venue_id`s, and any
+  stop referencing one outside the list is dropped rather than shown, so it can
+  never surface a venue that doesn't exist. The result appears as a new card
+  right beside its rule-based counterpart, tagged **"✨ AI-suggested plan"** so
+  the two are easy to tell apart. Asking again for the same topic replaces that
+  topic's AI card rather than piling up. If a response doesn't validate even
+  after one corrective retry, an inline error is shown on that card's button
+  and every other card is left untouched. Picking an AI plan works exactly like
+  picking a rule-based one: same `Plan`/`Trip` shape, no visible difference on
+  the in-trip page.
 
 ### Page 2 - In-trip (`/trip`)
 
@@ -167,11 +185,12 @@ travel-with-tots/
 │   ├── models.py               # Plan and Trip domain objects
 │   ├── itinerary.py            # generate_plans: themed candidate Plan objects
 │   ├── interactions.py         # replan() + find_nearby() placeholders
-│   ├── agents.py                # chatbot logic, routed through OpenRouter
+│   ├── agents.py                # chatbot + PlanningAgent logic, routed through OpenRouter
 │   ├── rag.py                   # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py               # saves/reads thumbs up/down chatbot ratings
 │   └── prompts/
-│       └── website_chatbot.txt  # chatbot system prompt
+│       ├── website_chatbot.txt  # chatbot system prompt
+│       └── planner.txt          # AI itinerary planner system prompt
 ├── templates/
 │   ├── index.html              # marketing landing page
 │   ├── plan.html                # Page 1: planning form + comparison cards
@@ -179,7 +198,7 @@ travel-with-tots/
 │   ├── base.html                 # shared layout for account/admin pages
 │   ├── login.html, signup.html   # auth pages
 │   ├── dashboard.html            # saved children + trips
-│   ├── settings.html             # admin: edit knowledge base + prompt
+│   ├── settings.html             # admin: edit knowledge base + prompts
 │   ├── chunks.html               # admin: view and re-run chunking
 │   ├── results.html              # admin: browse chatbot ratings + stats
 │   ├── _chatbot_widget.html      # floating chat widget, included on every page
@@ -208,10 +227,13 @@ databases via a small in-code migration):
 - **parents**: one row per account (email login, password hash, `is_admin` flag).
 - **children**: name, gender, and **date of birth** (age is computed from the
   DOB via `compute_age`, never stored). References `parents`.
-- **trips**: a single outing's nap schedule and details. References `children`.
+- **trips**: a single outing's nap/feeding schedule and details. References `children`.
 - **venues**: kid-friendly places, seeded from `venues.json` and open to
   user submissions. A `source` column is constrained by a `CHECK` to
-  `municipal_open_data` | `user_submitted` | `curated`.
+  `municipal_open_data` | `user_submitted` | `curated`. Curated rows also
+  carry `city`, `category`, hours, and an age range (`min_age_months` /
+  `max_age_months`), used to pick candidate venues for the AI itinerary
+  planner.
 
 Parent, child, and trip relationships use `FOREIGN KEY` constraints with
 `PRAGMA foreign_keys = ON` (enabled per connection). All writes are
@@ -228,6 +250,7 @@ parameterized and run inside a transaction.
 | `/add-child`, `/edit-child/<id>`, `/delete-child/<id>` | POST | Manage saved children |
 | `/log-place`              | POST     | Save a user-submitted venue                            |
 | `/plan`                   | GET/POST | Page 1: trip form and candidate plan cards             |
+| `/plan/ai`                 | POST     | Page 1: AI-assisted plan for one theme (JSON out)     |
 | `/save-trip`               | POST     | Save a generated plan to the account                   |
 | `/trip`                    | GET/POST | Page 2: in-trip view for the chosen plan               |
 | `/trip/<id>`                | GET      | Reopen a previously saved trip                        |
@@ -236,8 +259,8 @@ parameterized and run inside a transaction.
 | `/chatbot`                  | POST     | Ask the chatbot a question (JSON in/out)              |
 | `/feedback`                 | POST     | Save a thumbs up/down rating on a chatbot response    |
 | `/rag/status`               | GET      | Poll-able chatbot indexing status                     |
-| `/settings`                 | GET      | Admin: view/edit knowledge base + prompt              |
-| `/settings/knowledge-base`, `/settings/prompt` | POST | Admin: save the knowledge base or prompt |
+| `/settings`                 | GET      | Admin: view/edit knowledge base + prompts              |
+| `/settings/knowledge-base`, `/settings/prompt`, `/settings/planner-prompt` | POST | Admin: save the knowledge base, chatbot prompt, or planner prompt |
 | `/chunks`                   | GET      | Admin: list every chatbot knowledge-base chunk        |
 | `/chunks/rerun`             | POST     | Admin: re-chunk and re-embed at a different size      |
 | `/results`                  | GET      | Admin: browse rated chatbot responses + stats         |

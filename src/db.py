@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS trips (
     bedtime       TEXT,
     nap_1         TEXT,
     nap_2         TEXT,
+    feeding_1     TEXT,
+    feeding_2     TEXT,
     destination   TEXT,
     accommodation TEXT,
     transit       TEXT,                   -- JSON array of transit modes
@@ -77,14 +79,29 @@ CREATE TABLE IF NOT EXISTS venues (
     source              TEXT NOT NULL CHECK (
                             source IN ('municipal_open_data', 'user_submitted', 'curated')),
     parent_id           INTEGER REFERENCES parents(id) ON DELETE CASCADE,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    city                TEXT,
+    category            TEXT,
+    nap_friendly        INTEGER NOT NULL DEFAULT 0,
+    can_eat             INTEGER NOT NULL DEFAULT 0,
+    open_time           TEXT,
+    close_time          TEXT,
+    min_age_months      INTEGER NOT NULL DEFAULT 0,
+    max_age_months      INTEGER NOT NULL DEFAULT 60
 );
 """
 
+# Feature/flag columns on `venues` that the AI planner is allowed to filter
+# candidates by -- never string-interpolate a column name that isn't in here.
+CANDIDATE_FEATURE_COLUMNS = {
+    "kid_friendly", "has_family_room", "has_nursing_room",
+    "stroller_accessible", "nap_friendly", "can_eat",
+}
+
 TRIP_FIELDS = (
-    "trip_date", "wake_up", "bedtime", "nap_1", "nap_2", "destination",
-    "accommodation", "transit", "pace", "dining", "features",
-    "nap_notes", "extra_notes", "plan_label", "plan_json",
+    "trip_date", "wake_up", "bedtime", "nap_1", "nap_2", "feeding_1",
+    "feeding_2", "destination", "accommodation", "transit", "pace", "dining",
+    "features", "nap_notes", "extra_notes", "plan_label", "plan_json",
 )
 
 
@@ -102,6 +119,7 @@ def init_db():
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
         _seed_venues(conn)
+        _backfill_venue_details(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
 
@@ -113,11 +131,27 @@ def _ensure_columns(conn):
     if "plan_json" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN plan_json TEXT")
+    if "feeding_1" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips ADD COLUMN feeding_1 TEXT")
+            conn.execute("ALTER TABLE trips ADD COLUMN feeding_2 TEXT")
 
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(parents)")}
     if "is_admin" not in existing:
         with conn:
             conn.execute("ALTER TABLE parents ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
+    if "city" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE venues ADD COLUMN city TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN category TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN nap_friendly INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE venues ADD COLUMN can_eat INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE venues ADD COLUMN open_time TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN close_time TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN min_age_months INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE venues ADD COLUMN max_age_months INTEGER NOT NULL DEFAULT 60")
 
 
 def _seed_venues(conn):
@@ -128,14 +162,39 @@ def _seed_venues(conn):
     rows = [
         (v["name"], v["type"], v["neighbourhood"], int(v["kid_friendly"]),
          int(v["has_family_room"]), int(v["has_nursing_room"]),
-         int(v["stroller_accessible"]), "curated")
+         int(v["stroller_accessible"]), "curated", "Vancouver", v["category"],
+         int(v["nap_friendly"]), int(v["can_eat"]), v["open"], v["close"])
         for v in venues
     ]
     with conn:  # single transaction for the whole seed
         conn.executemany(
             "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
-            "has_family_room, has_nursing_room, stroller_accessible, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+            "has_family_room, has_nursing_room, stroller_accessible, source, "
+            "city, category, nap_friendly, can_eat, open_time, close_time) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+
+
+def _backfill_venue_details(conn):
+    """Fill in city/category/hours/nap/eat on curated rows that predate those
+    columns, matched by name against the bundled seed file. Idempotent: rows
+    that already have a city are left untouched, so this is safe to run on
+    every startup."""
+    pending = conn.execute(
+        "SELECT id, name FROM venues WHERE source = 'curated' AND city IS NULL"
+    ).fetchall()
+    if not pending:
+        return
+    by_name = {v["name"]: v for v in json.loads(VENUES_SEED.read_text(encoding="utf-8"))}
+    with conn:
+        for row in pending:
+            v = by_name.get(row["name"])
+            if not v:
+                continue
+            conn.execute(
+                "UPDATE venues SET city = ?, category = ?, nap_friendly = ?, "
+                "can_eat = ?, open_time = ?, close_time = ? WHERE id = ?",
+                ("Vancouver", v["category"], int(v["nap_friendly"]),
+                 int(v["can_eat"]), v["open"], v["close"], row["id"]))
 
 
 def _seed_sample_data(conn):
@@ -275,6 +334,23 @@ def get_trip_for_parent(parent_id, trip_id):
             "JOIN children ON children.id = trips.child_id "
             "WHERE children.parent_id = ? AND trips.id = ?",
             (parent_id, trip_id)).fetchone()
+
+
+def get_candidate_venues(city, age_months, features=None, limit=20):
+    """Curated venues in `city` (substring match) whose age range covers
+    `age_months`, optionally narrowed by feature tags. Used to ground the AI
+    planning agent -- it must never reference a venue outside this list."""
+    wanted = [f for f in (features or []) if f in CANDIDATE_FEATURE_COLUMNS]
+    clauses = ["source = 'curated'", "city LIKE ?",
+               "min_age_months <= ?", "max_age_months >= ?"]
+    params = [f"%{city}%", age_months, age_months]
+    for feature in wanted:
+        clauses.append(f"{feature} = 1")
+    params.append(limit)
+    with closing(connect()) as conn:
+        return conn.execute(
+            f"SELECT * FROM venues WHERE {' AND '.join(clauses)} "
+            "ORDER BY name LIMIT ?", params).fetchall()
 
 
 def get_logged_venues_for_parent(parent_id):

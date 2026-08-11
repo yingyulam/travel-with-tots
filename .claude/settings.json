@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -b cookies2.txt -X POST http://localhost:8017/plan/ai --data-urlencode wake_up=07:00 --data-urlencode bedtime=20:00 --data-urlencode nap_1=13:00 --data-urlencode feeding_1= --data-urlencode feeding_2= --data-urlencode destination=Nowhereville --data-urlencode transit=stroller --data-urlencode pace=balanced --data-urlencode dining=dine_out --data-urlencode features=kid_friendly --data-urlencode age_years=2 --data-urlencode age_months=0 --data-urlencode ai_model=google/gemma-4-26b-a4b-it:free -o plan_ai_bad_dest2.html -w 'plan/ai bad destination: %{http_code}\\\\n')"
+    ]
+  }
+}
