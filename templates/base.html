@@ -5,23 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Travel with Tots{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
 </head>
-<body>
-  {% set is_dashboard = request.endpoint == 'dashboard' %}
+<body class="{% if current_parent %}has-sidebar{% endif %}">
+  {% include "_nav.html" %}
+
   <header class="masthead">
-    <div class="auth-status">
-      {% if current_parent %}
-      {% if is_dashboard %}
-      <a href="{{ url_for('home') }}">← Home</a> · <a href="{{ url_for('plan') }}">Planning</a>{% if current_parent.is_admin %} · <a href="{{ url_for('settings') }}">Settings</a> · <a href="{{ url_for('chunks') }}">Chunks</a> · <a href="{{ url_for('results') }}">Results</a>{% endif %} · <a href="{{ url_for('logout') }}">Log out</a>
-      {% else %}
-      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('plan') }}">Planning</a>{% if current_parent.is_admin %} · <a href="{{ url_for('settings') }}">Settings</a> · <a href="{{ url_for('chunks') }}">Chunks</a> · <a href="{{ url_for('results') }}">Results</a>{% endif %} · <a href="{{ url_for('logout') }}">Log out</a>
-      {% endif %}
-      {% else %}
-      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
-      {% endif %}
-    </div>
-    {% if not is_dashboard %}
+    {% if not current_parent %}
     <a class="home-link" href="{{ url_for('home') }}">← Home</a>
     {% endif %}
     <h1 class="app-name">{% block heading %}Travel with Tots{% endblock %}</h1>
@@ -43,7 +34,7 @@
   </main>
 
   <footer class="footer">
-    <p>Travel with Tots — stress-free adventures for little ones.</p>
+    <p>Travel with Tots: stress-free adventures for little ones.</p>
   </footer>
 
   {% include "_chatbot_widget.html" %}

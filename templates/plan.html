@@ -3,19 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Travel with Tots — Plan your day</title>
+  <title>Travel with Tots: Plan your day</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
 </head>
-<body>
+<body class="{% if current_parent %}has-sidebar{% endif %}">
+  {% include "_nav.html" %}
+
   <header class="masthead">
-    <div class="auth-status">
-      {% if current_parent %}
-      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('logout') }}">Log out</a>
-      {% else %}
-      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
-      {% endif %}
-    </div>
     <a class="home-link" href="{{ url_for('home') }}">← Home</a>
     <h1 class="app-name">Travel with Tots</h1>
     <p class="tagline">Build a nap-friendly day plan for little ones 0–5.</p>
@@ -236,7 +232,7 @@
   </main>
 
   <footer class="footer">
-    <p>Travel with Tots — stress-free adventures for little ones.</p>
+    <p>Travel with Tots: stress-free adventures for little ones.</p>
   </footer>
 
   <script>

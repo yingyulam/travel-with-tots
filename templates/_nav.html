@@ -1,0 +1,57 @@
+{% set initial = ((current_parent.name or current_parent.email)[0]|upper) if current_parent else '' %}
+
+<div class="twt-user-menu">
+  {% if current_parent %}
+  <a class="twt-avatar-link" href="{{ url_for('dashboard') }}" aria-label="Go to your dashboard">
+    <span class="twt-avatar"><span class="twt-avatar-initial">{{ initial }}</span></span>
+  </a>
+  {% else %}
+  <a class="twt-avatar-link" href="{{ url_for('login') }}" aria-label="Log in">
+    <span class="twt-avatar">👤</span>
+  </a>
+  {% endif %}
+</div>
+
+{% if current_parent %}
+<button type="button" class="twt-sidebar-toggle" id="twtSidebarToggle"
+        aria-label="Toggle navigation" aria-expanded="false" aria-controls="twtSidebarNav">☰</button>
+<div class="twt-sidebar-scrim" id="twtSidebarScrim"></div>
+<nav class="twt-sidebar" id="twtSidebarNav">
+  <ul class="twt-sidebar-nav">
+    <li><a href="{{ url_for('home') }}">Home</a></li>
+    <li><a href="{{ url_for('plan') }}">Planning</a></li>
+    {% if current_parent.is_admin %}
+    <li><a href="{{ url_for('settings') }}">Settings</a></li>
+    <li><a href="{{ url_for('chunks') }}">Chunks</a></li>
+    <li><a href="{{ url_for('results') }}">Results</a></li>
+    {% endif %}
+    <li><a href="{{ url_for('logout') }}">Log out</a></li>
+  </ul>
+</nav>
+<script>
+(function () {
+  var body = document.body;
+  var KEY = "twt-sidebar-expanded";
+  var stored = localStorage.getItem(KEY);
+  var expanded = stored === null ? true : stored === "1";
+  body.classList.toggle("sidebar-expanded", expanded);
+
+  var toggle = document.getElementById("twtSidebarToggle");
+  var scrim = document.getElementById("twtSidebarScrim");
+  toggle.setAttribute("aria-expanded", String(expanded));
+
+  function setExpanded(value) {
+    body.classList.toggle("sidebar-expanded", value);
+    localStorage.setItem(KEY, value ? "1" : "0");
+    toggle.setAttribute("aria-expanded", String(value));
+  }
+
+  toggle.addEventListener("click", function () {
+    setExpanded(!body.classList.contains("sidebar-expanded"));
+  });
+  scrim.addEventListener("click", function () {
+    setExpanded(false);
+  });
+})();
+</script>
+{% endif %}

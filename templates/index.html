@@ -5,17 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Travel with Tots</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
 </head>
-<body>
+<body class="{% if current_parent %}has-sidebar{% endif %}">
+  {% include "_nav.html" %}
+
   <main class="hero">
-    <div class="auth-status">
-      {% if current_parent %}
-      <a href="{{ url_for('dashboard') }}">Dashboard</a> · <a href="{{ url_for('logout') }}">Log out</a>
-      {% else %}
-      <a href="{{ url_for('login') }}">Log in</a> · <a href="{{ url_for('signup') }}">Sign up</a>
-      {% endif %}
-    </div>
     <div class="hero-overlay">
       <h1 class="app-name">Travel with Tots</h1>
       <p class="tagline">Stress-free itineraries for parents adventuring with children 0–5.</p>
@@ -39,7 +35,7 @@
 </section>
 
   <footer class="footer">
-    <p>Travel with Tots — stress-free adventures for little ones.</p>
+    <p>Travel with Tots: stress-free adventures for little ones.</p>
     <p>&copy; 2026 Travel with Tots. All rights reserved.</p>
   </footer>
 
