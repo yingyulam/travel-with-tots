@@ -339,6 +339,16 @@ def results():
     return render_template("results.html", results=get_results(), stats=get_stats())
 
 
+@app.route("/results/data")
+@login_required
+@admin_required
+def results_data():
+    """Poll-able stats + full results list, so the Results page can
+    refresh itself in place without reloading (which would also reset any
+    chatbot conversation open elsewhere on the page)."""
+    return jsonify({"stats": get_stats(), "results": get_results()})
+
+
 @app.route("/add-child", methods=["POST"])
 @login_required
 def add_child_route():

@@ -23,7 +23,7 @@ COLLECTION_NAME = "knowledge_base"
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 DEFAULT_CHUNK_SIZE = 128
 TOP_K = 3
-MIN_SIMILARITY = 0.35
+MIN_SIMILARITY = 0.25
 
 _embedder = None
 _client = None

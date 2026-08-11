@@ -11,10 +11,10 @@ from . import rag
 load_dotenv()
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "openai/gpt-oss-20b:free"
+DEFAULT_MODEL = "google/gemma-4-26b-a4b-it:free"
 
 ALLOWED_CHAT_MODELS = {
-    "openai/gpt-oss-20b:free",
+    "google/gemma-4-26b-a4b-it:free",
     "openai/gpt-4o-mini",
     "anthropic/claude-sonnet-5",
 }
@@ -54,10 +54,20 @@ def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float
     )
     elapsed = time.perf_counter() - start
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+        choices = data["choices"]
+    except (ValueError, KeyError, IndexError) as e:
+        # Some free-tier providers occasionally return a 200 with an empty
+        # or malformed body under load -- treat that as "unavailable" too,
+        # not as a real bug (it isn't caught by the KeyError-means-missing
+        # -API-key handler in app.py, which this used to fall into).
+        raise requests.exceptions.RequestException(
+            f"OpenRouter returned an unusable response for {model}") from e
+
     usage = data.get("usage") or {}
     _print_usage_report(model, usage, elapsed)
-    return data["choices"][0]["message"]["content"], usage, elapsed
+    return choices[0]["message"]["content"], usage, elapsed
 
 
 def ask(message: str, model: str = DEFAULT_MODEL) -> str:

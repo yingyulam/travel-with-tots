@@ -80,7 +80,8 @@ pages, linked in the header nav only when logged in as an admin:
 - `/chunks`: see exactly how the knowledge base was split into chunks, and
   re-run chunking with a different chunk size.
 - `/results`: browse every thumbs up/down rated chatbot response, with
-  aggregate stats (total up/down, percent positive) at the top.
+  aggregate stats (total up/down, percent positive) at the top. The page
+  polls for new ratings and refreshes itself automatically.
 
 ## AI chatbot
 
@@ -111,6 +112,10 @@ buttons for that message and saves the question, answer, model, timestamp,
 response time, and token counts to `data/results.json` (git-ignored runtime
 data, not seed content). An admin can review every rated response, and the
 aggregate stats, from `/results`.
+
+Closing the widget (via the chat bubble) keeps the conversation, so
+reopening it picks up where you left off. An "End chat" button in the
+widget header clears the conversation on purpose, for when you're done.
 
 ## Running locally
 
@@ -176,7 +181,8 @@ travel-with-tots/
 │   ├── landing.css               # landing-page styling
 │   ├── chatbot.css, chatbot.js   # chat widget styling + behaviour (incl. ratings)
 │   ├── rag-status.js              # shared polling helper for indexing progress
-│   └── chunks.js                  # Chunks page re-run behaviour
+│   ├── chunks.js                  # Chunks page re-run behaviour
+│   └── results.js                 # Results page auto-refresh polling
 ├── tests/
 │   └── test_agents.py            # smoke test for the OpenRouter connection
 ├── requirements.txt
@@ -226,6 +232,7 @@ parameterized and run inside a transaction.
 | `/chunks`                   | GET      | Admin: list every chatbot knowledge-base chunk        |
 | `/chunks/rerun`             | POST     | Admin: re-chunk and re-embed at a different size      |
 | `/results`                  | GET      | Admin: browse rated chatbot responses + stats         |
+| `/results/data`             | GET      | Admin: poll-able stats + full results list, for auto-refresh |
 
 ## Data model
 

@@ -1,9 +1,11 @@
 (function () {
   const MODEL_STORAGE_KEY = "twt_chatbot_model";
   const MAX_HISTORY_TURNS = 10;
-  // \s (not a literal space) since models sometimes emit typographic spaces
-  // like U+202F (narrow no-break space) instead of a plain ASCII space.
-  const CITATION_RE = /(\[Source\s+\d+\])/g;
+  // Matches any bracket that mentions "source"/"sources" (case-insensitive,
+  // any spacing) so it also catches model variations like "[source1]" or
+  // multiple refs combined in one bracket like "[source1, source2]" --
+  // every digit found inside becomes its own clickable citation.
+  const CITATION_RE = /\[([^[\]]*sources?[^[\]]*)\]/gi;
 
   document.addEventListener("DOMContentLoaded", () => {
     const root = document.querySelector(".twt-chatbot");
@@ -18,6 +20,7 @@
     const input = form.querySelector("input");
     const sendBtn = form.querySelector("button");
     const modelSelect = root.querySelector(".twt-chatbot-model-row select");
+    const endBtn = root.querySelector(".twt-chatbot-end");
 
     const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
     if (savedModel && [...modelSelect.options].some((o) => o.value === savedModel)) {
@@ -77,6 +80,12 @@
 
     let history = [];
 
+    endBtn.addEventListener("click", () => {
+      messages.innerHTML = "";
+      history = [];
+      panel.hidden = true;
+    });
+
     function addMessage(role, text) {
       const el = document.createElement("div");
       el.className = "twt-chatbot-msg " + role;
@@ -131,20 +140,32 @@
       const textSpan = document.createElement("span");
       textSpan.className = "twt-chatbot-msg-text";
 
-      text.split(CITATION_RE).forEach((part) => {
-        const match = /^\[Source\s+(\d+)\]$/.exec(part);
-        if (!match) {
-          textSpan.appendChild(document.createTextNode(part));
-          return;
+      let lastIndex = 0;
+      for (const match of text.matchAll(CITATION_RE)) {
+        if (match.index > lastIndex) {
+          textSpan.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
         }
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "twt-citation";
-        btn.textContent = `[${match[1]}]`;
-        btn.dataset.sourceIndex = match[1];
-        btn.setAttribute("aria-expanded", "false");
-        textSpan.appendChild(btn);
-      });
+        const numbers = match[1].match(/\d+/g) || [];
+        if (numbers.length === 0) {
+          // A bracket that mentions "source" but has no digit in it isn't
+          // actually a citation (e.g. "[outsourced]") -- leave it as text.
+          textSpan.appendChild(document.createTextNode(match[0]));
+        } else {
+          numbers.forEach((num) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "twt-citation";
+            btn.textContent = `[${num}]`;
+            btn.dataset.sourceIndex = num;
+            btn.setAttribute("aria-expanded", "false");
+            textSpan.appendChild(btn);
+          });
+        }
+        lastIndex = match.index + match[0].length;
+      }
+      if (lastIndex < text.length) {
+        textSpan.appendChild(document.createTextNode(text.slice(lastIndex)));
+      }
       bubbleEl.appendChild(textSpan);
 
       const detail = document.createElement("div");

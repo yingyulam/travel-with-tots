@@ -1,17 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Travel with Tots — Results{% endblock %}
+{% block title %}Travel with Tots: Results{% endblock %}
 {% block heading %}Chatbot ratings{% endblock %}
 {% block tagline %}Every rated chatbot response, with aggregate stats.{% endblock %}
 
 {% block content %}
+<div id="results-root" data-total="{{ stats.total }}">
 <section class="card">
   <h2>Stats</h2>
-  <p class="meta">👍 {{ stats.up }} · 👎 {{ stats.down }} · {{ stats.percent_positive }}% positive ({{ stats.total }} rated)</p>
+  <p class="meta" id="results-stats">👍 {{ stats.up }} · 👎 {{ stats.down }} · {{ stats.percent_positive }}% positive ({{ stats.total }} rated)</p>
 </section>
 
 <section class="card">
-  <h2>Rated responses ({{ results|length }})</h2>
-  <div class="twt-chunk-list">
+  <h2 id="results-count-heading">Rated responses ({{ results|length }})</h2>
+  <div class="twt-chunk-list" id="results-list">
     {% for r in results %}
     <details class="twt-chunk-row">
       <summary>
@@ -35,4 +36,9 @@
     {% endfor %}
   </div>
 </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='results.js') }}"></script>
 {% endblock %}
