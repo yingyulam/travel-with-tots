@@ -71,8 +71,15 @@ hashing, no third-party auth provider). From `/dashboard` a logged-in parent
 can add, edit, or remove a child's profile and reopen any previously saved
 itinerary. An account isn't required to generate a plan, only to save one.
 
-Admin accounts (an `is_admin` flag on the `parents` table) get two extra
-pages, linked in the header nav only when logged in as an admin:
+The top-right corner of every page shows login status: a "Log in" button
+when signed out, or an avatar (the user's first-letter initial as a
+placeholder; a future upload flow can swap in a real photo) when signed in.
+Signed-in users also get a collapsible left sidebar (toggled with the ☰
+icon, state remembered across page loads) holding every page's navigation:
+Home, Planning, and, for admins, Settings, Chunks, and Results below.
+
+Admin accounts (an `is_admin` flag on the `parents` table) get three extra
+pages, shown in the sidebar only when logged in as an admin:
 
 - `/settings`: edit the chatbot's knowledge base and system prompt directly
   from the browser, with a save confirmation. Saving the knowledge base
@@ -175,10 +182,12 @@ travel-with-tots/
 │   ├── settings.html             # admin: edit knowledge base + prompt
 │   ├── chunks.html               # admin: view and re-run chunking
 │   ├── results.html              # admin: browse chatbot ratings + stats
-│   └── _chatbot_widget.html      # floating chat widget, included on every page
+│   ├── _chatbot_widget.html      # floating chat widget, included on every page
+│   └── _nav.html                 # top-right avatar/login + sidebar, included on every page
 ├── static/
 │   ├── style.css                # planner / in-trip / account styling
 │   ├── landing.css               # landing-page styling
+│   ├── nav.css                   # top-right avatar/login + sidebar styling
 │   ├── chatbot.css, chatbot.js   # chat widget styling + behaviour (incl. ratings)
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour

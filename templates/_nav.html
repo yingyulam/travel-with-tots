@@ -6,8 +6,9 @@
     <span class="twt-avatar"><span class="twt-avatar-initial">{{ initial }}</span></span>
   </a>
   {% else %}
-  <a class="twt-avatar-link" href="{{ url_for('login') }}" aria-label="Log in">
-    <span class="twt-avatar">👤</span>
+  <a class="twt-login-link" href="{{ url_for('login') }}">
+    <span class="twt-login-icon">👤</span>
+    <span class="twt-login-text">Log in</span>
   </a>
   {% endif %}
 </div>

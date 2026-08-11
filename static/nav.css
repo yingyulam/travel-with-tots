@@ -44,6 +44,38 @@
   border-radius: 50%;
 }
 
+.twt-login-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 6px 6px;
+  border-radius: 999px;
+  background: var(--nav-navy);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.twt-login-link:hover {
+  background: var(--nav-navy-light);
+  transform: translateY(-1px);
+}
+
+.twt-login-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.15);
+  font-size: 1rem;
+}
+
 .twt-sidebar-toggle {
   position: fixed;
   top: 1rem;
