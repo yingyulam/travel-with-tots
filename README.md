@@ -90,8 +90,13 @@ arranges* venues between fixed times, not a scheduling or routing engine.
 
 Parents can sign up and log in (session-based auth, Werkzeug password
 hashing, no third-party auth provider). From `/dashboard` a logged-in parent
-can add, edit, or remove a child's profile and reopen any previously saved
-itinerary. An account isn't required to generate a plan, only to save one.
+can add, edit, or remove a child's profile, and browse their **saved plans**:
+each one shows its date, which child it's for, a preview of its stops, a link
+to reopen the full itinerary, and a **Remove** button. A saved plan belongs to
+the parent's account, not the child it names -- removing a child keeps their
+past plans (shown with a "child no longer on your account" fallback) instead
+of deleting them. An account isn't required to generate a plan, only to save
+one.
 
 The top-right corner of every page shows login status: a "Log in" button
 when signed out, or an avatar (the user's first-letter initial as a
@@ -231,7 +236,10 @@ databases via a small in-code migration):
 - **parents**: one row per account (email login, password hash, `is_admin` flag).
 - **children**: name, gender, and **date of birth** (age is computed from the
   DOB via `compute_age`, never stored). References `parents`.
-- **trips**: a single outing's nap/feeding schedule and details. References `children`.
+- **trips**: a single outing's nap/feeding schedule and details, owned by the
+  parent account (`parent_id`, `NOT NULL`). `child_id` is optional and only
+  for display -- removing a child sets it to `NULL` (`ON DELETE SET NULL`)
+  rather than deleting the trip.
 - **venues**: kid-friendly places, seeded from `venues.json` and open to
   user submissions. A `source` column is constrained by a `CHECK` to
   `municipal_open_data` | `user_submitted` | `curated`. Curated rows also
@@ -256,6 +264,7 @@ parameterized and run inside a transaction.
 | `/plan`                   | GET/POST | Page 1: trip form and candidate plan cards             |
 | `/plan/ai`                 | POST     | Page 1: AI-assisted plan for one theme (JSON out)     |
 | `/save-trip`               | POST     | Save a generated plan to the account                   |
+| `/delete-trip/<id>`         | POST     | Remove a saved plan from the account                  |
 | `/trip`                    | GET/POST | Page 2: in-trip view for the chosen plan               |
 | `/trip/<id>`                | GET      | Reopen a previously saved trip                        |
 | `/replan`                   | POST     | Re-plan the rest of the day (JSON in/out)              |

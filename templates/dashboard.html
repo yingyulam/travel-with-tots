@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Travel with Tots — Dashboard{% endblock %}
+{% block title %}Travel with Tots: Dashboard{% endblock %}
 {% block heading %}Hi, {{ parent.name or parent.email }}{% endblock %}
 {% block tagline %}Your saved children, trips, and places.{% endblock %}
 
@@ -64,14 +64,35 @@
 </section>
 
 <section class="card">
-  <h2>Your saved trips</h2>
+  <h2>Your saved plans</h2>
   {% if trips %}
   <div class="plan-grid">
     {% for trip in trips %}
     <div class="plan-option">
       <h3 class="plan-option-title"><a href="{{ url_for('view_trip', trip_id=trip.id) }}">{{ trip.plan_label or 'Trip' }}</a></h3>
-      <p class="plan-blurb">{{ trip.destination }} — for {{ trip.child_name }}</p>
+      <p class="plan-blurb">{{ trip.destination }} for {{ trip.child_name or 'a child no longer on your account' }}</p>
       <p class="meta">{{ trip.trip_date }}</p>
+      <ol class="preview-list">
+        {% for stop in trip.plan.preview() %}
+        <li>
+          <span class="preview-time">{{ stop.time }}</span>
+          <span class="preview-name">
+            {% if stop.kind == 'meal' %}🍽 Lunch break{% if stop.venue %} - {{ stop.venue.name }}{% endif %}
+            {% elif stop.venue %}{{ stop.venue.name }}
+            {% elif stop.kind == 'leave' %}🚗 Leave your accommodation
+            {% elif stop.kind == 'bonus' %}Free time
+            {% else %}{{ stop.kind|capitalize }}{% endif %}
+          </span>
+        </li>
+        {% endfor %}
+        {% if trip.plan.stops|length > trip.plan.preview()|length %}
+        <li class="preview-more">+ {{ trip.plan.stops|length - trip.plan.preview()|length }} more…</li>
+        {% endif %}
+      </ol>
+      <form method="post" action="{{ url_for('delete_trip_route', trip_id=trip.id) }}"
+            onsubmit="return confirm('Remove this saved plan?');">
+        <button type="submit" class="cta-danger">Remove</button>
+      </form>
     </div>
     {% endfor %}
   </div>

@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS children (
 
 CREATE TABLE IF NOT EXISTS trips (
     id            INTEGER PRIMARY KEY,
-    child_id      INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    parent_id     INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+    child_id      INTEGER REFERENCES children(id) ON DELETE SET NULL,
     trip_date     TEXT,                   -- day of the outing (ISO)
     wake_up       TEXT,
     bedtime       TEXT,
@@ -118,6 +119,7 @@ def init_db():
     with closing(connect()) as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
+        _migrate_trips_ownership(conn)
         _seed_venues(conn)
         _backfill_venue_details(conn)
         _seed_sample_data(conn)
@@ -152,6 +154,59 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN close_time TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN min_age_months INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE venues ADD COLUMN max_age_months INTEGER NOT NULL DEFAULT 60")
+
+
+def _migrate_trips_ownership(conn):
+    """Older databases have trips.child_id as NOT NULL with ON DELETE CASCADE,
+    so a saved plan is really owned by the child, not the account -- deleting
+    a child silently destroys their trips too. SQLite can't ALTER a column's
+    constraints in place, so this rebuilds the table with parent_id as the
+    real owner and child_id as an optional, SET-NULL reference, backfilling
+    parent_id from each trip's current child. Idempotent: skipped once the
+    table already has parent_id."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trips)")}
+    if "parent_id" in existing:
+        return
+    with conn:
+        conn.execute("ALTER TABLE trips RENAME TO trips_old")
+        conn.execute("""
+            CREATE TABLE trips (
+                id            INTEGER PRIMARY KEY,
+                parent_id     INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+                child_id      INTEGER REFERENCES children(id) ON DELETE SET NULL,
+                trip_date     TEXT,
+                wake_up       TEXT,
+                bedtime       TEXT,
+                nap_1         TEXT,
+                nap_2         TEXT,
+                feeding_1     TEXT,
+                feeding_2     TEXT,
+                destination   TEXT,
+                accommodation TEXT,
+                transit       TEXT,
+                pace          TEXT,
+                dining        TEXT,
+                features      TEXT,
+                nap_notes     TEXT,
+                extra_notes   TEXT,
+                plan_label    TEXT,
+                plan_json     TEXT,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            INSERT INTO trips (id, parent_id, child_id, trip_date, wake_up,
+                bedtime, nap_1, nap_2, feeding_1, feeding_2, destination,
+                accommodation, transit, pace, dining, features, nap_notes,
+                extra_notes, plan_label, plan_json, created_at)
+            SELECT t.id, c.parent_id, t.child_id, t.trip_date, t.wake_up,
+                t.bedtime, t.nap_1, t.nap_2, t.feeding_1, t.feeding_2,
+                t.destination, t.accommodation, t.transit, t.pace, t.dining,
+                t.features, t.nap_notes, t.extra_notes, t.plan_label,
+                t.plan_json, t.created_at
+            FROM trips_old t JOIN children c ON c.id = t.child_id
+        """)
+        conn.execute("DROP TABLE trips_old")
 
 
 def _seed_venues(conn):
@@ -212,11 +267,11 @@ def _seed_sample_data(conn):
             "VALUES (?, ?, ?, ?)",
             (parent_id, "Sam", "male", "2023-05-10")).lastrowid
         conn.execute(
-            "INSERT INTO trips (child_id, trip_date, wake_up, bedtime, nap_1, "
-            "nap_2, destination, accommodation, transit, pace, dining, features, "
-            "nap_notes, extra_notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (child_id, "2026-08-01", "07:00", "20:00", "13:00", "",
+            "INSERT INTO trips (parent_id, child_id, trip_date, wake_up, bedtime, "
+            "nap_1, nap_2, destination, accommodation, transit, pace, dining, "
+            "features, nap_notes, extra_notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (parent_id, child_id, "2026-08-01", "07:00", "20:00", "13:00", "",
              "Vancouver", "Fairmont Hotel Vancouver",
              json.dumps(["stroller", "bus"]), "balanced", "dine_out",
              json.dumps(["kid_friendly", "has_nursing_room"]),
@@ -260,18 +315,24 @@ def update_child(child_id, name, gender, date_of_birth):
 
 
 def delete_child(child_id):
-    """Remove a child; their trips cascade-delete via the FK constraint."""
+    """Remove a child. Their saved trips are kept (owned by the parent
+    account, not the child); only child_id is cleared via ON DELETE SET NULL."""
     _write("DELETE FROM children WHERE id = ?", (child_id,))
 
 
-def add_trip(child_id, **fields):
+def add_trip(parent_id, child_id, **fields):
     """Insert a trip. Only known columns (TRIP_FIELDS) are accepted, so the
     column names are never user-controlled and the values stay parameterized."""
-    columns = ["child_id"] + [f for f in TRIP_FIELDS if f in fields]
-    values = [child_id] + [fields[f] for f in TRIP_FIELDS if f in fields]
+    columns = ["parent_id", "child_id"] + [f for f in TRIP_FIELDS if f in fields]
+    values = [parent_id, child_id] + [fields[f] for f in TRIP_FIELDS if f in fields]
     placeholders = ", ".join("?" for _ in columns)
     return _write(
         f"INSERT INTO trips ({', '.join(columns)}) VALUES ({placeholders})", values)
+
+
+def delete_trip(trip_id, parent_id):
+    """Remove one of this parent's saved trips (ownership enforced here)."""
+    _write("DELETE FROM trips WHERE id = ? AND parent_id = ?", (trip_id, parent_id))
 
 
 def add_venue(name, *, source, venue_type=None, neighbourhood=None,
@@ -315,24 +376,25 @@ def get_children(parent_id):
 
 
 def get_trips_for_parent(parent_id):
-    """Trips with a saved itinerary for every child of this parent, newest
-    first (older rows saved without a plan_json have nothing to open, so
-    they're excluded rather than shown as a dead link)."""
+    """Trips with a saved itinerary owned by this parent, newest first (older
+    rows saved without a plan_json have nothing to open, so they're excluded
+    rather than shown as a dead link). LEFT JOIN so a trip whose child was
+    since removed still shows, with child_name as NULL."""
     with closing(connect()) as conn:
         return conn.execute(
             "SELECT trips.*, children.name AS child_name FROM trips "
-            "JOIN children ON children.id = trips.child_id "
-            "WHERE children.parent_id = ? AND trips.plan_json IS NOT NULL "
+            "LEFT JOIN children ON children.id = trips.child_id "
+            "WHERE trips.parent_id = ? AND trips.plan_json IS NOT NULL "
             "ORDER BY trips.created_at DESC", (parent_id,)).fetchall()
 
 
 def get_trip_for_parent(parent_id, trip_id):
-    """One trip by id, scoped to this parent's children (ownership check)."""
+    """One trip by id, scoped to this parent's own trips (ownership check)."""
     with closing(connect()) as conn:
         return conn.execute(
             "SELECT trips.*, children.name AS child_name FROM trips "
-            "JOIN children ON children.id = trips.child_id "
-            "WHERE children.parent_id = ? AND trips.id = ?",
+            "LEFT JOIN children ON children.id = trips.child_id "
+            "WHERE trips.parent_id = ? AND trips.id = ?",
             (parent_id, trip_id)).fetchone()
 
 

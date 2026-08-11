@@ -44,6 +44,7 @@ from src.db import (
     add_venue,
     compute_age,
     delete_child,
+    delete_trip,
     get_children,
     get_logged_venues_for_parent,
     get_parent,
@@ -271,7 +272,11 @@ def logout():
 def dashboard():
     """The logged-in parent's saved children, trips, and logged places."""
     parent = _current_parent()
-    trips = get_trips_for_parent(parent["id"])
+    trips = []
+    for row in get_trips_for_parent(parent["id"]):
+        trip = dict(row)
+        trip["plan"] = Plan.from_dict(json.loads(row["plan_json"]))
+        trips.append(trip)
     places = get_logged_venues_for_parent(parent["id"])
 
     return render_template("dashboard.html", parent=parent, trips=trips, places=places)
@@ -408,12 +413,24 @@ def edit_child_route(child_id):
 @app.route("/delete-child/<int:child_id>", methods=["POST"])
 @login_required
 def delete_child_route(child_id):
-    """Remove one of the logged-in parent's children (their saved trips go with them)."""
+    """Remove one of the logged-in parent's children (their saved trips are kept)."""
     parent = _current_parent()
     if child_id not in {child["id"] for child in get_children(parent["id"])}:
         flash("Child not found.")
         return redirect(url_for("dashboard"))
     delete_child(child_id)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/delete-trip/<int:trip_id>", methods=["POST"])
+@login_required
+def delete_trip_route(trip_id):
+    """Remove one of the logged-in parent's saved plans."""
+    parent = _current_parent()
+    if get_trip_for_parent(parent["id"], trip_id) is None:
+        flash("Trip not found.")
+        return redirect(url_for("dashboard"))
+    delete_trip(trip_id, parent["id"])
     return redirect(url_for("dashboard"))
 
 
@@ -462,7 +479,7 @@ def save_trip():
     fields["plan_json"] = json.dumps(plan_data)
     fields["trip_date"] = date.today().isoformat()
     for child_id in child_ids:
-        add_trip(int(child_id), **fields)
+        add_trip(parent["id"], int(child_id), **fields)
     return redirect(url_for("dashboard"))
 
 
