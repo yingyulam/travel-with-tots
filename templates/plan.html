@@ -1,3 +1,4 @@
+{% from "_stop_preview.html" import stop_line %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -212,20 +213,10 @@
           </h3>
           <p class="plan-blurb">{{ plan.blurb }}</p>
           <ol class="preview-list">
-            {% for stop in plan.preview() %}
-            <li>
-              <span class="preview-time">{{ stop.time }}</span>
-              <span class="preview-name">
-                {% if stop.kind == 'meal' %}🍽 Lunch break{% if stop.venue %} — {{ stop.venue.name }}{% endif %}
-                {% elif stop.venue %}{{ stop.venue.name }}
-                {% elif stop.kind == 'leave' %}🚗 Leave your accommodation
-                {% elif stop.kind == 'bonus' %}Free time
-                {% else %}{{ stop.kind|capitalize }}{% endif %}
-              </span>
-            </li>
-            {% endfor %}
-            {% if plan.stops|length > plan.preview()|length %}
-            <li class="preview-more">+ {{ plan.stops|length - plan.preview()|length }} more…</li>
+            {% for stop in plan.preview() %}{{ stop_line(stop) }}{% endfor %}
+            {% for stop in plan.remaining() %}{{ stop_line(stop, extra=True) }}{% endfor %}
+            {% if plan.remaining() %}
+            <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ plan.remaining()|length }} more…</button></li>
             {% endif %}
           </ol>
           <form method="post" action="{{ url_for('trip') }}">
@@ -325,15 +316,20 @@
       return esc(stop.kind);
     }
 
+    const PREVIEW_LIMIT = 2;
+
     function buildAiCard(data) {
       const plan = data.plan;
-      const preview = plan.stops.slice(0, 3);
-      const moreCount = plan.stops.length - preview.length;
-      const items = preview.map((stop) =>
+      const shown = plan.stops.slice(0, PREVIEW_LIMIT);
+      const extra = plan.stops.slice(PREVIEW_LIMIT);
+      const items = shown.map((stop) =>
         `<li><span class="preview-time">${esc(stop.time)}</span>` +
         `<span class="preview-name">${previewName(stop)}</span></li>`).join("");
-      const more = moreCount > 0
-        ? `<li class="preview-more">+ ${moreCount} more…</li>` : "";
+      const extraItems = extra.map((stop) =>
+        `<li class="preview-extra" hidden><span class="preview-time">${esc(stop.time)}</span>` +
+        `<span class="preview-name">${previewName(stop)}</span></li>`).join("");
+      const more = extra.length > 0
+        ? `<li class="preview-more"><button type="button" class="preview-more-toggle">+ ${extra.length} more…</button></li>` : "";
       const saveBlock = CAN_SAVE
         ? `<form method="post" action="${SAVE_URL}" class="save-plan-form">
              <textarea name="plan" hidden>${esc(JSON.stringify(plan))}</textarea>
@@ -348,7 +344,7 @@
       card.innerHTML =
         `<h3 class="plan-option-title">${esc(plan.label)} <span class="badge">✨ AI-suggested plan</span></h3>
          <p class="plan-blurb">${esc(plan.blurb)}</p>
-         <ol class="preview-list">${items}${more}</ol>
+         <ol class="preview-list">${items}${extraItems}${more}</ol>
          <form method="post" action="${TRIP_URL}">
            <textarea name="plan" hidden>${esc(JSON.stringify(plan))}</textarea>
            <textarea name="context" hidden>${esc(JSON.stringify(data.context))}</textarea>
@@ -359,9 +355,17 @@
       return card;
     }
 
-    // Delegated (not per-button) so it keeps working on AI buttons that were
-    // restored from a snapshot rather than freshly rendered by the server.
+    // Delegated (not per-button) so it keeps working on AI buttons and "+N
+    // more" toggles restored from a snapshot rather than freshly rendered.
     planMain.addEventListener("click", async (e) => {
+      const moreBtn = e.target.closest(".preview-more-toggle");
+      if (moreBtn) {
+        const list = moreBtn.closest(".preview-list");
+        list.querySelectorAll(".preview-extra").forEach((li) => { li.hidden = false; });
+        moreBtn.closest(".preview-more").remove();
+        saveSnapshot();
+        return;
+      }
       const btn = e.target.closest(".ai-theme-btn");
       if (!btn) return;
       const theme = btn.dataset.theme;

@@ -1,0 +1,12 @@
+{% macro stop_line(stop, extra=False) %}
+<li{% if extra %} class="preview-extra" hidden{% endif %}>
+  <span class="preview-time">{{ stop.time }}</span>
+  <span class="preview-name">
+    {% if stop.kind == 'meal' %}🍽 Lunch break{% if stop.venue %} - {{ stop.venue.name }}{% endif %}
+    {% elif stop.venue %}{{ stop.venue.name }}
+    {% elif stop.kind == 'leave' %}🚗 Leave your accommodation
+    {% elif stop.kind == 'bonus' %}Free time
+    {% else %}{{ stop.kind|capitalize }}{% endif %}
+  </span>
+</li>
+{% endmacro %}

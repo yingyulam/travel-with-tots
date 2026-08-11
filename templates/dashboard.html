@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_stop_preview.html" import stop_line %}
 {% block title %}Travel with Tots: Dashboard{% endblock %}
 {% block heading %}Hi, {{ parent.name or parent.email }}{% endblock %}
 {% block tagline %}Your saved children, trips, and places.{% endblock %}
@@ -73,20 +74,10 @@
       <p class="plan-blurb">{{ trip.destination }} for {{ trip.child_name or 'a child no longer on your account' }}</p>
       <p class="meta">{{ trip.trip_date }}</p>
       <ol class="preview-list">
-        {% for stop in trip.plan.preview() %}
-        <li>
-          <span class="preview-time">{{ stop.time }}</span>
-          <span class="preview-name">
-            {% if stop.kind == 'meal' %}🍽 Lunch break{% if stop.venue %} - {{ stop.venue.name }}{% endif %}
-            {% elif stop.venue %}{{ stop.venue.name }}
-            {% elif stop.kind == 'leave' %}🚗 Leave your accommodation
-            {% elif stop.kind == 'bonus' %}Free time
-            {% else %}{{ stop.kind|capitalize }}{% endif %}
-          </span>
-        </li>
-        {% endfor %}
-        {% if trip.plan.stops|length > trip.plan.preview()|length %}
-        <li class="preview-more">+ {{ trip.plan.stops|length - trip.plan.preview()|length }} more…</li>
+        {% for stop in trip.plan.preview() %}{{ stop_line(stop) }}{% endfor %}
+        {% for stop in trip.plan.remaining() %}{{ stop_line(stop, extra=True) }}{% endfor %}
+        {% if trip.plan.remaining() %}
+        <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ trip.plan.remaining()|length }} more…</button></li>
         {% endif %}
       </ol>
       <form method="post" action="{{ url_for('delete_trip_route', trip_id=trip.id) }}"
@@ -159,4 +150,13 @@
     <button type="submit" class="cta">Log this place</button>
   </form>
 </section>
+
+<script>
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".preview-more-toggle");
+    if (!btn) return;
+    btn.closest(".preview-list").querySelectorAll(".preview-extra").forEach((li) => { li.hidden = false; });
+    btn.closest(".preview-more").remove();
+  });
+</script>
 {% endblock %}

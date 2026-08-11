@@ -21,11 +21,12 @@ separate.
 - Selects venues that match the parent's chosen features (kid-friendly,
   family room, nursing room, stroller/step-free access).
 - Generates **3 themed candidate plans** (Outdoorsy / Rainy-day / Culture)
-  shown as **comparable cards** (theme label + a short preview of stops). Each
-  plan is short (2-4 stops, fewer for younger kids and a relaxed pace, more for
-  older kids and an adventurous pace), places a **food** venue around midday,
-  and drops a **nap-friendly** venue into the nap window so the day keeps
-  flowing instead of blocking time.
+  shown as **comparable cards** (theme label + a preview of the first 2 stops,
+  with a "+N more" link that expands the rest in place, no reload or extra
+  AI calls). Each plan is short (2-4 stops, fewer for younger kids and a
+  relaxed pace, more for older kids and an adventurous pace), places a
+  **food** venue around midday, and drops a **nap-friendly** venue into the
+  nap window so the day keeps flowing instead of blocking time.
 - Each card has a **"Start this day"** button that carries the chosen plan to
   the in-trip page. `generate_plans` produces `Plan` objects; picking one
   creates a `Trip`.
@@ -91,9 +92,10 @@ arranges* venues between fixed times, not a scheduling or routing engine.
 Parents can sign up and log in (session-based auth, Werkzeug password
 hashing, no third-party auth provider). From `/dashboard` a logged-in parent
 can add, edit, or remove a child's profile, and browse their **saved plans**:
-each one shows its date, which child it's for, a preview of its stops, a link
-to reopen the full itinerary, and a **Remove** button. A saved plan belongs to
-the parent's account, not the child it names -- removing a child keeps their
+each one shows its date, which child it's for, an expandable preview of its
+stops, a link to reopen the full itinerary, and a **Remove** button. A saved
+plan belongs to the parent's account, not the child it names -- removing a
+child keeps their
 past plans (shown with a "child no longer on your account" fallback) instead
 of deleting them. An account isn't required to generate a plan, only to save
 one.
@@ -211,7 +213,8 @@ travel-with-tots/
 │   ├── chunks.html               # admin: view and re-run chunking
 │   ├── results.html              # admin: browse chatbot ratings + stats
 │   ├── _chatbot_widget.html      # floating chat widget, included on every page
-│   └── _nav.html                 # top-right avatar/login + sidebar, included on every page
+│   ├── _nav.html                 # top-right avatar/login + sidebar, included on every page
+│   └── _stop_preview.html        # shared stop_line() macro, used by plan.html + dashboard.html
 ├── static/
 │   ├── style.css                # planner / in-trip / account styling
 │   ├── landing.css               # landing-page styling

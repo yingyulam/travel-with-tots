@@ -1,8 +1,8 @@
 """Domain objects for the two-page flow.
 
-``Plan``  — one candidate day (theme label, blurb, ordered stops). The planning
+``Plan``: one candidate day (theme label, blurb, ordered stops). The planning
             page compares several of these; ``generate_plans`` produces them.
-``Trip``  — created when the parent picks a plan to start. It holds the chosen
+``Trip``: created when the parent picks a plan to start. It holds the chosen
             plan as the immutable original plus any re-planned versions and the
             current time, and is what the in-trip page renders.
 
@@ -22,9 +22,13 @@ class Plan:
     stops: list  # list of stop dicts: {time, kind, venue, reason}
     source: str = "rule"  # "rule" or "ai" -- which planner produced this
 
-    def preview(self, limit=3):
+    def preview(self, limit=2):
         """First few stops, for the comparison card on the planning page."""
         return self.stops[:limit]
+
+    def remaining(self, limit=2):
+        """Stops past the preview, revealed by the "+N more" link."""
+        return self.stops[limit:]
 
     def to_dict(self):
         return {"label": self.label, "blurb": self.blurb, "stops": self.stops,

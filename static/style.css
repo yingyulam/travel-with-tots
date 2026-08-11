@@ -517,6 +517,10 @@ textarea:focus {
   padding: 0.2rem 0;
 }
 
+.preview-list li[hidden] {
+  display: none;
+}
+
 .preview-time {
   flex: 0 0 72px;
   font-weight: 700;
@@ -530,6 +534,21 @@ textarea:focus {
 .preview-more {
   color: #8a97a6;
   font-style: italic;
+}
+
+.preview-more-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-style: italic;
+  color: #8a97a6;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.preview-more-toggle:hover {
+  color: var(--blue);
 }
 
 .plan-option .cta {
