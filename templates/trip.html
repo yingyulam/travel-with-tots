@@ -13,7 +13,11 @@
 
   {% set transit_label = trip.transit | map('capitalize') | join(', ') %}
   <header class="masthead">
-    <a class="home-link" href="{{ url_for('plan') }}">← New plan</a>
+    {% if saved %}
+    <a class="home-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+    {% else %}
+    <a class="home-link" href="{{ url_for('plan') }}">← Back to plans</a>
+    {% endif %}
     <h1 class="app-name">Your day in {{ trip.destination }}</h1>
     <p class="tagline">🚕 Getting around by {{ transit_label or 'Not specified' }}</p>
   </header>

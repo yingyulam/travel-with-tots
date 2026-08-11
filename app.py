@@ -577,10 +577,11 @@ def _build_trip(destination, transit, features, bedtime, plan_data):
     )
 
 
-def _render_trip(trip):
+def _render_trip(trip, saved=False):
     return render_template(
         "trip.html",
         trip=trip.to_dict(),
+        saved=saved,
         feature_options=FEATURE_OPTIONS,
         situation_options=SITUATION_OPTIONS,
         need_options=NEED_OPTIONS,
@@ -628,7 +629,7 @@ def view_trip(trip_id):
         bedtime=row["bedtime"] or "",
         plan_data=json.loads(row["plan_json"]),
     )
-    return _render_trip(trip)
+    return _render_trip(trip, saved=True)
 
 
 @app.route("/replan", methods=["POST"])

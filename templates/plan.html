@@ -17,7 +17,7 @@
     <p class="tagline">Build a nap-friendly day plan for little ones 0–5.</p>
   </header>
 
-  <main class="layout">
+  <main class="layout" id="plan-main">
     <!-- Trip details form -->
     <section class="card form-card">
       <h2>Your trip</h2>
@@ -265,6 +265,27 @@
   </footer>
 
   <script>
+    // Preserve the generated plans (rule-based + any AI cards) across a trip
+    // -> back-to-plans round trip, without regenerating anything. A fresh
+    // "Plan my day"/"Plan/ai" result always overwrites this snapshot; a plain
+    // GET /plan (e.g. from the trip page's "Back to plans" link) restores it
+    // instead of showing an empty form. sessionStorage-based rather than
+    // relying on the browser's back/forward cache, which isn't reliable here.
+    const HAS_SERVER_PLANS = {{ (plans is not none) | tojson }};
+    const SNAPSHOT_KEY = "twt_plan_snapshot";
+    const planMain = document.getElementById("plan-main");
+
+    function saveSnapshot() {
+      sessionStorage.setItem(SNAPSHOT_KEY, planMain.innerHTML);
+    }
+
+    if (HAS_SERVER_PLANS) {
+      saveSnapshot();
+    } else {
+      const savedSnapshot = sessionStorage.getItem(SNAPSHOT_KEY);
+      if (savedSnapshot) planMain.innerHTML = savedSnapshot;
+    }
+
     // Cap age at 5 years 0 months: at 5 years, months are locked to 0.
     const years = document.getElementById("age-years");
     const months = document.getElementById("age-months");
@@ -287,7 +308,6 @@
     const TRIP_URL = "{{ url_for('trip') }}";
     const SAVE_URL = "{{ url_for('save_trip') }}";
     const AI_URL = "{{ url_for('plan_ai') }}";
-    const modelSelect = document.getElementById("ai-model-select");
 
     function esc(text) {
       const div = document.createElement("div");
@@ -339,33 +359,36 @@
       return card;
     }
 
-    document.querySelectorAll(".ai-theme-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const theme = btn.dataset.theme;
-        const status = btn.parentElement.querySelector(".ai-theme-status");
-        const ruleCard = btn.closest(".plan-option");
-        btn.disabled = true;
-        status.hidden = false;
-        status.textContent = `Building an AI ${theme} day…`;
-        try {
-          const body = new FormData(document.getElementById("plan-form"));
-          body.append("ai_theme", theme);
-          body.append("ai_model", modelSelect.value);
-          const res = await fetch(AI_URL, { method: "POST", body });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Something went wrong.");
-          // Replace any previous AI card for this theme rather than piling up.
-          const existing = document.querySelector(
-            `.plan-option[data-source="ai"][data-theme="${CSS.escape(theme)}"]`);
-          if (existing) existing.remove();
-          ruleCard.after(buildAiCard(data));
-          status.hidden = true;
-        } catch (e) {
-          status.textContent = e.message || "Couldn't build an AI plan right now.";
-        } finally {
-          btn.disabled = false;
-        }
-      });
+    // Delegated (not per-button) so it keeps working on AI buttons that were
+    // restored from a snapshot rather than freshly rendered by the server.
+    planMain.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".ai-theme-btn");
+      if (!btn) return;
+      const theme = btn.dataset.theme;
+      const status = btn.parentElement.querySelector(".ai-theme-status");
+      const ruleCard = btn.closest(".plan-option");
+      btn.disabled = true;
+      status.hidden = false;
+      status.textContent = `Building an AI ${theme} day…`;
+      try {
+        const body = new FormData(document.getElementById("plan-form"));
+        body.append("ai_theme", theme);
+        body.append("ai_model", document.getElementById("ai-model-select").value);
+        const res = await fetch(AI_URL, { method: "POST", body });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Something went wrong.");
+        // Replace any previous AI card for this theme rather than piling up.
+        const existing = document.querySelector(
+          `.plan-option[data-source="ai"][data-theme="${CSS.escape(theme)}"]`);
+        if (existing) existing.remove();
+        ruleCard.after(buildAiCard(data));
+        status.hidden = true;
+        saveSnapshot();
+      } catch (err) {
+        status.textContent = err.message || "Couldn't build an AI plan right now.";
+      } finally {
+        btn.disabled = false;
+      }
     });
   </script>
 
