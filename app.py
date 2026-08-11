@@ -498,13 +498,9 @@ def plan():
 
     if request.method == "POST":
         plans = generate_plans(VENUES, form)
-        # Context carried to the in-trip page when a plan is chosen.
-        trip_context = {
-            "destination": form["destination"],
-            "transit": form["transit"],
-            "features": form["features"],
-            "bedtime": form["bedtime"],
-        }
+        # The whole form is carried to the in-trip page when a plan is chosen,
+        # so a plan can still be saved from there without re-asking for it.
+        trip_context = form
     else:
         plans = None
         trip_context = None
@@ -553,12 +549,7 @@ def plan_ai():
                     stops=result["stops"], source="ai")
     return jsonify({
         "plan": plan_obj.to_dict(),
-        "context": {
-            "destination": form["destination"],
-            "transit": form["transit"],
-            "features": form["features"],
-            "bedtime": form["bedtime"],
-        },
+        "context": form,
         "trip_form": form,
         "model": result["model"],
         "response_time": result["response_time"],
@@ -577,11 +568,12 @@ def _build_trip(destination, transit, features, bedtime, plan_data):
     )
 
 
-def _render_trip(trip, saved=False):
+def _render_trip(trip, saved=False, trip_form=None):
     return render_template(
         "trip.html",
         trip=trip.to_dict(),
         saved=saved,
+        trip_form=trip_form,
         feature_options=FEATURE_OPTIONS,
         situation_options=SITUATION_OPTIONS,
         need_options=NEED_OPTIONS,
@@ -610,7 +602,7 @@ def trip():
         bedtime=context.get("bedtime", ""),
         plan_data=plan_data,
     )
-    return _render_trip(trip)
+    return _render_trip(trip, trip_form=context)
 
 
 @app.route("/trip/<int:trip_id>")

@@ -94,6 +94,23 @@
         <p class="panel-title">Plan versions</p>
         <div class="plan-picker" id="plan-picker"></div>
       </div>
+
+      {% if not saved %}
+      <div class="action-panel">
+        <p class="panel-title">Keep this day</p>
+        {% if current_parent and trip_form and trip_form.child_ids %}
+        <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form" id="save-trip-form">
+          <textarea name="plan" id="save-plan-field" hidden></textarea>
+          <textarea name="trip_form" hidden>{{ trip_form | tojson }}</textarea>
+          <button type="submit" class="cta-secondary">💾 Save this plan</button>
+        </form>
+        {% elif current_parent %}
+        <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
+        {% else %}
+        <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
+        {% endif %}
+      </div>
+      {% endif %}
     </section>
   </main>
 
@@ -347,6 +364,14 @@
 
     renderTabs();
     renderTimeline();
+
+    // Save whichever version (Original or Current) is on screen right now.
+    const saveTripForm = document.getElementById("save-trip-form");
+    if (saveTripForm) {
+      saveTripForm.addEventListener("submit", () => {
+        document.getElementById("save-plan-field").value = JSON.stringify(PLANS[active]);
+      });
+    }
   </script>
 
   {% include "_chatbot_widget.html" %}

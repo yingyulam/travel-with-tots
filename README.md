@@ -59,6 +59,10 @@ The in-trip page renders the chosen `Trip` (no input form here), top to bottom:
 4. A **"Need something now?"** find-nearby panel.
 5. A **version switcher** to toggle between the original plan and any re-planned
    versions.
+6. A **"Save this plan"** button (only on a fresh, not-yet-saved trip, and
+   only once a child is picked), so a plan doesn't have to be saved from the
+   planning page up front. It saves whichever version (original or
+   re-planned) is currently on screen.
 
 Each stop shows its time, name, type, neighbourhood, feature badges, and an
 **Open in Google Maps** link. Transit is displayed only; no routes are computed.
