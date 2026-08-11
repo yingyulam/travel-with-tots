@@ -53,8 +53,8 @@
   position: absolute;
   right: 0;
   bottom: 68px;
-  width: 350px;
-  max-height: 440px;
+  width: clamp(320px, 33vw, 640px);
+  height: clamp(600px, 45vh, 820px);
   flex-direction: column;
   background: #fff;
   border-radius: 18px;
@@ -270,4 +270,44 @@
   margin: 8px 0 0;
   font-size: 13px;
   white-space: pre-wrap;
+}
+
+/* Small labeled pill, e.g. a model name badge on the Results page. */
+
+.twt-badge {
+  display: inline-block;
+  background: var(--twt-navy);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+}
+
+/* Thumbs up/down rating on chatbot replies. */
+
+.twt-feedback {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.twt-feedback-btn {
+  border: 1px solid var(--twt-line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.twt-feedback-btn.selected {
+  border-color: var(--twt-orange);
+  background: var(--twt-orange);
+}
+
+.twt-feedback-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

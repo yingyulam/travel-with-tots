@@ -42,7 +42,8 @@ def _print_usage_report(model: str, usage: dict | None, elapsed: float) -> None:
     print("└" + "─" * width)
 
 
-def _call_openrouter(messages: list[dict], model: str) -> str:
+def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float]:
+    """Returns (reply text, usage dict, elapsed seconds)."""
     api_key = os.environ["OPENROUTER_API_KEY"]
 
     start = time.perf_counter()
@@ -54,13 +55,15 @@ def _call_openrouter(messages: list[dict], model: str) -> str:
     elapsed = time.perf_counter() - start
     response.raise_for_status()
     data = response.json()
-    _print_usage_report(model, data.get("usage"), elapsed)
-    return data["choices"][0]["message"]["content"]
+    usage = data.get("usage") or {}
+    _print_usage_report(model, usage, elapsed)
+    return data["choices"][0]["message"]["content"], usage, elapsed
 
 
 def ask(message: str, model: str = DEFAULT_MODEL) -> str:
     """Send a message to an OpenRouter-hosted model and return the reply text."""
-    return _call_openrouter([{"role": "user", "content": message}], model)
+    reply, _, _ = _call_openrouter([{"role": "user", "content": message}], model)
+    return reply
 
 
 def _load_website_chatbot_template() -> str:
@@ -101,7 +104,8 @@ def ask_website_chatbot(
 ) -> dict:
     """Answer a question about the Travel with Tots website, grounded only in
     the top chunks retrieved from the knowledge base for this question.
-    Returns {"reply": str, "sources": list[dict]}."""
+    Returns {"reply", "sources", "model", "response_time", "input_tokens",
+    "output_tokens"}."""
     global _WEBSITE_CHATBOT_TEMPLATE
     if _WEBSITE_CHATBOT_TEMPLATE is None:
         _WEBSITE_CHATBOT_TEMPLATE = _load_website_chatbot_template()
@@ -115,5 +119,12 @@ def ask_website_chatbot(
         + (history or [])
         + [{"role": "user", "content": message}]
     )
-    reply = _space_out_bullets(_call_openrouter(messages, model))
-    return {"reply": reply, "sources": sources}
+    reply, usage, elapsed = _call_openrouter(messages, model)
+    return {
+        "reply": _space_out_bullets(reply),
+        "sources": sources,
+        "model": model,
+        "response_time": round(elapsed, 3),
+        "input_tokens": usage.get("prompt_tokens"),
+        "output_tokens": usage.get("completion_tokens"),
+    }

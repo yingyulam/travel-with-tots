@@ -23,6 +23,9 @@ data/app.db
 data/chroma/
 data/rag_config.json
 
+# Chatbot ratings (runtime data)
+data/results.json
+
 # Environment variables
 .env
 .flaskenv

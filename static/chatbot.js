@@ -89,7 +89,44 @@
       return el;
     }
 
-    function renderAssistantReply(bubbleEl, text, sources) {
+    function addFeedbackButtons(bubbleEl, text, feedbackContext) {
+      const row = document.createElement("div");
+      row.className = "twt-feedback";
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "twt-feedback-btn";
+      upBtn.textContent = "👍";
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.className = "twt-feedback-btn";
+      downBtn.textContent = "👎";
+
+      function rate(rating, chosenBtn) {
+        upBtn.disabled = true;
+        downBtn.disabled = true;
+        chosenBtn.classList.add("selected");
+        fetch("/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: feedbackContext.question,
+            response: text,
+            rating,
+            model: feedbackContext.model,
+            response_time: feedbackContext.response_time,
+            input_tokens: feedbackContext.input_tokens,
+            output_tokens: feedbackContext.output_tokens,
+          }),
+        }).catch(() => {});
+      }
+
+      upBtn.addEventListener("click", () => rate("up", upBtn));
+      downBtn.addEventListener("click", () => rate("down", downBtn));
+      row.append(upBtn, downBtn);
+      bubbleEl.appendChild(row);
+    }
+
+    function renderAssistantReply(bubbleEl, text, sources, feedbackContext) {
       bubbleEl.innerHTML = "";
       const textSpan = document.createElement("span");
       textSpan.className = "twt-chatbot-msg-text";
@@ -136,6 +173,8 @@
           detail.append(meta, body);
         });
       });
+
+      if (feedbackContext) addFeedbackButtons(bubbleEl, text, feedbackContext);
       messages.scrollTop = messages.scrollHeight;
     }
 
@@ -164,7 +203,13 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Something went wrong.");
 
-        renderAssistantReply(placeholder, data.reply, data.sources);
+        renderAssistantReply(placeholder, data.reply, data.sources, {
+          question: message,
+          model: data.model,
+          response_time: data.response_time,
+          input_tokens: data.input_tokens,
+          output_tokens: data.output_tokens,
+        });
         history.push({ role: "user", content: message });
         history.push({ role: "assistant", content: data.reply });
       } catch (err) {

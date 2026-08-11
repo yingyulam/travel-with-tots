@@ -57,6 +57,7 @@ from src.interactions import (
 )
 from src.itinerary import generate_plans
 from src.models import Plan, Trip
+from src.results import get_results, get_stats, save_result
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -330,6 +331,14 @@ def chunks_rerun():
     return jsonify({"status": "started"})
 
 
+@app.route("/results")
+@login_required
+@admin_required
+def results():
+    """Every rated chatbot response, with aggregate stats."""
+    return render_template("results.html", results=get_results(), stats=get_stats())
+
+
 @app.route("/add-child", methods=["POST"])
 @login_required
 def add_child_route():
@@ -578,6 +587,28 @@ def chatbot_route():
         return jsonify({"error": "The chatbot is unavailable right now. Please try again."}), 502
 
     return jsonify(result)
+
+
+@app.route("/feedback", methods=["POST"])
+def feedback_route():
+    """Save a thumbs up/down rating on a chatbot response, as JSON."""
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    response_text = data.get("response") or ""
+    rating = data.get("rating")
+    if not question or not response_text or rating not in ("up", "down"):
+        return jsonify({"error": "question, response, and a valid rating are required"}), 400
+
+    save_result(
+        question=question,
+        response=response_text,
+        rating=rating,
+        model=data.get("model") or DEFAULT_MODEL,
+        response_time=data.get("response_time"),
+        input_tokens=data.get("input_tokens"),
+        output_tokens=data.get("output_tokens"),
+    )
+    return jsonify({"status": "saved"})
 
 
 if __name__ == "__main__":
