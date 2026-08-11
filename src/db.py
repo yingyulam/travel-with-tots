@@ -99,6 +99,15 @@ CANDIDATE_FEATURE_COLUMNS = {
     "stroller_accessible", "nap_friendly", "can_eat",
 }
 
+# Keeps the AI planner's prompt cheap: enough venues for a real choice,
+# never so many the prompt balloons.
+CANDIDATE_LIMIT = 18
+
+# A neighbourhood needs at least this many matching venues before it's worth
+# narrowing to (see get_candidate_venues) -- otherwise a parent without a car
+# could end up with too few candidates to build a real itinerary from.
+MIN_CLUSTER_SIZE = 6
+
 TRIP_FIELDS = (
     "trip_date", "wake_up", "bedtime", "nap_1", "nap_2", "feeding_1",
     "feeding_2", "destination", "accommodation", "transit", "pace", "dining",
@@ -398,21 +407,51 @@ def get_trip_for_parent(parent_id, trip_id):
             (parent_id, trip_id)).fetchone()
 
 
-def get_candidate_venues(city, age_months, features=None, limit=20):
+def get_candidate_venues(city, age_months, features=None, transit=None,
+                          dining=None, limit=CANDIDATE_LIMIT):
     """Curated venues in `city` (substring match) whose age range covers
-    `age_months`, optionally narrowed by feature tags. Used to ground the AI
-    planning agent -- it must never reference a venue outside this list."""
+    `age_months`, narrowed by feature tags. Used to ground the AI planning
+    agent -- it must never reference a venue outside this list.
+
+    There's no real geodata anywhere in this app (no lat/lng, no routing
+    API), so `transit` is used as a coarse location proxy instead of a real
+    radius/travel-time filter: without a car, candidates are narrowed to the
+    single most common neighbourhood among the matches (keeping stops close
+    together), as long as that neighbourhood has enough venues to still
+    offer a real choice; with a car, all matching neighbourhoods stay in
+    play. If `dining` is "dine_out", at least one venue where a meal is
+    possible is guaranteed a slot, so there's always a real lunch option."""
     wanted = [f for f in (features or []) if f in CANDIDATE_FEATURE_COLUMNS]
     clauses = ["source = 'curated'", "city LIKE ?",
                "min_age_months <= ?", "max_age_months >= ?"]
     params = [f"%{city}%", age_months, age_months]
     for feature in wanted:
         clauses.append(f"{feature} = 1")
-    params.append(limit)
+    where = " AND ".join(clauses)
+
     with closing(connect()) as conn:
-        return conn.execute(
-            f"SELECT * FROM venues WHERE {' AND '.join(clauses)} "
-            "ORDER BY name LIMIT ?", params).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM venues WHERE {where} ORDER BY name", params).fetchall()
+
+        if "car" not in (transit or []) and rows:
+            by_neighbourhood = {}
+            for row in rows:
+                by_neighbourhood.setdefault(row["neighbourhood"], []).append(row)
+            top_neighbourhood = max(by_neighbourhood, key=lambda n: len(by_neighbourhood[n]))
+            clustered = by_neighbourhood[top_neighbourhood]
+            if len(clustered) >= MIN_CLUSTER_SIZE:
+                rows = clustered
+
+        rows = rows[:limit]
+
+        if dining == "dine_out" and not any(row["can_eat"] for row in rows):
+            lunch_row = conn.execute(
+                f"SELECT * FROM venues WHERE {where} AND can_eat = 1 "
+                "ORDER BY name LIMIT 1", params).fetchone()
+            if lunch_row:
+                rows = rows[:limit - 1] + [lunch_row]
+
+        return rows
 
 
 def get_logged_venues_for_parent(parent_id):

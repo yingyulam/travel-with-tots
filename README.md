@@ -37,17 +37,41 @@ separate.
   with a shared model dropdown (free/paid) and a system prompt
   (`src/prompts/planner.txt`, editable from `/settings`). Before calling the
   model, it queries the `venues` table for **curated** venues matching the
-  destination and the child's age range, and passes only that list into the
-  prompt; the model must choose exclusively from those `venue_id`s, and any
-  stop referencing one outside the list is dropped rather than shown, so it can
-  never surface a venue that doesn't exist. The result appears as a new card
-  right beside its rule-based counterpart, tagged **"✨ AI-suggested plan"** so
-  the two are easy to tell apart. Asking again for the same topic replaces that
-  topic's AI card rather than piling up. If a response doesn't validate even
-  after one corrective retry, an inline error is shown on that card's button
-  and every other card is left untouched. Picking an AI plan works exactly like
-  picking a rule-based one: same `Plan`/`Trip` shape, no visible difference on
-  the in-trip page.
+  destination, the child's age range, and the requested feature tags, capped
+  at around 15-20 candidates so the prompt stays cheap. Without a car
+  selected, candidates are narrowed to a single neighbourhood (a proxy for
+  "close together," since there's no real location/travel-time data
+  anywhere in this app); with a car, all matching neighbourhoods stay in
+  play. If "dine out" was chosen, a real restaurant option is guaranteed a
+  slot so there's always a venue for the lunch stop. The accommodation, the
+  child's nap/sleep-habit notes, and any other free-text notes from the
+  parent are passed to the model too, with explicit instructions to actually
+  act on them rather than just display them: ordering stops sensibly around
+  the accommodation, picking the nap stop to suit the child's specific sleep
+  habits (not just general nap-friendliness), and letting other notes change
+  venue choice, timing, or pace when they're relevant. The model must choose
+  exclusively from those `venue_id`s, and **every stop must cite one**: if
+  even one stop cites an id outside the list, repeats an id already used
+  elsewhere in the same plan, or is otherwise malformed, the *whole*
+  response is rejected and retried once rather than silently trimmed. The
+  expected stop count follows the pace (2/3/4 for relaxed/balanced/
+  adventurous) -- but only when there are at least that many real candidate
+  venues. If the candidate list is thinner than that, a shorter plan using
+  only the venues actually available is the *correct*, expected outcome,
+  not an error; if no candidate fits the theme well, the model drops
+  theme-matching for that plan and chooses stops from the trip's other
+  constraints instead. If there are no candidate venues at all, the model
+  is never called and a clear error is shown right away. The result appears
+  as a new card right beside its rule-based counterpart, tagged
+  **"✨ AI-suggested plan"** so the two are easy to tell apart. Asking again
+  for the same topic replaces that topic's AI card rather than piling up.
+  If a response still doesn't validate after the retry, an inline error is
+  shown on that card's button and every other card is left untouched.
+  Picking an AI plan works exactly like picking a
+  rule-based one: same `Plan`/`Trip` shape, no visible difference on the
+  in-trip page. Every OpenRouter call (including the retry) prints its
+  token counts, time, and estimated cost to the server console, same as the
+  chatbot.
 
 ### Page 2 - In-trip (`/trip`)
 

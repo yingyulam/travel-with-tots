@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from . import db, rag
 from .data_loader import maps_url
-from .itinerary import THEMES
+from .itinerary import PACE_STOPS, THEMES
 
 load_dotenv()
 
@@ -180,11 +180,11 @@ def _format_venue_candidates(venues: list) -> str:
 
 
 class PlanningAgent:
-    """Generates themed, 2-4 stop day plans grounded only in real venues from
-    the SQL venues table -- one plan per src.itinerary.THEMES entry, matching
-    the rule-based planner's themes so the two are directly comparable."""
-
-    MIN_STOPS, MAX_STOPS = 2, 4
+    """Generates themed day plans grounded only in real venues from the SQL
+    venues table -- one plan per src.itinerary.THEMES entry, matching the
+    rule-based planner's themes so the two are directly comparable. Stop
+    count follows the same PACE_STOPS mapping the rule-based planner uses,
+    capped by however many real candidate venues actually exist."""
 
     def __init__(self, model: str = DEFAULT_MODEL):
         self.model = model if model in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
@@ -208,6 +208,9 @@ class PlanningAgent:
             .replace("{feeding_times}", feeding_times)
             .replace("{pace}", ctx["pace"] or "balanced")
             .replace("{extra_notes}", ctx["extra_notes"] or "none")
+            .replace("{dining}", ctx["dining"] or "dine_out")
+            .replace("{accommodation}", ctx["accommodation"] or "not specified")
+            .replace("{nap_notes}", ctx["nap_notes"] or "none")
         )
         return [{"role": "system", "content": prompt}]
 
@@ -218,33 +221,50 @@ class PlanningAgent:
             text = text[4:] if text.startswith("json") else text
         return json.loads(text)
 
-    def _validate(self, parsed, valid_ids):
-        """Returns a cleaned stop list, or None if unusable. Any stop whose
-        venue_id isn't in valid_ids is dropped -- the model must never
-        surface a venue outside the candidate list."""
+    def _validate(self, parsed, valid_ids, pace):
+        """Returns the stop list if every stop is well-formed and cites a
+        real, distinct venue_id, or None otherwise. The whole response is
+        rejected (and retried) if even one stop is invalid, rather than
+        silently dropping it -- so a plan never ships with fewer stops than
+        its pace requires just because one citation didn't check out.
+
+        The expected count follows PACE_STOPS, but a thin candidate list
+        caps it: with enough real venues, the count must match the pace
+        exactly; with fewer venues than the pace calls for, anywhere from 1
+        up to however many exist is valid -- a short plan is not an error."""
         stops = parsed.get("stops") if isinstance(parsed, dict) else None
         if not isinstance(stops, list):
             return None
+        expected = PACE_STOPS.get(pace, 3)
+        available = len(valid_ids)
+        if available >= expected:
+            if len(stops) != expected:
+                return None
+        elif not (1 <= len(stops) <= available):
+            return None
         cleaned = []
+        seen_ids = set()
         for stop in stops:
             if not isinstance(stop, dict):
-                continue
+                return None
             venue_id = stop.get("venue_id")
-            if venue_id not in valid_ids or not stop.get("time") or not stop.get("reason"):
-                continue
+            if (venue_id not in valid_ids or venue_id in seen_ids
+                    or not stop.get("time") or not stop.get("reason")):
+                return None
+            seen_ids.add(venue_id)
             cleaned.append({
                 "time": stop["time"],
                 "venue_id": venue_id,
                 "reason": stop["reason"],
                 "is_nap": bool(stop.get("is_nap")),
             })
-        if self.MIN_STOPS <= len(cleaned) <= self.MAX_STOPS:
-            return cleaned
-        return None
+        return cleaned
 
     def generate_plan_for_theme(self, theme_label, *, destination, age_months,
                                  nap_1, nap_2, feeding_1, feeding_2, pace,
-                                 wake_up, bedtime, features, extra_notes=""):
+                                 wake_up, bedtime, features, transit=None,
+                                 dining=None, accommodation="", nap_notes="",
+                                 extra_notes=""):
         """One themed plan for a single theme, so a parent only spends a model
         call on the topic they actually asked for. Returns
         {"label", "blurb", "stops", "model", "response_time"}."""
@@ -252,7 +272,8 @@ class PlanningAgent:
         if theme is None:
             raise PlanningAgentError(f"Unknown theme: {theme_label}")
 
-        candidates = db.get_candidate_venues(destination, age_months, features)
+        candidates = db.get_candidate_venues(
+            destination, age_months, features, transit=transit, dining=dining)
         by_id = {v["id"]: v for v in candidates}
         if not by_id:
             raise PlanningAgentError(
@@ -260,30 +281,33 @@ class PlanningAgent:
 
         ctx = dict(destination=destination, age_months=age_months, nap_1=nap_1,
                    nap_2=nap_2, feeding_1=feeding_1, feeding_2=feeding_2,
-                   pace=pace, wake_up=wake_up, bedtime=bedtime,
+                   pace=pace, wake_up=wake_up, bedtime=bedtime, dining=dining,
+                   accommodation=accommodation, nap_notes=nap_notes,
                    extra_notes=extra_notes)
         messages = self._build_messages(theme, candidates, ctx)
         reply, usage, elapsed = _call_openrouter(messages, self.model)
 
         cleaned = None
         try:
-            cleaned = self._validate(self._parse(reply), set(by_id))
+            cleaned = self._validate(self._parse(reply), set(by_id), pace)
         except (ValueError, AttributeError):
             cleaned = None
 
         if cleaned is None:
             # One corrective retry: show the model its own bad reply.
+            expected = min(PACE_STOPS.get(pace, 3), len(by_id))
             retry_messages = messages + [
                 {"role": "assistant", "content": reply},
                 {"role": "user", "content": (
                     "That response was not valid. Reply again with ONLY strict "
-                    "JSON: {\"stops\": [...]}, 2 to 4 stops, each venue_id taken "
-                    "from the candidate list above -- never invent one.")},
+                    f"JSON: {{\"stops\": [...]}}, {expected} stop(s), each a "
+                    "distinct venue_id taken from the candidate list above -- "
+                    "never invent or repeat one.")},
             ]
             reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model)
             elapsed += elapsed2
             try:
-                cleaned = self._validate(self._parse(reply2), set(by_id))
+                cleaned = self._validate(self._parse(reply2), set(by_id), pace)
             except (ValueError, AttributeError):
                 cleaned = None
 

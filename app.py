@@ -554,7 +554,9 @@ def plan_ai():
             nap_1=form["nap_1"], nap_2=form["nap_2"],
             feeding_1=form["feeding_1"], feeding_2=form["feeding_2"],
             pace=form["pace"], wake_up=form["wake_up"], bedtime=form["bedtime"],
-            features=form["features"], extra_notes=form["extra_notes"])
+            features=form["features"], transit=form["transit"],
+            dining=form["dining"], accommodation=form["accommodation"],
+            nap_notes=form["nap_notes"], extra_notes=form["extra_notes"])
     except KeyError:
         return jsonify({"error": "The AI planner isn't configured yet."}), 500
     except requests.exceptions.RequestException:
