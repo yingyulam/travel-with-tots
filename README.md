@@ -79,6 +79,8 @@ pages, linked in the header nav only when logged in as an admin:
   automatically re-indexes it for the chatbot in the background.
 - `/chunks`: see exactly how the knowledge base was split into chunks, and
   re-run chunking with a different chunk size.
+- `/results`: browse every thumbs up/down rated chatbot response, with
+  aggregate stats (total up/down, percent positive) at the top.
 
 ## AI chatbot
 
@@ -103,6 +105,12 @@ model's own guesses:
 4. The first time the index is built (or after an admin edits the knowledge
    base or re-chunks it), embedding runs in the background with a progress
    animation in the widget instead of freezing the page.
+
+Every response gets a 👍/👎 rating in the widget. Clicking one disables both
+buttons for that message and saves the question, answer, model, timestamp,
+response time, and token counts to `data/results.json` (git-ignored runtime
+data, not seed content). An admin can review every rated response, and the
+aggregate stats, from `/results`.
 
 ## Running locally
 
@@ -138,7 +146,8 @@ travel-with-tots/
 │   ├── knowledge_base.md     # chatbot facts, editable from /settings
 │   ├── app.db                # SQLite database (generated on first run; git-ignored)
 │   ├── chroma/                # chatbot's vector index (generated; git-ignored)
-│   └── rag_config.json       # current chunk size + knowledge-base hash (generated; git-ignored)
+│   ├── rag_config.json       # current chunk size + knowledge-base hash (generated; git-ignored)
+│   └── results.json          # thumbs up/down ratings (generated; git-ignored)
 ├── src/                       # Application logic
 │   ├── data_loader.py         # loads venue data, builds Google Maps links
 │   ├── db.py                  # SQLite data layer (schema, connection, safe writes)
@@ -148,6 +157,7 @@ travel-with-tots/
 │   ├── interactions.py         # replan() + find_nearby() placeholders
 │   ├── agents.py                # chatbot logic, routed through OpenRouter
 │   ├── rag.py                   # chunking, embeddings, and retrieval for the chatbot
+│   ├── results.py               # saves/reads thumbs up/down chatbot ratings
 │   └── prompts/
 │       └── website_chatbot.txt  # chatbot system prompt
 ├── templates/
@@ -159,11 +169,12 @@ travel-with-tots/
 │   ├── dashboard.html            # saved children + trips
 │   ├── settings.html             # admin: edit knowledge base + prompt
 │   ├── chunks.html               # admin: view and re-run chunking
+│   ├── results.html              # admin: browse chatbot ratings + stats
 │   └── _chatbot_widget.html      # floating chat widget, included on every page
 ├── static/
 │   ├── style.css                # planner / in-trip / account styling
 │   ├── landing.css               # landing-page styling
-│   ├── chatbot.css, chatbot.js   # chat widget styling + behaviour
+│   ├── chatbot.css, chatbot.js   # chat widget styling + behaviour (incl. ratings)
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   └── chunks.js                  # Chunks page re-run behaviour
 ├── tests/
@@ -208,11 +219,13 @@ parameterized and run inside a transaction.
 | `/replan`                   | POST     | Re-plan the rest of the day (JSON in/out)              |
 | `/find_nearby`              | POST     | Find 1-2 venues for an immediate need (JSON)          |
 | `/chatbot`                  | POST     | Ask the chatbot a question (JSON in/out)              |
+| `/feedback`                 | POST     | Save a thumbs up/down rating on a chatbot response    |
 | `/rag/status`               | GET      | Poll-able chatbot indexing status                     |
 | `/settings`                 | GET      | Admin: view/edit knowledge base + prompt              |
 | `/settings/knowledge-base`, `/settings/prompt` | POST | Admin: save the knowledge base or prompt |
 | `/chunks`                   | GET      | Admin: list every chatbot knowledge-base chunk        |
 | `/chunks/rerun`             | POST     | Admin: re-chunk and re-embed at a different size      |
+| `/results`                  | GET      | Admin: browse rated chatbot responses + stats         |
 
 ## Data model
 
