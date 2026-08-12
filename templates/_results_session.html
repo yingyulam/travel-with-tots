@@ -6,24 +6,33 @@
 
 <section class="card">
   <h2 id="results-count-heading-{{ session.kind }}">{{ session.title }} ({{ session.results|length }})</h2>
-  <div class="twt-chunk-list" id="results-list-{{ session.kind }}">
+  <div class="twt-result-list" id="results-list-{{ session.kind }}">
     {% for r in session.results %}
-    <details class="twt-chunk-row">
-      <summary>
-        {{ "👍" if r.rating == "up" else "👎" }}
-        <span class="twt-badge">{{ r.model }}</span>
-        {{ r.question|truncate(50) }} → {{ r.response|truncate(50) }}
+    <details class="twt-result-card">
+      <summary class="twt-result-summary">
+        <span class="twt-result-rating {{ 'up' if r.rating == 'up' else 'down' }}">{{ "👍" if r.rating == "up" else "👎" }}</span>
+        <div class="twt-result-main">
+          <p class="twt-result-question">{{ r.question|truncate(50) }}</p>
+          <p class="twt-result-response">{{ r.response|truncate(50) }}</p>
+        </div>
+        <div class="twt-result-meta">
+          <span class="twt-badge">{{ r.model }}</span>
+          <span class="twt-result-timestamp">{{ r.timestamp }}</span>
+        </div>
+        <span class="twt-result-chevron" aria-hidden="true">⌄</span>
       </summary>
-      <p class="twt-chunk-text"><strong>Question:</strong> {{ r.question }}</p>
-      <p class="twt-chunk-text"><strong>Response:</strong> {{ r.response }}</p>
-      <p class="meta">
-        Model: {{ r.model }} ·
-        Rating: {{ r.rating }} ·
-        Timestamp: {{ r.timestamp }} ·
-        Response time: {{ r.response_time }}s ·
-        Input tokens: {{ r.input_tokens }} ·
-        Output tokens: {{ r.output_tokens }}
-      </p>
+      <div class="twt-result-details">
+        <p class="twt-chunk-text"><strong>Question:</strong> {{ r.question }}</p>
+        <p class="twt-chunk-text"><strong>Response:</strong> {{ r.response }}</p>
+        <p class="meta">
+          Model: {{ r.model }} ·
+          Rating: {{ r.rating }} ·
+          Timestamp: {{ r.timestamp }} ·
+          Response time: {{ r.response_time }}s ·
+          Input tokens: {{ r.input_tokens }} ·
+          Output tokens: {{ r.output_tokens }}
+        </p>
+      </div>
     </details>
     {% else %}
     <p class="empty-plan">No ratings yet.</p>

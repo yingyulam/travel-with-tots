@@ -9,32 +9,62 @@ function truncate(text, length = 50) {
 
 function renderRow(r) {
   const details = document.createElement("details");
-  details.className = "twt-chunk-row";
+  details.className = "twt-result-card";
 
   const summary = document.createElement("summary");
-  summary.appendChild(document.createTextNode(r.rating === "up" ? "👍 " : "👎 "));
+  summary.className = "twt-result-summary";
+
+  const rating = document.createElement("span");
+  rating.className = `twt-result-rating ${r.rating === "up" ? "up" : "down"}`;
+  rating.textContent = r.rating === "up" ? "👍" : "👎";
+  summary.appendChild(rating);
+
+  const main = document.createElement("div");
+  main.className = "twt-result-main";
+  const questionLine = document.createElement("p");
+  questionLine.className = "twt-result-question";
+  questionLine.textContent = truncate(r.question, 50);
+  const responseLine = document.createElement("p");
+  responseLine.className = "twt-result-response";
+  responseLine.textContent = truncate(r.response, 50);
+  main.append(questionLine, responseLine);
+  summary.appendChild(main);
+
+  const metaCol = document.createElement("div");
+  metaCol.className = "twt-result-meta";
   const badge = document.createElement("span");
   badge.className = "twt-badge";
   badge.textContent = r.model;
-  summary.appendChild(badge);
-  summary.appendChild(
-    document.createTextNode(` ${truncate(r.question, 50)} → ${truncate(r.response, 50)}`)
-  );
+  const timestamp = document.createElement("span");
+  timestamp.className = "twt-result-timestamp";
+  timestamp.textContent = r.timestamp;
+  metaCol.append(badge, timestamp);
+  summary.appendChild(metaCol);
+
+  const chevron = document.createElement("span");
+  chevron.className = "twt-result-chevron";
+  chevron.setAttribute("aria-hidden", "true");
+  chevron.textContent = "⌄";
+  summary.appendChild(chevron);
+
   details.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "twt-result-details";
 
   const questionP = document.createElement("p");
   questionP.className = "twt-chunk-text";
   const questionLabel = document.createElement("strong");
   questionLabel.textContent = "Question:";
   questionP.append(questionLabel, document.createTextNode(" " + r.question));
-  details.appendChild(questionP);
+  body.appendChild(questionP);
 
   const responseP = document.createElement("p");
   responseP.className = "twt-chunk-text";
   const responseLabel = document.createElement("strong");
   responseLabel.textContent = "Response:";
   responseP.append(responseLabel, document.createTextNode(" " + r.response));
-  details.appendChild(responseP);
+  body.appendChild(responseP);
 
   const meta = document.createElement("p");
   meta.className = "meta";
@@ -42,7 +72,9 @@ function renderRow(r) {
     `Model: ${r.model} · Rating: ${r.rating} · Timestamp: ${r.timestamp} · ` +
     `Response time: ${r.response_time}s · Input tokens: ${r.input_tokens} · ` +
     `Output tokens: ${r.output_tokens}`;
-  details.appendChild(meta);
+  body.appendChild(meta);
+
+  details.appendChild(body);
 
   return details;
 }
