@@ -165,6 +165,20 @@
       return parts.join("");
     }
 
+    // The venue data grounding a stop's "reason" -- rule-based venues use
+    // open/close with no age fields; AI-planner venues use open_time/close_time
+    // plus min_age_months/max_age_months. Tolerate both.
+    function stopWhyDetail(v) {
+      const open = v.open || v.open_time;
+      const close = v.close || v.close_time;
+      const hours = (open && close) ? `Open ${open}-${close}` : "Hours unknown";
+      const age = (v.min_age_months != null && v.max_age_months != null)
+        ? ` · Ages ${v.min_age_months}-${v.max_age_months} months` : "";
+      return `<div class="twt-citation-detail-meta">${v.neighbourhood}${age}</div>
+              <p>${hours}</p>
+              <div class="badges">${badges(v)}</div>`;
+    }
+
     // Which stop is "now": the latest stop that has already started.
     function nowIndex(stops) {
       const cur = nowMinutes();
@@ -183,6 +197,8 @@
              <h3>🍽 Lunch break${stop.duration ? " · ⏱ " + stop.duration : ""}</h3>
              <p class="meta">${v.name} · ${v.neighbourhood}</p>
              <p class="reason">${stop.reason}</p>
+             <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
+             <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
              <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
            </div>`;
       } else if (v) {
@@ -191,6 +207,8 @@
              <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
              <div class="badges">${badges(v)}</div>
              <p class="reason">💡 ${stop.reason}</p>
+             <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
+             <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
              <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
            </div>`;
       } else {
@@ -233,6 +251,17 @@
     }
 
     timeField.addEventListener("input", renderTimeline);
+
+    // Delegated so it keeps working after renderTimeline() rebuilds
+    // host.innerHTML wholesale (time change, tab switch, re-plan).
+    host.addEventListener("click", (e) => {
+      const btn = e.target.closest(".stop-why-btn");
+      if (!btn) return;
+      const detail = btn.nextElementSibling;
+      const expanded = btn.getAttribute("aria-expanded") === "true";
+      detail.hidden = expanded;
+      btn.setAttribute("aria-expanded", String(!expanded));
+    });
 
     // Run a re-plan and install the result as the single "Current" version.
     // minutes is the parent-entered duration (nap length / how far behind).
