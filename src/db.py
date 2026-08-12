@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS trips (
     transit       TEXT,                   -- JSON array of transit modes
     pace          TEXT,
     dining        TEXT,
+    preferred_lunch_time TEXT,             -- "HH:MM": when the parent wants lunch scheduled
     features      TEXT,                   -- JSON array of feature keys
     nap_notes     TEXT,
     extra_notes   TEXT,
@@ -112,8 +113,8 @@ MIN_CLUSTER_SIZE = 6
 TRIP_FIELDS = (
     "trip_date", "wake_up", "bedtime", "nap_1", "nap_2", "transit_nap",
     "feeding_1", "feeding_2", "destination", "accommodation", "transit",
-    "pace", "dining", "features", "nap_notes", "extra_notes", "plan_label",
-    "plan_json",
+    "pace", "dining", "preferred_lunch_time", "features", "nap_notes",
+    "extra_notes", "plan_label", "plan_json",
 )
 
 
@@ -151,6 +152,9 @@ def _ensure_columns(conn):
     if "transit_nap" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN transit_nap TEXT")
+    if "preferred_lunch_time" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips ADD COLUMN preferred_lunch_time TEXT")
 
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(parents)")}
     if "is_admin" not in existing:
@@ -201,6 +205,7 @@ def _migrate_trips_ownership(conn):
                 transit       TEXT,
                 pace          TEXT,
                 dining        TEXT,
+                preferred_lunch_time TEXT,
                 features      TEXT,
                 nap_notes     TEXT,
                 extra_notes   TEXT,
@@ -212,13 +217,15 @@ def _migrate_trips_ownership(conn):
         conn.execute("""
             INSERT INTO trips (id, parent_id, child_id, trip_date, wake_up,
                 bedtime, nap_1, nap_2, transit_nap, feeding_1, feeding_2,
-                destination, accommodation, transit, pace, dining, features,
-                nap_notes, extra_notes, plan_label, plan_json, created_at)
+                destination, accommodation, transit, pace, dining,
+                preferred_lunch_time, features, nap_notes, extra_notes,
+                plan_label, plan_json, created_at)
             SELECT t.id, c.parent_id, t.child_id, t.trip_date, t.wake_up,
                 t.bedtime, t.nap_1, t.nap_2, t.transit_nap, t.feeding_1,
                 t.feeding_2, t.destination, t.accommodation, t.transit,
-                t.pace, t.dining, t.features, t.nap_notes, t.extra_notes,
-                t.plan_label, t.plan_json, t.created_at
+                t.pace, t.dining, t.preferred_lunch_time, t.features,
+                t.nap_notes, t.extra_notes, t.plan_label, t.plan_json,
+                t.created_at
             FROM trips_old t JOIN children c ON c.id = t.child_id
         """)
         conn.execute("DROP TABLE trips_old")

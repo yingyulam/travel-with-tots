@@ -110,6 +110,7 @@ DEFAULTS = {
     "transit": ["stroller"],
     "pace": "balanced",
     "dining": "dine_out",
+    "preferred_lunch_time": "",
     "nap_notes": "",
     "extra_notes": "",
     "features": ["kid_friendly"],
@@ -161,6 +162,7 @@ def _read_form(form):
         "transit": form.getlist("transit"),
         "pace": form.get("pace") or DEFAULTS["pace"],
         "dining": form.get("dining") or DEFAULTS["dining"],
+        "preferred_lunch_time": form.get("preferred_lunch_time", ""),
         "nap_notes": form.get("nap_notes", ""),
         "extra_notes": form.get("extra_notes", ""),
         "features": form.getlist("features"),
@@ -568,7 +570,8 @@ def plan_ai():
             features=form["features"], transit=form["transit"],
             dining=form["dining"], accommodation=form["accommodation"],
             nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],
-            transit_nap=form["transit_nap"])
+            transit_nap=form["transit_nap"],
+            preferred_lunch_time=form["preferred_lunch_time"])
     except KeyError:
         return jsonify({"error": "The AI planner isn't configured yet."}), 500
     except requests.exceptions.RequestException:

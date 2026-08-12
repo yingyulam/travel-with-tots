@@ -28,7 +28,8 @@ separate.
   in place, no reload or extra AI calls). The plan draws from whichever
   theme(s) were picked rather than being locked to just one, is short (2-4
   stops, fewer for younger kids and a relaxed pace, more for older kids and
-  an adventurous pace), places a **food** venue around midday, and drops a
+  an adventurous pace), places a **food** venue as close as possible to the
+  parent's preferred lunch time (or midday if none was given), and drops a
   **nap-friendly** venue into the nap window so the day keeps flowing
   instead of blocking time.
 - The card has a **"Start this day"** button that carries the chosen plan to
@@ -63,13 +64,21 @@ separate.
   even one stop cites an id outside the list, repeats an id already used
   elsewhere in the same plan, or is otherwise malformed, the *whole*
   response is rejected and retried once rather than silently trimmed. The
-  expected stop count follows the pace (2/3/4 for relaxed/balanced/
-  adventurous) -- but only when there are at least that many real candidate
-  venues. If the candidate list is thinner than that, a shorter plan using
-  only the venues actually available is the *correct*, expected outcome,
-  not an error; if no candidate fits any of the selected themes well, the
-  model drops theme-matching for that plan and chooses stops from the trip's
-  other constraints instead. If there are no candidate venues at all, the
+  pace's stop count (2/3/4 for relaxed/balanced/adventurous) is a **ceiling**,
+  not a mandate: the model is told to use fewer stops whenever a shorter day
+  paces more realistically, not only when the candidate list is thinner than
+  that, and validation accepts anywhere from 1 up to that ceiling either way.
+  To make "realistic" concrete, the prompt gives the model assumed durations
+  for an activity/meal/nap stop and a minimum per-transit-mode gap to leave
+  between stops (a heuristic placeholder pending a real routing API, in
+  keeping with the "no real geodata" limitation above), and treats every
+  given time -- wake-up, bedtime, nap, feeding, and the parent's **preferred
+  lunch time** -- as a target window rather than an exact appointment. Both
+  planners schedule the lunch stop as close as possible to that preferred
+  lunch time when one is given, instead of a fixed clock window. If no
+  candidate fits any of the selected themes well, the model drops
+  theme-matching for that plan and chooses stops from the trip's other
+  constraints instead. If there are no candidate venues at all, the
   model is never called and a clear error is shown right away. The result
   appears as a new card right beside its rule-based counterpart, tagged
   **"✨ AI-suggested plan"** so the two are easy to tell apart. Asking again

@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 
 from . import db, rag
 from .data_loader import maps_url
-from .itinerary import PACE_STOPS, combine_themes, resolve_themes
+from .itinerary import (
+    LUNCH_DURATION_LABEL, PACE_STOPS, combine_themes, resolve_themes,
+    stop_duration, transit_buffer_min,
+)
 
 load_dotenv()
 
@@ -47,18 +50,30 @@ def _print_usage_report(model: str, usage: dict | None, elapsed: float) -> None:
     print("└" + "─" * width)
 
 
+def _log_request_failure(model: str, detail: str) -> None:
+    print(f"┌─ AI request failed, model: {model}")
+    print(f"│  {detail}")
+    print("└" + "─" * 44)
+
+
 def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float]:
     """Returns (reply text, usage dict, elapsed seconds)."""
     api_key = os.environ["OPENROUTER_API_KEY"]
 
     start = time.perf_counter()
-    response = requests.post(
-        OPENROUTER_URL,
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model, "messages": messages, "usage": {"include": True}},
-    )
-    elapsed = time.perf_counter() - start
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model, "messages": messages, "usage": {"include": True}},
+        )
+        elapsed = time.perf_counter() - start
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        detail = e.response.text[:300] if e.response is not None else str(e)
+        _log_request_failure(model, detail)
+        raise
+
     try:
         data = response.json()
         choices = data["choices"]
@@ -67,6 +82,7 @@ def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float
         # or malformed body under load -- treat that as "unavailable" too,
         # not as a real bug (it isn't caught by the KeyError-means-missing
         # -API-key handler in app.py, which this used to fall into).
+        _log_request_failure(model, f"unusable response body ({e}): {response.text[:300]!r}")
         raise requests.exceptions.RequestException(
             f"OpenRouter returned an unusable response for {model}") from e
 
@@ -214,6 +230,12 @@ class PlanningAgent:
             .replace("{nap_notes}", ctx["nap_notes"] or "none")
             .replace("{transit}", ", ".join(ctx["transit"]) if ctx.get("transit") else "none")
             .replace("{transit_nap}", ctx["transit_nap"] or "sometimes")
+            .replace("{preferred_lunch_time}", ctx["preferred_lunch_time"] or "none")
+            .replace("{activity_duration_min}", str(ctx["activity_duration_min"]))
+            .replace("{meal_duration_min}", str(ctx["meal_duration_min"]))
+            .replace("{nap_duration_min}", str(ctx["nap_duration_min"]))
+            .replace("{transit_buffer_min}", str(ctx["transit_buffer_min"]))
+            .replace("{lunch_duration_label}", LUNCH_DURATION_LABEL)
         )
         return [{"role": "system", "content": prompt}]
 
@@ -231,19 +253,15 @@ class PlanningAgent:
         silently dropping it -- so a plan never ships with fewer stops than
         its pace requires just because one citation didn't check out.
 
-        The expected count follows PACE_STOPS, but a thin candidate list
-        caps it: with enough real venues, the count must match the pace
-        exactly; with fewer venues than the pace calls for, anywhere from 1
-        up to however many exist is valid -- a short plan is not an error."""
+        The pace's stop count is a ceiling, not a mandate: anywhere from 1
+        up to min(pace count, available candidates) is valid, whether the
+        candidate list is thin or the model simply chose a shorter, more
+        realistically-paced day -- neither is an error."""
         stops = parsed.get("stops") if isinstance(parsed, dict) else None
         if not isinstance(stops, list):
             return None
-        expected = PACE_STOPS.get(pace, 3)
-        available = len(valid_ids)
-        if available >= expected:
-            if len(stops) != expected:
-                return None
-        elif not (1 <= len(stops) <= available):
+        cap = min(PACE_STOPS.get(pace, 3), len(valid_ids))
+        if not (1 <= len(stops) <= cap):
             return None
         cleaned = []
         seen_ids = set()
@@ -267,7 +285,8 @@ class PlanningAgent:
                                   nap_1, nap_2, feeding_1, feeding_2, pace,
                                   wake_up, bedtime, features, transit=None,
                                   dining=None, accommodation="", nap_notes="",
-                                  extra_notes="", transit_nap=""):
+                                  extra_notes="", transit_nap="",
+                                  preferred_lunch_time=""):
         """One plan combining the given theme(s), on demand, so a parent only
         spends a model call when they actually ask for it. `theme_labels` is
         whichever theme checkboxes were selected (falls back to all three,
@@ -286,7 +305,12 @@ class PlanningAgent:
                    nap_2=nap_2, feeding_1=feeding_1, feeding_2=feeding_2,
                    pace=pace, wake_up=wake_up, bedtime=bedtime, dining=dining,
                    accommodation=accommodation, nap_notes=nap_notes,
-                   extra_notes=extra_notes, transit=transit, transit_nap=transit_nap)
+                   extra_notes=extra_notes, transit=transit, transit_nap=transit_nap,
+                   preferred_lunch_time=preferred_lunch_time,
+                   activity_duration_min=stop_duration("activity"),
+                   meal_duration_min=stop_duration("meal"),
+                   nap_duration_min=stop_duration("nap"),
+                   transit_buffer_min=transit_buffer_min(transit))
         messages = self._build_messages(theme, candidates, ctx)
         reply, usage, elapsed = _call_openrouter(messages, self.model)
 
@@ -298,12 +322,12 @@ class PlanningAgent:
 
         if cleaned is None:
             # One corrective retry: show the model its own bad reply.
-            expected = min(PACE_STOPS.get(pace, 3), len(by_id))
+            cap = min(PACE_STOPS.get(pace, 3), len(by_id))
             retry_messages = messages + [
                 {"role": "assistant", "content": reply},
                 {"role": "user", "content": (
                     "That response was not valid. Reply again with ONLY strict "
-                    f"JSON: {{\"stops\": [...]}}, {expected} stop(s), each a "
+                    f"JSON: {{\"stops\": [...]}}, 1 to {cap} stop(s), each a "
                     "distinct venue_id taken from the candidate list above -- "
                     "never invent or repeat one.")},
             ]

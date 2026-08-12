@@ -29,10 +29,27 @@ CLOSING_BUFFER_MIN = 30
 # How long each kind of stop is assumed to take (used for the open-hours check).
 STOP_DURATION_MIN = {"activity": 60, "nap": 45, "meal": LUNCH_DURATION_MIN, "bonus": 60}
 
-# Lunch has to start somewhere in this window -- late enough that a stop or two
-# can come first, but not so late it stops being "lunch".
-LUNCH_WINDOW_START_MIN = 10 * 60 + 30  # 10:30am
-LUNCH_WINDOW_END_MIN = 13 * 60 + 30    # 1:30pm
+# Placeholder inter-stop travel buffer, in minutes, by transit mode -- how long
+# to allow for getting from one stop to the next when no real distance is
+# known. A real implementation would ask a routing API for the actual travel
+# time between each specific pair of venues instead of this flat per-mode
+# guess, same role as LEAVE_BUFFER above.
+TRANSIT_BUFFER_MIN = {"car": 15, "bus": 25, "stroller": 20, "carrier": 20, "other": 20}
+
+# Fallback lunch target when the parent didn't set a preferred lunch time.
+DEFAULT_LUNCH_TARGET_MIN = 12 * 60  # noon
+# How far from the target lunch time to search for an open, unused venue that
+# fits the full meal block, in either direction.
+LUNCH_SEARCH_RADIUS_MIN = 180
+
+
+def transit_buffer_min(transit_modes):
+    """Conservative minutes to allow when moving between stops, given the
+    selected transit mode(s) -- the slowest selected mode sets the buffer.
+    Swap this out for a real routing-API lookup later; callers only need a
+    single number back, so nothing else changes."""
+    return max((TRANSIT_BUFFER_MIN.get(m, TRANSIT_BUFFER_MIN["other"])
+                for m in (transit_modes or [])), default=TRANSIT_BUFFER_MIN["other"])
 
 
 def _hhmm_to_min(text):
@@ -195,20 +212,20 @@ def _reason(venue, kind, theme):
     return f"{theme['label']} pick: {venue['type']} in {venue['neighbourhood']}."
 
 
-def _lunch_time(stops, naps):
-    """A midday start for lunch so the whole 1.5-hour block fits before the next
-    stop (with a short lead after the previous one), keeping the day well-paced."""
+def _lunch_time(stops, naps, preferred_lunch_min=None):
+    """A lunch start time close to ``preferred_lunch_min`` (or a noon default
+    when not given) so the whole 1.5-hour block fits before the next stop
+    (with a short lead after the previous one), keeping the day well-paced."""
     occupied = []
     for stop in stops:
         dt = _parse_display(stop["time"])
         occupied.append(dt.hour * 60 + dt.minute)
     occupied += [n.hour * 60 + n.minute for n in naps]
 
-    target = 12 * 60  # aim for a noon lunch
-    max_offset = max(target - LUNCH_WINDOW_START_MIN, LUNCH_WINDOW_END_MIN - target)
-    for offset in range(0, max_offset + 1, 15):
+    target = preferred_lunch_min if preferred_lunch_min is not None else DEFAULT_LUNCH_TARGET_MIN
+    for offset in range(0, LUNCH_SEARCH_RADIUS_MIN + 1, 15):
         for candidate in (target - offset, target + offset):
-            if not LUNCH_WINDOW_START_MIN <= candidate <= LUNCH_WINDOW_END_MIN:
+            if not 0 <= candidate < 24 * 60:
                 continue
             before = max((o for o in occupied if o <= candidate), default=None)
             after = min((o for o in occupied if o > candidate), default=None)
@@ -219,14 +236,14 @@ def _lunch_time(stops, naps):
     return datetime(1900, 1, 1, target // 60, target % 60)
 
 
-def _lunch_stop(food_pool, used, stops, naps):
-    """A midday lunch to fit in -- a meal, not one of the day's stops.
+def _lunch_stop(food_pool, used, stops, naps, preferred_lunch_min=None):
+    """A lunch to fit in -- a meal, not one of the day's stops.
 
     Picks a place you can eat at (restaurant, cafe, or a mall food court) that
     is open for the whole lunch block at the chosen time. Returns None if
     nothing suitable is open.
     """
-    when = _lunch_time(stops, naps)
+    when = _lunch_time(stops, naps, preferred_lunch_min)
     start_min = when.hour * 60 + when.minute
     venue = _pick(food_pool, used, start_min, stop_duration("meal"))
     if venue is None:
@@ -242,7 +259,7 @@ def _lunch_stop(food_pool, used, stops, naps):
     }
 
 
-def _build_plan(matches, wake, bedtime, naps, count, theme, dining):
+def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lunch_min=None):
     """Build one themed plan: an ordered list of timed stops.
 
     ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
@@ -304,7 +321,7 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining):
     # Dining out adds a lunch to fit in around midday -- a meal, not one of the
     # day's stops, so it never displaces an activity.
     if dining == "dine_out":
-        lunch = _lunch_stop(food, used, stops, naps)
+        lunch = _lunch_stop(food, used, stops, naps, preferred_lunch_min)
         if lunch:
             stops.append(lunch)
             stops.sort(key=lambda s: _parse_display(s["time"]))
@@ -334,9 +351,11 @@ def generate_plans(venues, inputs):
     count = _stop_count(inputs["pace"], inputs["age_years"], inputs["age_months"])
     accommodation = inputs.get("accommodation", "")
     dining = inputs.get("dining", "dine_out")
+    preferred_lunch_time = inputs.get("preferred_lunch_time") or ""
+    preferred_lunch_min = _hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
     theme = combine_themes(resolve_themes(inputs.get("themes")))
-    stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining)
+    stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lunch_min)
     leave = _leave_stop(accommodation, stops)
     if leave:
         stops = [leave] + stops
