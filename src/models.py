@@ -59,6 +59,8 @@ class Trip:
     current_time: str = ""
     features: list = field(default_factory=list)
     bedtime: str = ""
+    age_months: int = 0
+    dining: str = ""
     versions: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -77,5 +79,7 @@ class Trip:
             "current_time": self.current_time,
             "features": self.features,
             "bedtime": self.bedtime,
+            "age_months": self.age_months,
+            "dining": self.dining,
             "plans": [p.to_dict() for p in self.versions],
         }

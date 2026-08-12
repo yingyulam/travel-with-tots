@@ -93,6 +93,7 @@
       <div class="action-panel">
         <p class="panel-title">Plan versions</p>
         <div class="plan-picker" id="plan-picker"></div>
+        <button type="button" id="ai-replan-btn" class="cta-secondary">✨ Try AI replan</button>
       </div>
 
       {% if not saved %}
@@ -236,11 +237,18 @@
       host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
     }
 
+    // Fixed slots: Original (0, never changes), Current (1, the deterministic
+    // re-plan), AI Alternative (2, never overwrites slot 1). Iterating over
+    // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole if slot 2
+    // is filled before slot 1 ever is (AI replan tried before any situation
+    // button).
+    const SLOT_LABELS = ["Original", "Current", "AI Alternative"];
     function renderTabs() {
-      // Only ever two slots: Original (0, never changes) and Current (1).
-      picker.innerHTML = PLANS.map((p, i) =>
-        `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${i === 0 ? "Original" : "Current"}</button>`
-      ).join("");
+      picker.innerHTML = SLOT_LABELS
+        .map((label, i) => PLANS[i]
+          ? `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${label}</button>`
+          : "")
+        .join("");
       picker.querySelectorAll(".plan-tab").forEach((tab) => {
         tab.addEventListener("click", () => {
           active = Number(tab.dataset.index);
@@ -263,10 +271,17 @@
       btn.setAttribute("aria-expanded", String(!expanded));
     });
 
+    // Remembers the most recent situation/duration so "Try AI replan" can
+    // reuse it without asking the parent to pick again.
+    let lastSituation = null;
+    let lastMinutes = null;
+
     // Run a re-plan and install the result as the single "Current" version.
     // minutes is the parent-entered duration (nap length / how far behind).
     async function runReplan(situation, minutes) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+      lastSituation = situation;
+      lastMinutes = minutes || null;
       status.hidden = false;
       status.textContent = "Re-planning…";
       try {
@@ -294,6 +309,44 @@
         status.textContent = "Couldn't re-plan right now.";
       }
     }
+
+    // AI-assisted alternative, on demand -- never overwrites "Current" (slot
+    // 1), always lands in its own "AI Alternative" slot (2) so both stay
+    // switchable.
+    async function runAiReplan() {
+      if (!lastSituation) { status.hidden = false; status.textContent = "Pick what's going on first."; return; }
+      if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+      status.hidden = false;
+      status.textContent = "Building an AI replan…";
+      try {
+        const res = await fetch("/replan/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan: PLANS[active],
+            situation: lastSituation,
+            current_time: timeField.value,
+            destination: tripData.destination,
+            age_months: tripData.age_months,
+            features: tripData.features,
+            transit: tripData.transit,
+            dining: tripData.dining,
+            bedtime: tripData.bedtime,
+            minutes: lastMinutes,
+          }),
+        });
+        const aiPlan = await res.json();
+        if (!res.ok) throw new Error(aiPlan.error || "Something went wrong.");
+        PLANS[2] = aiPlan;
+        active = 2;
+        renderTabs();
+        renderTimeline();
+        status.textContent = `AI replan ready from ${aiPlan.from_time || nowDisplay()} — tap “Current” or “Original” to compare.`;
+      } catch (e) {
+        status.textContent = e.message || "Couldn't build an AI replan right now.";
+      }
+    }
+    document.getElementById("ai-replan-btn").addEventListener("click", runAiReplan);
 
     // Prompts that ask for a duration before re-planning.
     const napPrompt = document.getElementById("nap-prompt");

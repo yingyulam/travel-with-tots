@@ -31,6 +31,8 @@ from src.agents import (
     WEBSITE_CHATBOT_PROMPT_PATH,
     PlanningAgent,
     PlanningAgentError,
+    ReplanningAgent,
+    ReplanningAgentError,
     ask_website_chatbot,
     reload_planner_prompt,
     reload_website_chatbot_prompt,
@@ -605,7 +607,7 @@ def plan_ai():
     })
 
 
-def _build_trip(destination, transit, features, bedtime, plan_data):
+def _build_trip(destination, transit, features, bedtime, age_months, dining, plan_data):
     """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
     and reopening a saved itinerary from the dashboard."""
     return Trip(
@@ -613,6 +615,8 @@ def _build_trip(destination, transit, features, bedtime, plan_data):
         transit=transit,
         features=features,
         bedtime=bedtime,
+        age_months=age_months,
+        dining=dining,
         original=Plan.from_dict(plan_data),
     )
 
@@ -644,11 +648,15 @@ def trip():
     except (ValueError, TypeError):
         return redirect(url_for("plan"))
 
+    age_months = (int(context.get("age_years") or DEFAULTS["age_years"]) * 12
+                  + int(context.get("age_months") or 0))
     trip = _build_trip(
         destination=context.get("destination"),
         transit=context.get("transit", []),
         features=context.get("features", []),
         bedtime=context.get("bedtime", ""),
+        age_months=age_months,
+        dining=context.get("dining", ""),
         plan_data=plan_data,
     )
     return _render_trip(trip, trip_form=context)
@@ -663,11 +671,18 @@ def view_trip(trip_id):
     if row is None or not row["plan_json"]:
         flash("That saved trip doesn't have a full itinerary to show.")
         return redirect(url_for("dashboard"))
+    if row["child_dob"]:
+        years, months = compute_age(row["child_dob"])
+        age_months = years * 12 + months
+    else:
+        age_months = int(DEFAULTS["age_years"]) * 12 + int(DEFAULTS["age_months"])
     trip = _build_trip(
         destination=row["destination"],
         transit=json.loads(row["transit"] or "[]"),
         features=json.loads(row["features"] or "[]"),
         bedtime=row["bedtime"] or "",
+        age_months=age_months,
+        dining=row["dining"] or "",
         plan_data=json.loads(row["plan_json"]),
     )
     return _render_trip(trip, saved=True)
@@ -684,6 +699,44 @@ def replan_route():
     return jsonify(replan(plan, data.get("situation", ""), current_time,
                           VENUES, data.get("features") or [],
                           bedtime=data.get("bedtime"), minutes=data.get("minutes")))
+
+
+@app.route("/replan/ai", methods=["POST"])
+def replan_ai_route():
+    """AI-assisted alternative to /replan, on demand. Returns a NEW plan as
+    JSON -- callers must store it separately, never in place of the plan
+    that was sent in."""
+    data = request.get_json(silent=True) or {}
+    plan = data.get("plan")
+    situation = data.get("situation")
+    current_time = data.get("current_time")
+    if not plan or not situation or not current_time:
+        return jsonify({"error": "plan, situation, and current_time are required"}), 400
+
+    model = data.get("model")
+    if model not in ALLOWED_CHAT_MODELS:
+        model = DEFAULT_MODEL
+
+    try:
+        result = ReplanningAgent(model=model).replan_day(
+            situation, plan,
+            current_time=current_time,
+            destination=data.get("destination", ""),
+            age_months=int(data.get("age_months") or 0),
+            features=data.get("features") or [],
+            transit=data.get("transit") or [],
+            dining=data.get("dining"),
+            bedtime=data.get("bedtime"),
+            minutes=data.get("minutes"),
+        )
+    except KeyError:
+        return jsonify({"error": "The AI replanner isn't configured yet."}), 500
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "The AI replanner is unavailable right now. Please try again."}), 502
+    except ReplanningAgentError as e:
+        return jsonify({"error": str(e)}), 502
+
+    return jsonify(result)
 
 
 @app.route("/find_nearby", methods=["POST"])

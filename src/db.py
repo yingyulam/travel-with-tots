@@ -419,26 +419,30 @@ def get_trip_for_parent(parent_id, trip_id):
     """One trip by id, scoped to this parent's own trips (ownership check)."""
     with closing(connect()) as conn:
         return conn.execute(
-            "SELECT trips.*, children.name AS child_name FROM trips "
+            "SELECT trips.*, children.name AS child_name, "
+            "children.date_of_birth AS child_dob FROM trips "
             "LEFT JOIN children ON children.id = trips.child_id "
             "WHERE trips.parent_id = ? AND trips.id = ?",
             (parent_id, trip_id)).fetchone()
 
 
 def get_candidate_venues(city, age_months, features=None, transit=None,
-                          dining=None, limit=CANDIDATE_LIMIT):
+                          dining=None, near_neighbourhood=None, limit=CANDIDATE_LIMIT):
     """Curated venues in `city` (substring match) whose age range covers
     `age_months`, narrowed by feature tags. Used to ground the AI planning
     agent -- it must never reference a venue outside this list.
 
     There's no real geodata anywhere in this app (no lat/lng, no routing
-    API), so `transit` is used as a coarse location proxy instead of a real
-    radius/travel-time filter: without a car, candidates are narrowed to the
-    single most common neighbourhood among the matches (keeping stops close
-    together), as long as that neighbourhood has enough venues to still
-    offer a real choice; with a car, all matching neighbourhoods stay in
-    play. If `dining` is "dine_out", at least one venue where a meal is
-    possible is guaranteed a slot, so there's always a real lunch option."""
+    API), so location is a coarse proxy instead of a real radius/travel-time
+    filter. If `near_neighbourhood` is given (e.g. replanning from a known
+    current stop), candidates are narrowed to that specific neighbourhood, as
+    long as it has enough venues to still offer a real choice. Otherwise
+    `transit` decides: without a car, candidates are narrowed to the single
+    most common neighbourhood among the matches (keeping stops close
+    together), again only if it has enough venues; with a car, all matching
+    neighbourhoods stay in play. If `dining` is "dine_out", at least one
+    venue where a meal is possible is guaranteed a slot, so there's always a
+    real lunch option."""
     wanted = [f for f in (features or []) if f in CANDIDATE_FEATURE_COLUMNS]
     clauses = ["source = 'curated'", "city LIKE ?",
                "min_age_months <= ?", "max_age_months >= ?"]
@@ -451,7 +455,11 @@ def get_candidate_venues(city, age_months, features=None, transit=None,
         rows = conn.execute(
             f"SELECT * FROM venues WHERE {where} ORDER BY name", params).fetchall()
 
-        if "car" not in (transit or []) and rows:
+        if near_neighbourhood is not None:
+            narrowed = [row for row in rows if row["neighbourhood"] == near_neighbourhood]
+            if len(narrowed) >= MIN_CLUSTER_SIZE:
+                rows = narrowed
+        elif "car" not in (transit or []) and rows:
             by_neighbourhood = {}
             for row in rows:
                 by_neighbourhood.setdefault(row["neighbourhood"], []).append(row)
