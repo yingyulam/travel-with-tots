@@ -375,22 +375,32 @@ def chunks_rerun():
     return jsonify({"status": "started"})
 
 
+# (kind, display title) for each session shown on the Results page.
+RESULT_KINDS = [("chatbot", "Chatbox"), ("plan", "Generated Plan")]
+
+
+def _results_sessions():
+    return [{"kind": kind, "title": title, "results": get_results(kind), "stats": get_stats(kind)}
+            for kind, title in RESULT_KINDS]
+
+
 @app.route("/results")
 @login_required
 @admin_required
 def results():
-    """Every rated chatbot response, with aggregate stats."""
-    return render_template("results.html", results=get_results(), stats=get_stats())
+    """Every rated chatbot response and AI-generated plan, with aggregate
+    stats per session."""
+    return render_template("results.html", sessions=_results_sessions())
 
 
 @app.route("/results/data")
 @login_required
 @admin_required
 def results_data():
-    """Poll-able stats + full results list, so the Results page can
-    refresh itself in place without reloading (which would also reset any
-    chatbot conversation open elsewhere on the page)."""
-    return jsonify({"stats": get_stats(), "results": get_results()})
+    """Poll-able stats + full results list per session, so the Results page
+    can refresh itself in place without reloading (which would also reset
+    any chatbot conversation open elsewhere on the page)."""
+    return jsonify({"sessions": _results_sessions()})
 
 
 @app.route("/add-child", methods=["POST"])
@@ -590,6 +600,8 @@ def plan_ai():
         "trip_form": form,
         "model": result["model"],
         "response_time": result["response_time"],
+        "input_tokens": result.get("input_tokens"),
+        "output_tokens": result.get("output_tokens"),
     })
 
 
@@ -709,13 +721,16 @@ def chatbot_route():
 
 @app.route("/feedback", methods=["POST"])
 def feedback_route():
-    """Save a thumbs up/down rating on a chatbot response, as JSON."""
+    """Save a thumbs up/down rating on a chatbot response or AI-generated
+    plan, as JSON."""
     data = request.get_json(silent=True) or {}
     question = (data.get("question") or "").strip()
     response_text = data.get("response") or ""
     rating = data.get("rating")
-    if not question or not response_text or rating not in ("up", "down"):
-        return jsonify({"error": "question, response, and a valid rating are required"}), 400
+    kind = data.get("kind") or "chatbot"
+    if (not question or not response_text or rating not in ("up", "down")
+            or kind not in ("chatbot", "plan")):
+        return jsonify({"error": "question, response, and a valid rating/kind are required"}), 400
 
     save_result(
         question=question,
@@ -725,6 +740,7 @@ def feedback_route():
         response_time=data.get("response_time"),
         input_tokens=data.get("input_tokens"),
         output_tokens=data.get("output_tokens"),
+        kind=kind,
     )
     return jsonify({"status": "saved"})
 

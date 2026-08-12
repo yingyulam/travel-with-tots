@@ -26,6 +26,14 @@ ALLOWED_CHAT_MODELS = {
     "anthropic/claude-sonnet-5",
 }
 
+# Fail fast rather than hang if OpenRouter (or a queued free-tier model)
+# never responds.
+REQUEST_TIMEOUT_SECONDS = 60
+# Free-tier models occasionally return a 200 with only anti-idle whitespace
+# padding and no actual completion under load -- a transient, one-off
+# condition worth one retry before giving up.
+MAX_MALFORMED_BODY_RETRIES = 1
+
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
 PLANNER_PROMPT_PATH = os.path.join(PROMPTS_DIR, "planner.txt")
@@ -61,35 +69,50 @@ def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float
     """Returns (reply text, usage dict, elapsed seconds)."""
     api_key = os.environ["OPENROUTER_API_KEY"]
 
-    start = time.perf_counter()
-    try:
-        response = requests.post(
-            OPENROUTER_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": model, "messages": messages, "usage": {"include": True}},
-        )
-        elapsed = time.perf_counter() - start
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        detail = e.response.text[:300] if e.response is not None else str(e)
-        _log_request_failure(model, detail)
-        raise
+    malformed_error = None
+    for attempt in range(MAX_MALFORMED_BODY_RETRIES + 1):
+        start = time.perf_counter()
+        try:
+            response = requests.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": model, "messages": messages, "usage": {"include": True}},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            elapsed = time.perf_counter() - start
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            detail = e.response.text[:300] if e.response is not None else str(e)
+            _log_request_failure(model, detail)
+            raise
 
-    try:
-        data = response.json()
-        choices = data["choices"]
-    except (ValueError, KeyError, IndexError) as e:
-        # Some free-tier providers occasionally return a 200 with an empty
-        # or malformed body under load -- treat that as "unavailable" too,
-        # not as a real bug (it isn't caught by the KeyError-means-missing
-        # -API-key handler in app.py, which this used to fall into).
-        _log_request_failure(model, f"unusable response body ({e}): {response.text[:300]!r}")
-        raise requests.exceptions.RequestException(
-            f"OpenRouter returned an unusable response for {model}") from e
+        try:
+            data = response.json()
+            choices = data["choices"]
+        except (ValueError, KeyError, IndexError) as e:
+            # Some free-tier providers occasionally return a 200 with an empty
+            # or malformed body under load -- treat that as "unavailable" too,
+            # not as a real bug (it isn't caught by the KeyError-means-missing
+            # -API-key handler in app.py, which this used to fall into), and
+            # worth one immediate retry since it's usually a one-off.
+            _log_request_failure(model, f"unusable response body ({e}): {response.text[:300]!r}")
+            malformed_error = e
+            continue
 
-    usage = data.get("usage") or {}
-    _print_usage_report(model, usage, elapsed)
-    return choices[0]["message"]["content"], usage, elapsed
+        usage = data.get("usage") or {}
+        _print_usage_report(model, usage, elapsed)
+        return choices[0]["message"]["content"], usage, elapsed
+
+    raise requests.exceptions.RequestException(
+        f"OpenRouter returned an unusable response for {model}") from malformed_error
+
+
+def _sum_optional(a, b):
+    """Add two token counts that may each be missing (None) -- None only
+    when both are, since a retry's usage data is never guaranteed."""
+    if a is None and b is None:
+        return None
+    return (a or 0) + (b or 0)
 
 
 def ask(message: str, model: str = DEFAULT_MODEL) -> str:
@@ -350,7 +373,7 @@ class PlanningAgent:
         spends a model call when they actually ask for it. `theme_labels` is
         whichever theme checkboxes were selected (falls back to all three,
         "Mixed", if empty or none matched). Returns {"label", "blurb",
-        "stops", "model", "response_time"}."""
+        "stops", "model", "response_time", "input_tokens", "output_tokens"}."""
         theme = combine_themes(resolve_themes(theme_labels))
 
         candidates = db.get_candidate_venues(
@@ -370,6 +393,8 @@ class PlanningAgent:
                    transit_buffer_min=transit_buffer_min(transit))
         messages = self._build_messages(theme, candidates, ctx)
         reply, usage, elapsed = _call_openrouter(messages, self.model)
+        input_tokens = usage.get("prompt_tokens")
+        output_tokens = usage.get("completion_tokens")
 
         cleaned, error = None, None
         try:
@@ -390,6 +415,8 @@ class PlanningAgent:
             ]
             reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model)
             elapsed += elapsed2
+            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
+            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
             try:
                 cleaned, error = self._validate(self._parse(reply2), set(by_id), ctx)
             except (ValueError, AttributeError):
@@ -411,4 +438,5 @@ class PlanningAgent:
             })
 
         return {"label": theme["label"], "blurb": theme["blurb"], "stops": stops,
-                "model": self.model, "response_time": round(elapsed, 3)}
+                "model": self.model, "response_time": round(elapsed, 3),
+                "input_tokens": input_tokens, "output_tokens": output_tokens}

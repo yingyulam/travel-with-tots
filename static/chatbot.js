@@ -1,3 +1,42 @@
+// Shared thumbs-up/down rating widget, used by both the chatbot bubbles here
+// and the AI-generated plan cards in templates/plan.html -- kept as true
+// globals (outside the IIFE below) so plan.html's separate inline script can
+// call buildFeedbackRow too, and as a document-level delegated click handler
+// (rather than per-button listeners) so it keeps working after plan.html
+// restores a card from its sessionStorage snapshot, which replaces raw HTML
+// and would otherwise leave old per-button listeners behind.
+function buildFeedbackRow(context) {
+  const row = document.createElement("div");
+  row.className = "twt-feedback";
+  row.dataset.feedback = JSON.stringify(context);
+  const upBtn = document.createElement("button");
+  upBtn.type = "button";
+  upBtn.className = "twt-feedback-btn";
+  upBtn.dataset.rating = "up";
+  upBtn.textContent = "👍";
+  const downBtn = document.createElement("button");
+  downBtn.type = "button";
+  downBtn.className = "twt-feedback-btn";
+  downBtn.dataset.rating = "down";
+  downBtn.textContent = "👎";
+  row.append(upBtn, downBtn);
+  return row;
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".twt-feedback-btn");
+  if (!btn || btn.disabled) return;
+  const row = btn.closest(".twt-feedback");
+  const context = JSON.parse(row.dataset.feedback);
+  row.querySelectorAll(".twt-feedback-btn").forEach((b) => { b.disabled = true; });
+  btn.classList.add("selected");
+  fetch("/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...context, rating: btn.dataset.rating }),
+  }).catch(() => {});
+});
+
 (function () {
   const MODEL_STORAGE_KEY = "twt_chatbot_model";
   const MAX_HISTORY_TURNS = 10;
@@ -98,43 +137,6 @@
       return el;
     }
 
-    function addFeedbackButtons(bubbleEl, text, feedbackContext) {
-      const row = document.createElement("div");
-      row.className = "twt-feedback";
-      const upBtn = document.createElement("button");
-      upBtn.type = "button";
-      upBtn.className = "twt-feedback-btn";
-      upBtn.textContent = "👍";
-      const downBtn = document.createElement("button");
-      downBtn.type = "button";
-      downBtn.className = "twt-feedback-btn";
-      downBtn.textContent = "👎";
-
-      function rate(rating, chosenBtn) {
-        upBtn.disabled = true;
-        downBtn.disabled = true;
-        chosenBtn.classList.add("selected");
-        fetch("/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            question: feedbackContext.question,
-            response: text,
-            rating,
-            model: feedbackContext.model,
-            response_time: feedbackContext.response_time,
-            input_tokens: feedbackContext.input_tokens,
-            output_tokens: feedbackContext.output_tokens,
-          }),
-        }).catch(() => {});
-      }
-
-      upBtn.addEventListener("click", () => rate("up", upBtn));
-      downBtn.addEventListener("click", () => rate("down", downBtn));
-      row.append(upBtn, downBtn);
-      bubbleEl.appendChild(row);
-    }
-
     function renderAssistantReply(bubbleEl, text, sources, feedbackContext) {
       bubbleEl.innerHTML = "";
       const textSpan = document.createElement("span");
@@ -195,7 +197,9 @@
         });
       });
 
-      if (feedbackContext) addFeedbackButtons(bubbleEl, text, feedbackContext);
+      if (feedbackContext) {
+        bubbleEl.appendChild(buildFeedbackRow({ ...feedbackContext, response: text, kind: "chatbot" }));
+      }
       messages.scrollTop = messages.scrollHeight;
     }
 

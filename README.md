@@ -94,6 +94,11 @@ separate.
   in-trip page. Every OpenRouter call (including the retry) prints its
   token counts, time, and estimated cost to the server console, same as the
   chatbot.
+  Each AI-suggested plan also gets the same 👍/👎 rating widget as the
+  chatbot: clicking one disables both buttons for that card and saves the
+  trip input, generated plan, model, timestamp, response time, and token
+  counts to `data/results.json` under a "Generated Plan" record, reviewable
+  alongside chatbot ratings from `/results`.
 
 ### Page 2 - In-trip (`/trip`)
 
@@ -161,9 +166,11 @@ pages, shown in the sidebar only when logged in as an admin:
   automatically re-indexes it for the chatbot in the background.
 - `/chunks`: see exactly how the knowledge base was split into chunks, and
   re-run chunking with a different chunk size.
-- `/results`: browse every thumbs up/down rated chatbot response, with
-  aggregate stats (total up/down, percent positive) at the top. The page
-  polls for new ratings and refreshes itself automatically.
+- `/results`: browse every thumbs up/down rated chatbot response and
+  AI-generated plan, each in its own session ("Chatbox" and "Generated
+  Plan") with its own aggregate stats (total up/down, percent positive) at
+  the top. The page polls for new ratings and refreshes itself
+  automatically.
 
 ## AI chatbot
 
@@ -234,7 +241,7 @@ travel-with-tots/
 │   ├── app.db                # SQLite database (generated on first run; git-ignored)
 │   ├── chroma/                # chatbot's vector index (generated; git-ignored)
 │   ├── rag_config.json       # current chunk size + knowledge-base hash (generated; git-ignored)
-│   └── results.json          # thumbs up/down ratings (generated; git-ignored)
+│   └── results.json          # thumbs up/down ratings, chatbot + generated plans (generated; git-ignored)
 ├── src/                       # Application logic
 │   ├── data_loader.py         # loads venue data, builds Google Maps links
 │   ├── db.py                  # SQLite data layer (schema, connection, safe writes)
@@ -244,7 +251,7 @@ travel-with-tots/
 │   ├── interactions.py         # replan() + find_nearby() placeholders
 │   ├── agents.py                # chatbot + PlanningAgent logic, routed through OpenRouter
 │   ├── rag.py                   # chunking, embeddings, and retrieval for the chatbot
-│   ├── results.py               # saves/reads thumbs up/down chatbot ratings
+│   ├── results.py               # saves/reads thumbs up/down ratings, by kind (chatbot/plan)
 │   └── prompts/
 │       ├── website_chatbot.txt  # chatbot system prompt
 │       └── planner.txt          # AI itinerary planner system prompt
@@ -257,10 +264,11 @@ travel-with-tots/
 │   ├── dashboard.html            # saved children + trips
 │   ├── settings.html             # admin: edit knowledge base + prompts
 │   ├── chunks.html               # admin: view and re-run chunking
-│   ├── results.html              # admin: browse chatbot ratings + stats
+│   ├── results.html              # admin: browse chatbot + generated-plan ratings, stats per session
 │   ├── _chatbot_widget.html      # floating chat widget, included on every page
 │   ├── _nav.html                 # top-right avatar/login + sidebar, included on every page
-│   └── _stop_preview.html        # shared stop_line() macro, used by plan.html + dashboard.html
+│   ├── _stop_preview.html        # shared stop_line() macro, used by plan.html + dashboard.html
+│   └── _results_session.html     # shared results_session() macro, used by results.html per kind
 ├── static/
 │   ├── style.css                # planner / in-trip / account styling
 │   ├── landing.css               # landing-page styling
@@ -319,14 +327,14 @@ parameterized and run inside a transaction.
 | `/replan`                   | POST     | Re-plan the rest of the day (JSON in/out)              |
 | `/find_nearby`              | POST     | Find 1-2 venues for an immediate need (JSON)          |
 | `/chatbot`                  | POST     | Ask the chatbot a question (JSON in/out)              |
-| `/feedback`                 | POST     | Save a thumbs up/down rating on a chatbot response    |
+| `/feedback`                 | POST     | Save a thumbs up/down rating on a chatbot response or AI-generated plan |
 | `/rag/status`               | GET      | Poll-able chatbot indexing status                     |
 | `/settings`                 | GET      | Admin: view/edit knowledge base + prompts              |
 | `/settings/knowledge-base`, `/settings/prompt`, `/settings/planner-prompt` | POST | Admin: save the knowledge base, chatbot prompt, or planner prompt |
 | `/chunks`                   | GET      | Admin: list every chatbot knowledge-base chunk        |
 | `/chunks/rerun`             | POST     | Admin: re-chunk and re-embed at a different size      |
-| `/results`                  | GET      | Admin: browse rated chatbot responses + stats         |
-| `/results/data`             | GET      | Admin: poll-able stats + full results list, for auto-refresh |
+| `/results`                  | GET      | Admin: browse rated chatbot responses + generated plans, stats per session |
+| `/results/data`             | GET      | Admin: poll-able per-session stats + results, for auto-refresh |
 
 ## Data model
 

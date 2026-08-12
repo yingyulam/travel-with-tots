@@ -1,4 +1,6 @@
-"""Persisted thumbs-up/down feedback on chatbot responses."""
+"""Persisted thumbs-up/down feedback on chatbot responses and AI-generated
+plans, discriminated by "kind" ("chatbot" or "plan"). Records written before
+this discriminator existed have no "kind" key and are treated as "chatbot"."""
 
 import json
 import threading
@@ -20,10 +22,13 @@ def _read_all() -> list[dict]:
 
 
 def save_result(*, question, response, rating, model,
-                 response_time, input_tokens, output_tokens) -> dict:
-    """Append one rated chatbot response to data/results.json."""
+                 response_time, input_tokens, output_tokens,
+                 kind="chatbot") -> dict:
+    """Append one rated chatbot response or AI-generated plan to
+    data/results.json."""
     entry = {
         "id": uuid.uuid4().hex,
+        "kind": kind,
         "question": question,
         "response": response,
         "rating": rating,
@@ -40,13 +45,13 @@ def save_result(*, question, response, rating, model,
     return entry
 
 
-def get_results() -> list[dict]:
-    """Every rated response, newest first."""
-    return list(reversed(_read_all()))
+def get_results(kind="chatbot") -> list[dict]:
+    """Every rated response of the given kind, newest first."""
+    return [r for r in reversed(_read_all()) if r.get("kind", "chatbot") == kind]
 
 
-def get_stats() -> dict:
-    results = _read_all()
+def get_stats(kind="chatbot") -> dict:
+    results = [r for r in _read_all() if r.get("kind", "chatbot") == kind]
     up = sum(1 for r in results if r["rating"] == "up")
     down = sum(1 for r in results if r["rating"] == "down")
     total = up + down

@@ -1,41 +1,14 @@
 {% extends "base.html" %}
+{% from "_results_session.html" import results_session %}
 {% block title %}Travel with Tots: Results{% endblock %}
-{% block heading %}Chatbot ratings{% endblock %}
-{% block tagline %}Every rated chatbot response, with aggregate stats.{% endblock %}
+{% block heading %}Ratings{% endblock %}
+{% block tagline %}Every rated chatbot response and AI-generated plan, with aggregate stats per session.{% endblock %}
 
 {% block content %}
-<div id="results-root" data-total="{{ stats.total }}">
-<section class="card">
-  <h2>Stats</h2>
-  <p class="meta" id="results-stats">👍 {{ stats.up }} · 👎 {{ stats.down }} · {{ stats.percent_positive }}% positive ({{ stats.total }} rated)</p>
-</section>
-
-<section class="card">
-  <h2 id="results-count-heading">Rated responses ({{ results|length }})</h2>
-  <div class="twt-chunk-list" id="results-list">
-    {% for r in results %}
-    <details class="twt-chunk-row">
-      <summary>
-        {{ "👍" if r.rating == "up" else "👎" }}
-        <span class="twt-badge">{{ r.model }}</span>
-        {{ r.question|truncate(50) }} → {{ r.response|truncate(50) }}
-      </summary>
-      <p class="twt-chunk-text"><strong>Question:</strong> {{ r.question }}</p>
-      <p class="twt-chunk-text"><strong>Response:</strong> {{ r.response }}</p>
-      <p class="meta">
-        Model: {{ r.model }} ·
-        Rating: {{ r.rating }} ·
-        Timestamp: {{ r.timestamp }} ·
-        Response time: {{ r.response_time }}s ·
-        Input tokens: {{ r.input_tokens }} ·
-        Output tokens: {{ r.output_tokens }}
-      </p>
-    </details>
-    {% else %}
-    <p class="empty-plan">No ratings yet.</p>
-    {% endfor %}
-  </div>
-</section>
+<div id="results-root" data-total="{{ sessions|sum(attribute='stats.total') }}">
+{% for session in sessions %}
+  {{ results_session(session) }}
+{% endfor %}
 </div>
 {% endblock %}
 
