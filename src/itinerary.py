@@ -52,7 +52,7 @@ def transit_buffer_min(transit_modes):
                 for m in (transit_modes or [])), default=TRANSIT_BUFFER_MIN["other"])
 
 
-def _hhmm_to_min(text):
+def hhmm_to_min(text):
     """'09:00' -> minutes past midnight."""
     return int(text[:2]) * 60 + int(text[3:5])
 
@@ -72,7 +72,7 @@ def venue_hours(venue):
     open_t, close_t = venue.get("open"), venue.get("close")
     if not open_t or not close_t:
         return None
-    return _hhmm_to_min(open_t), _hhmm_to_min(close_t)
+    return hhmm_to_min(open_t), hhmm_to_min(close_t)
 
 
 def venue_open_for(venue, start_min, duration_min):
@@ -90,6 +90,11 @@ def venue_open_for(venue, start_min, duration_min):
 
 # How many stops a plan has, before age adjustment, by pace.
 PACE_STOPS = {"relaxed": 2, "balanced": 3, "adventurous": 4}
+
+# Dedicated meal (lunch) stops a "dine_out" plan gets, always in addition to
+# PACE_STOPS's ceiling, never counted against it (mirrors _build_plan, which
+# appends the lunch stop after the pace-driven stops already exist).
+MAX_MEAL_STOPS = 1
 
 # Candidate themes. Each biases activity choices toward certain venue types;
 # food and nap stops aren't restricted to these types, but are sorted to
@@ -139,6 +144,18 @@ def _format(dt):
 def _parse_display(text):
     """Parse a '1:30 PM' display string back into a datetime."""
     return datetime.strptime(text, "%I:%M %p")
+
+
+def display_to_min(text):
+    """Parse a '1:30 PM' display string into minutes past midnight."""
+    dt = _parse_display(text)
+    return dt.hour * 60 + dt.minute
+
+
+def min_to_display(minutes):
+    """Format minutes past midnight (mod 24h) as a '1:30 PM' string."""
+    minutes %= 24 * 60
+    return _format(datetime(1900, 1, 1, minutes // 60, minutes % 60))
 
 
 def _leave_stop(accommodation, stops):
@@ -352,7 +369,7 @@ def generate_plans(venues, inputs):
     accommodation = inputs.get("accommodation", "")
     dining = inputs.get("dining", "dine_out")
     preferred_lunch_time = inputs.get("preferred_lunch_time") or ""
-    preferred_lunch_min = _hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
+    preferred_lunch_min = hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
     theme = combine_themes(resolve_themes(inputs.get("themes")))
     stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lunch_min)

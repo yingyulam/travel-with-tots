@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 from . import db, rag
 from .data_loader import maps_url
 from .itinerary import (
-    LUNCH_DURATION_LABEL, PACE_STOPS, combine_themes, resolve_themes,
+    LUNCH_DURATION_LABEL, MAX_MEAL_STOPS, PACE_STOPS, combine_themes,
+    display_to_min, hhmm_to_min, min_to_display, resolve_themes,
     stop_duration, transit_buffer_min,
 )
 
@@ -246,40 +247,98 @@ class PlanningAgent:
             text = text[4:] if text.startswith("json") else text
         return json.loads(text)
 
-    def _validate(self, parsed, valid_ids, pace):
-        """Returns the stop list if every stop is well-formed and cites a
-        real, distinct venue_id, or None otherwise. The whole response is
-        rejected (and retried) if even one stop is invalid, rather than
-        silently dropping it -- so a plan never ships with fewer stops than
-        its pace requires just because one citation didn't check out.
+    @staticmethod
+    def _stop_duration(stop, ctx):
+        """Minutes this stop occupies, mirroring itinerary.py's per-kind stop
+        durations: the meal duration for a meal stop, the specific matched
+        nap's own duration for a nap stop (nearest by start time), or the
+        flat activity duration otherwise."""
+        if stop["is_meal"]:
+            return ctx["meal_duration_min"]
+        if stop["is_nap"]:
+            naps = ctx.get("naps") or []
+            if naps:
+                start = display_to_min(stop["time"])
+                nearest = min(naps, key=lambda n: abs(hhmm_to_min(n["start"]) - start))
+                return nearest["duration_min"]
+        return ctx["activity_duration_min"]
 
-        The pace's stop count is a ceiling, not a mandate: anywhere from 1
-        up to min(pace count, available candidates) is valid, whether the
-        candidate list is thin or the model simply chose a shorter, more
-        realistically-paced day -- neither is an error."""
+    def _validate(self, parsed, valid_ids, ctx):
+        """Returns (stops, None) if the response is well-formed and realistic,
+        or (None, error) describing the first problem found. The whole
+        response is rejected (and retried) if even one stop is invalid,
+        rather than silently dropping it -- so a plan never ships with fewer
+        stops than its pace requires just because one citation didn't check
+        out.
+
+        The pace's stop count is a ceiling on activity/nap stops only, not a
+        mandate: anywhere from 1 up to min(pace count, available candidates)
+        is valid, whether the candidate list is thin or the model simply
+        chose a shorter, more realistically-paced day -- neither is an
+        error. A dedicated meal stop (is_meal) is additional and never
+        counts against that ceiling, mirroring the rule-based planner.
+        Consecutive stops must also leave enough time for the previous
+        stop's duration plus the transit buffer -- this is enforced here,
+        not just requested in the prompt, since nothing else catches a
+        model that ignores its own stated spacing rule."""
         stops = parsed.get("stops") if isinstance(parsed, dict) else None
-        if not isinstance(stops, list):
-            return None
-        cap = min(PACE_STOPS.get(pace, 3), len(valid_ids))
-        if not (1 <= len(stops) <= cap):
-            return None
+        if not isinstance(stops, list) or not stops:
+            return None, "\"stops\" must be a non-empty JSON array."
+
         cleaned = []
         seen_ids = set()
         for stop in stops:
             if not isinstance(stop, dict):
-                return None
+                return None, "Every stop must be a JSON object."
             venue_id = stop.get("venue_id")
-            if (venue_id not in valid_ids or venue_id in seen_ids
-                    or not stop.get("time") or not stop.get("reason")):
-                return None
+            if venue_id not in valid_ids:
+                return None, f"venue_id {venue_id!r} is not in the candidate list."
+            if venue_id in seen_ids:
+                return None, f"venue_id {venue_id!r} is used more than once."
+            if not stop.get("time") or not stop.get("reason"):
+                return None, "Every stop needs a non-empty \"time\" and \"reason\"."
+            is_nap, is_meal = bool(stop.get("is_nap")), bool(stop.get("is_meal"))
+            if is_nap and is_meal:
+                return None, (
+                    f"The stop at {stop['time']} has both \"is_nap\" and "
+                    "\"is_meal\" true -- a stop is never both.")
             seen_ids.add(venue_id)
             cleaned.append({
                 "time": stop["time"],
                 "venue_id": venue_id,
                 "reason": stop["reason"],
-                "is_nap": bool(stop.get("is_nap")),
+                "is_nap": is_nap,
+                "is_meal": is_meal,
             })
-        return cleaned
+
+        meal_stops = [s for s in cleaned if s["is_meal"]]
+        max_meals = MAX_MEAL_STOPS if ctx["dining"] == "dine_out" else 0
+        if len(meal_stops) > max_meals:
+            return None, (
+                f"Found {len(meal_stops)} \"is_meal\" stop(s); dining "
+                f"{ctx['dining']!r} allows at most {max_meals}.")
+
+        non_meal_count = len(cleaned) - len(meal_stops)
+        cap = min(PACE_STOPS.get(ctx["pace"], 3), len(valid_ids))
+        if not (1 <= non_meal_count <= cap):
+            return None, (
+                f"{non_meal_count} non-meal stop(s) (the meal stop doesn't "
+                f"count); pace {ctx['pace']!r} allows 1 to {cap}.")
+
+        cleaned.sort(key=lambda s: display_to_min(s["time"]))
+        buffer = ctx["transit_buffer_min"]
+        for prev, nxt in zip(cleaned, cleaned[1:]):
+            prev_end = display_to_min(prev["time"]) + self._stop_duration(prev, ctx)
+            next_start = display_to_min(nxt["time"])
+            if next_start < prev_end + buffer:
+                return None, (
+                    f"{nxt['time']} (venue_id {nxt['venue_id']}) starts before "
+                    f"the previous stop ({prev['time']}, venue_id "
+                    f"{prev['venue_id']}, ends {min_to_display(prev_end)}) plus "
+                    f"the {buffer}-minute travel buffer -- push it to at least "
+                    f"{min_to_display(prev_end + buffer)}, or drop a stop.")
+
+        return cleaned, None
 
     def generate_plan_for_themes(self, theme_labels, *, destination, age_months,
                                   naps=None, pace,
@@ -312,29 +371,29 @@ class PlanningAgent:
         messages = self._build_messages(theme, candidates, ctx)
         reply, usage, elapsed = _call_openrouter(messages, self.model)
 
-        cleaned = None
+        cleaned, error = None, None
         try:
-            cleaned = self._validate(self._parse(reply), set(by_id), pace)
+            cleaned, error = self._validate(self._parse(reply), set(by_id), ctx)
         except (ValueError, AttributeError):
-            cleaned = None
+            cleaned, error = None, "That wasn't valid JSON."
 
         if cleaned is None:
-            # One corrective retry: show the model its own bad reply.
-            cap = min(PACE_STOPS.get(pace, 3), len(by_id))
+            # One corrective retry: show the model its own bad reply and the
+            # specific rule it broke, so the single retry has a real shot.
             retry_messages = messages + [
                 {"role": "assistant", "content": reply},
                 {"role": "user", "content": (
-                    "That response was not valid. Reply again with ONLY strict "
-                    f"JSON: {{\"stops\": [...]}}, 1 to {cap} stop(s), each a "
-                    "distinct venue_id taken from the candidate list above -- "
+                    f"That response was invalid: {error} Reply again with ONLY "
+                    "strict JSON in the same {\"stops\": [...]} shape, citing "
+                    "distinct venue_id values from the candidate list above -- "
                     "never invent or repeat one.")},
             ]
             reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model)
             elapsed += elapsed2
             try:
-                cleaned = self._validate(self._parse(reply2), set(by_id), pace)
+                cleaned, error = self._validate(self._parse(reply2), set(by_id), ctx)
             except (ValueError, AttributeError):
-                cleaned = None
+                cleaned, error = None, "That wasn't valid JSON."
 
         if cleaned is None:
             raise PlanningAgentError(f"Couldn't build a valid {theme['label']} plan.")
@@ -343,9 +402,10 @@ class PlanningAgent:
         for stop in cleaned:
             venue = dict(by_id[stop["venue_id"]])
             venue["maps_url"] = maps_url(venue["name"], venue["city"] or "Vancouver")
+            kind = "meal" if stop["is_meal"] else "nap" if stop["is_nap"] else "activity"
             stops.append({
                 "time": stop["time"],
-                "kind": "nap" if stop["is_nap"] else "activity",
+                "kind": kind,
                 "venue": venue,
                 "reason": stop["reason"],
             })
