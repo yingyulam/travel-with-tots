@@ -167,6 +167,19 @@
         </fieldset>
 
         <fieldset class="group">
+          <legend>Themes <em>(optional -- defaults to a mix of all three)</em></legend>
+          <div class="chips">
+            {% for theme_label in theme_options %}
+            <label class="chip">
+              <input type="checkbox" name="themes" value="{{ theme_label }}"
+                     {% if theme_label in form.themes %}checked{% endif %}>
+              <span>{{ theme_label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
           <legend>Features that matter</legend>
           <div class="chips">
             {% for key, label in feature_options %}
@@ -189,12 +202,12 @@
       </form>
     </section>
 
-    <!-- Candidate plans to compare -->
+    <!-- The generated plan, plus its optional AI-assisted counterpart -->
     {% if plans is not none %}
     <section class="card">
-      <h2>Compare your options</h2>
+      <h2>Your plan</h2>
       {% if plans %}
-      <p class="picker-hint">Pick a plan and tap “Start this day”.</p>
+      <p class="picker-hint">Tap “Start this day” when you’re ready, or try the AI-assisted version below to compare.</p>
       <div class="ai-model-row">
         <label for="ai-model-select">AI model</label>
         <select id="ai-model-select">
@@ -375,15 +388,16 @@
       status.hidden = false;
       status.textContent = `Building an AI ${theme} day…`;
       try {
+        // The form's own "themes" checkboxes flow through here already,
+        // same as pace/features -- no need to append the theme separately.
         const body = new FormData(document.getElementById("plan-form"));
-        body.append("ai_theme", theme);
         body.append("ai_model", document.getElementById("ai-model-select").value);
         const res = await fetch(AI_URL, { method: "POST", body });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Something went wrong.");
-        // Replace any previous AI card for this theme rather than piling up.
-        const existing = document.querySelector(
-          `.plan-option[data-source="ai"][data-theme="${CSS.escape(theme)}"]`);
+        // Replace the previous AI card, if any, rather than piling up --
+        // there's only ever one now, since there's only one rule-based card.
+        const existing = document.querySelector('.plan-option[data-source="ai"]');
         if (existing) existing.remove();
         ruleCard.after(buildAiCard(data));
         status.hidden = true;

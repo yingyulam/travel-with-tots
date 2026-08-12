@@ -74,8 +74,9 @@ def venue_open_for(venue, start_min, duration_min):
 # How many stops a plan has, before age adjustment, by pace.
 PACE_STOPS = {"relaxed": 2, "balanced": 3, "adventurous": 4}
 
-# Candidate themes. Each biases activity choices toward certain venue types.
-# Food and nap stops are chosen theme-independently.
+# Candidate themes. Each biases activity choices toward certain venue types;
+# food and nap stops aren't restricted to these types, but are sorted to
+# prefer a theme match when one exists (see _build_plan).
 THEMES = [
     {"label": "Outdoorsy", "types": {"park", "attraction"},
      "blurb": "Parks and fresh air, with stroller-friendly strolls."},
@@ -84,6 +85,28 @@ THEMES = [
     {"label": "Culture", "types": {"museum", "attraction"},
      "blurb": "Museums and sights for curious little minds."},
 ]
+
+
+def resolve_themes(labels):
+    """The THEMES entries matching `labels`, in THEMES order; falls back to
+    all three ("Mixed", see combine_themes) when none were selected or none
+    of the submitted labels matched a real theme."""
+    selected = [t for t in THEMES if t["label"] in (labels or [])]
+    return selected or list(THEMES)
+
+
+def combine_themes(themes):
+    """Merge one or more THEMES entries into a single theme-shaped dict, so
+    a plan can draw from several themes across the day instead of exactly
+    one. Same shape as a THEMES entry, so every existing theme-aware helper
+    below (_matches_theme, _reason, the food/nap theme-biased sorts) works
+    on it unchanged."""
+    label = "Mixed" if len(themes) == len(THEMES) else ", ".join(t["label"] for t in themes)
+    return {
+        "label": label,
+        "blurb": " ".join(t["blurb"] for t in themes),
+        "types": set().union(*(t["types"] for t in themes)),
+    }
 
 
 def _parse(t):
@@ -289,16 +312,19 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining):
 
 
 def generate_plans(venues, inputs):
-    """Return a short list of candidate day plans for the parent to pick from.
+    """Return a single candidate day plan for the parent to review.
 
     ``inputs`` is the normalised form dict (wake_up, bedtime, nap_times, pace,
-    age_years, age_months, features, ...). Returns a list of ``Plan`` objects,
-    one per theme, each with a ``label``, a ``blurb``, and ordered ``stops``.
+    age_years, age_months, features, themes, ...). Returns a one-item list
+    holding a ``Plan`` (label, blurb, ordered stops) that draws from whichever
+    themes were selected in ``inputs["themes"]`` (or all three, "Mixed", if
+    none were). Kept as a list (rather than returning the ``Plan`` directly)
+    so callers that loop over "candidate plans" don't need to change.
 
     Placeholder logic: filter venues by the chosen features, decide how many
-    stops fit the child's age and pace, then arrange one plan per theme with a
-    food venue around midday and a nap-friendly venue during the nap window.
-    The structure is what a future LLM-backed implementation would return, so
+    stops fit the child's age and pace, then arrange a plan with a food venue
+    around midday and a nap-friendly venue during the nap window. The
+    structure is what a future LLM-backed implementation would return, so
     only this function's body needs to change later.
     """
     matches = filter_by_features(venues, inputs["features"])
@@ -309,11 +335,9 @@ def generate_plans(venues, inputs):
     accommodation = inputs.get("accommodation", "")
     dining = inputs.get("dining", "dine_out")
 
-    plans = []
-    for theme in THEMES:
-        stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining)
-        leave = _leave_stop(accommodation, stops)
-        if leave:
-            stops = [leave] + stops
-        plans.append(Plan(label=theme["label"], blurb=theme["blurb"], stops=stops))
-    return plans
+    theme = combine_themes(resolve_themes(inputs.get("themes")))
+    stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining)
+    leave = _leave_stop(accommodation, stops)
+    if leave:
+        stops = [leave] + stops
+    return [Plan(label=theme["label"], blurb=theme["blurb"], stops=stops)]

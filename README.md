@@ -20,19 +20,23 @@ separate.
   age in years + months, destination, transit, pace, and features).
 - Selects venues that match the parent's chosen features (kid-friendly,
   family room, nursing room, stroller/step-free access).
-- Generates **3 themed candidate plans** (Outdoorsy / Rainy-day / Culture)
-  shown as **comparable cards** (theme label + a preview of the first 2 stops,
-  with a "+N more" link that expands the rest in place, no reload or extra
-  AI calls). Each plan is short (2-4 stops, fewer for younger kids and a
-  relaxed pace, more for older kids and an adventurous pace), places a
-  **food** venue around midday, and drops a **nap-friendly** venue into the
-  nap window so the day keeps flowing instead of blocking time.
-- Each card has a **"Start this day"** button that carries the chosen plan to
-  the in-trip page. `generate_plans` produces `Plan` objects; picking one
+- Lets the parent pick **1-3 themes** (Outdoorsy / Rainy-day / Culture) via
+  checkboxes; picking none defaults to a "Mixed" plan drawing from all
+  three. Generates **one candidate plan** shown as a **comparable card**
+  (theme label -- "Mixed" or a comma-joined list of the picks -- plus a
+  preview of the first 2 stops, with a "+N more" link that expands the rest
+  in place, no reload or extra AI calls). The plan draws from whichever
+  theme(s) were picked rather than being locked to just one, is short (2-4
+  stops, fewer for younger kids and a relaxed pace, more for older kids and
+  an adventurous pace), places a **food** venue around midday, and drops a
+  **nap-friendly** venue into the nap window so the day keeps flowing
+  instead of blocking time.
+- The card has a **"Start this day"** button that carries the chosen plan to
+  the in-trip page. `generate_plans` produces a `Plan` object; picking it
   creates a `Trip`.
-- Each themed card also has a **"✨ Try AI-assisted day"** button that builds
-  an AI-generated plan **for that topic only**, on demand, so no model call is
-  spent on a topic the parent isn't interested in. It's powered by
+- The card also has a **"✨ Try AI-assisted day"** button that builds an
+  AI-generated plan for the **same selected theme(s)**, on demand, so no
+  model call is spent unless the parent actually asks for it. It's powered by
   `PlanningAgent` (`src/agents.py`) instead of the rule-based `generate_plans`,
   with a shared model dropdown (free/paid) and a system prompt
   (`src/prompts/planner.txt`, editable from `/settings`). Before calling the
@@ -58,15 +62,15 @@ separate.
   adventurous) -- but only when there are at least that many real candidate
   venues. If the candidate list is thinner than that, a shorter plan using
   only the venues actually available is the *correct*, expected outcome,
-  not an error; if no candidate fits the theme well, the model drops
-  theme-matching for that plan and chooses stops from the trip's other
-  constraints instead. If there are no candidate venues at all, the model
-  is never called and a clear error is shown right away. The result appears
-  as a new card right beside its rule-based counterpart, tagged
+  not an error; if no candidate fits any of the selected themes well, the
+  model drops theme-matching for that plan and chooses stops from the trip's
+  other constraints instead. If there are no candidate venues at all, the
+  model is never called and a clear error is shown right away. The result
+  appears as a new card right beside its rule-based counterpart, tagged
   **"✨ AI-suggested plan"** so the two are easy to tell apart. Asking again
-  for the same topic replaces that topic's AI card rather than piling up.
-  If a response still doesn't validate after the retry, an inline error is
-  shown on that card's button and every other card is left untouched.
+  replaces the existing AI card rather than piling up. If a response still
+  doesn't validate after the retry, an inline error is shown on that card's
+  button and the rule-based card is left untouched.
   Picking an AI plan works exactly like picking a
   rule-based one: same `Plan`/`Trip` shape, no visible difference on the
   in-trip page. Every OpenRouter call (including the retry) prints its

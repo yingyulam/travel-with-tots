@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from . import db, rag
 from .data_loader import maps_url
-from .itinerary import PACE_STOPS, THEMES
+from .itinerary import PACE_STOPS, combine_themes, resolve_themes
 
 load_dotenv()
 
@@ -180,11 +180,12 @@ def _format_venue_candidates(venues: list) -> str:
 
 
 class PlanningAgent:
-    """Generates themed day plans grounded only in real venues from the SQL
-    venues table -- one plan per src.itinerary.THEMES entry, matching the
-    rule-based planner's themes so the two are directly comparable. Stop
-    count follows the same PACE_STOPS mapping the rule-based planner uses,
-    capped by however many real candidate venues actually exist."""
+    """Generates a day plan grounded only in real venues from the SQL venues
+    table, drawing from one or more src.itinerary.THEMES entries (combined
+    via combine_themes), matching the rule-based planner's themes so the two
+    are directly comparable. Stop count follows the same PACE_STOPS mapping
+    the rule-based planner uses, capped by however many real candidate
+    venues actually exist."""
 
     def __init__(self, model: str = DEFAULT_MODEL):
         self.model = model if model in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
@@ -260,17 +261,17 @@ class PlanningAgent:
             })
         return cleaned
 
-    def generate_plan_for_theme(self, theme_label, *, destination, age_months,
-                                 nap_1, nap_2, feeding_1, feeding_2, pace,
-                                 wake_up, bedtime, features, transit=None,
-                                 dining=None, accommodation="", nap_notes="",
-                                 extra_notes=""):
-        """One themed plan for a single theme, so a parent only spends a model
-        call on the topic they actually asked for. Returns
-        {"label", "blurb", "stops", "model", "response_time"}."""
-        theme = next((t for t in THEMES if t["label"] == theme_label), None)
-        if theme is None:
-            raise PlanningAgentError(f"Unknown theme: {theme_label}")
+    def generate_plan_for_themes(self, theme_labels, *, destination, age_months,
+                                  nap_1, nap_2, feeding_1, feeding_2, pace,
+                                  wake_up, bedtime, features, transit=None,
+                                  dining=None, accommodation="", nap_notes="",
+                                  extra_notes=""):
+        """One plan combining the given theme(s), on demand, so a parent only
+        spends a model call when they actually ask for it. `theme_labels` is
+        whichever theme checkboxes were selected (falls back to all three,
+        "Mixed", if empty or none matched). Returns {"label", "blurb",
+        "stops", "model", "response_time"}."""
+        theme = combine_themes(resolve_themes(theme_labels))
 
         candidates = db.get_candidate_venues(
             destination, age_months, features, transit=transit, dining=dining)

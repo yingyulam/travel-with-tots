@@ -60,7 +60,7 @@ from src.interactions import (
     find_nearby,
     replan,
 )
-from src.itinerary import generate_plans
+from src.itinerary import THEMES, generate_plans
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
 
@@ -82,6 +82,7 @@ VENUES = load_venues()
 TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
 PACE_OPTIONS = ["relaxed", "balanced", "adventurous"]
 DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
+THEME_OPTIONS = [t["label"] for t in THEMES]
 
 # Age is capped at this many years, 0 months.
 MAX_AGE_YEARS = 5
@@ -106,6 +107,7 @@ DEFAULTS = {
     "nap_notes": "",
     "extra_notes": "",
     "features": ["kid_friendly"],
+    "themes": [],
     "child_ids": [],
     "plan_child_id": "",
 }
@@ -155,6 +157,7 @@ def _read_form(form):
         "nap_notes": form.get("nap_notes", ""),
         "extra_notes": form.get("extra_notes", ""),
         "features": form.getlist("features"),
+        "themes": form.getlist("themes"),
         "child_ids": form.getlist("child_ids"),
         "plan_child_id": form.get("plan_child_id", ""),
     }
@@ -531,25 +534,25 @@ def plan():
         pace_options=PACE_OPTIONS,
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
+        theme_options=THEME_OPTIONS,
     )
 
 
 @app.route("/plan/ai", methods=["POST"])
 def plan_ai():
-    """One AI-assisted plan for a single theme, as JSON. Per-theme and on
-    demand so a parent only spends a model call on the topic they asked for."""
+    """One AI-assisted plan combining the selected theme(s), as JSON. On
+    demand so a parent only spends a model call when they actually ask for it."""
     form = _read_form(request.form)
     _resolve_plan_child(form, _current_parent())
 
-    theme = request.form.get("ai_theme", "")
     model = request.form.get("ai_model")
     if model not in ALLOWED_CHAT_MODELS:
         model = DEFAULT_MODEL
     age_months = int(form["age_years"]) * 12 + int(form["age_months"])
 
     try:
-        result = PlanningAgent(model=model).generate_plan_for_theme(
-            theme,
+        result = PlanningAgent(model=model).generate_plan_for_themes(
+            form["themes"],
             destination=form["destination"], age_months=age_months,
             nap_1=form["nap_1"], nap_2=form["nap_2"],
             feeding_1=form["feeding_1"], feeding_2=form["feeding_2"],
