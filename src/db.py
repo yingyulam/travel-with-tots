@@ -50,10 +50,11 @@ CREATE TABLE IF NOT EXISTS trips (
     trip_date     TEXT,                   -- day of the outing (ISO)
     wake_up       TEXT,
     bedtime       TEXT,
-    nap_1         TEXT,
+    nap_1         TEXT,                   -- unused; kept for old saved trips, see naps below
     nap_2         TEXT,
+    naps          TEXT,                   -- JSON array of {"start", "duration_min"}
     transit_nap   TEXT,                   -- "yes"/"sometimes"/"no": can the child nap in transit
-    feeding_1     TEXT,
+    feeding_1     TEXT,                   -- unused; kept for old saved trips
     feeding_2     TEXT,
     destination   TEXT,
     accommodation TEXT,
@@ -111,8 +112,8 @@ CANDIDATE_LIMIT = 18
 MIN_CLUSTER_SIZE = 6
 
 TRIP_FIELDS = (
-    "trip_date", "wake_up", "bedtime", "nap_1", "nap_2", "transit_nap",
-    "feeding_1", "feeding_2", "destination", "accommodation", "transit",
+    "trip_date", "wake_up", "bedtime", "naps", "transit_nap",
+    "destination", "accommodation", "transit",
     "pace", "dining", "preferred_lunch_time", "features", "nap_notes",
     "extra_notes", "plan_label", "plan_json",
 )
@@ -155,6 +156,9 @@ def _ensure_columns(conn):
     if "preferred_lunch_time" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN preferred_lunch_time TEXT")
+    if "naps" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips ADD COLUMN naps TEXT")
 
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(parents)")}
     if "is_admin" not in existing:
@@ -197,6 +201,7 @@ def _migrate_trips_ownership(conn):
                 bedtime       TEXT,
                 nap_1         TEXT,
                 nap_2         TEXT,
+                naps          TEXT,
                 transit_nap   TEXT,
                 feeding_1     TEXT,
                 feeding_2     TEXT,
@@ -216,12 +221,12 @@ def _migrate_trips_ownership(conn):
         """)
         conn.execute("""
             INSERT INTO trips (id, parent_id, child_id, trip_date, wake_up,
-                bedtime, nap_1, nap_2, transit_nap, feeding_1, feeding_2,
+                bedtime, nap_1, nap_2, naps, transit_nap, feeding_1, feeding_2,
                 destination, accommodation, transit, pace, dining,
                 preferred_lunch_time, features, nap_notes, extra_notes,
                 plan_label, plan_json, created_at)
             SELECT t.id, c.parent_id, t.child_id, t.trip_date, t.wake_up,
-                t.bedtime, t.nap_1, t.nap_2, t.transit_nap, t.feeding_1,
+                t.bedtime, t.nap_1, t.nap_2, t.naps, t.transit_nap, t.feeding_1,
                 t.feeding_2, t.destination, t.accommodation, t.transit,
                 t.pace, t.dining, t.preferred_lunch_time, t.features,
                 t.nap_notes, t.extra_notes, t.plan_label, t.plan_json,

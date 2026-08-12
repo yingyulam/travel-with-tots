@@ -331,7 +331,7 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
 def generate_plans(venues, inputs):
     """Return a single candidate day plan for the parent to review.
 
-    ``inputs`` is the normalised form dict (wake_up, bedtime, nap_times, pace,
+    ``inputs`` is the normalised form dict (wake_up, bedtime, naps, pace,
     age_years, age_months, features, themes, ...). Returns a one-item list
     holding a ``Plan`` (label, blurb, ordered stops) that draws from whichever
     themes were selected in ``inputs["themes"]`` (or all three, "Mixed", if
@@ -347,7 +347,7 @@ def generate_plans(venues, inputs):
     matches = filter_by_features(venues, inputs["features"])
     wake = _parse(inputs["wake_up"])
     bedtime = _parse(inputs["bedtime"])
-    naps = sorted(_parse(n) for n in inputs["nap_times"])
+    naps = sorted(_parse(n["start"]) for n in inputs.get("naps", []) if n.get("start"))
     count = _stop_count(inputs["pace"], inputs["age_years"], inputs["age_months"])
     accommodation = inputs.get("accommodation", "")
     dining = inputs.get("dining", "dine_out")

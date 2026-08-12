@@ -210,8 +210,10 @@ class PlanningAgent:
         global _PLANNER_TEMPLATE
         if _PLANNER_TEMPLATE is None:
             _PLANNER_TEMPLATE = _load_planner_template()
-        nap_times = ", ".join(t for t in (ctx["nap_1"], ctx["nap_2"]) if t) or "none"
-        feeding_times = ", ".join(t for t in (ctx["feeding_1"], ctx["feeding_2"]) if t) or "none"
+        nap_times = "; ".join(
+            f"{n['start']} for about {n['duration_min']} min"
+            for n in (ctx.get("naps") or [])
+        ) or "none"
         prompt = (
             _PLANNER_TEMPLATE
             .replace("{theme_label}", theme["label"])
@@ -222,7 +224,6 @@ class PlanningAgent:
             .replace("{wake_up}", ctx["wake_up"] or "")
             .replace("{bedtime}", ctx["bedtime"] or "")
             .replace("{nap_times}", nap_times)
-            .replace("{feeding_times}", feeding_times)
             .replace("{pace}", ctx["pace"] or "balanced")
             .replace("{extra_notes}", ctx["extra_notes"] or "none")
             .replace("{dining}", ctx["dining"] or "dine_out")
@@ -233,7 +234,6 @@ class PlanningAgent:
             .replace("{preferred_lunch_time}", ctx["preferred_lunch_time"] or "none")
             .replace("{activity_duration_min}", str(ctx["activity_duration_min"]))
             .replace("{meal_duration_min}", str(ctx["meal_duration_min"]))
-            .replace("{nap_duration_min}", str(ctx["nap_duration_min"]))
             .replace("{transit_buffer_min}", str(ctx["transit_buffer_min"]))
             .replace("{lunch_duration_label}", LUNCH_DURATION_LABEL)
         )
@@ -282,7 +282,7 @@ class PlanningAgent:
         return cleaned
 
     def generate_plan_for_themes(self, theme_labels, *, destination, age_months,
-                                  nap_1, nap_2, feeding_1, feeding_2, pace,
+                                  naps=None, pace,
                                   wake_up, bedtime, features, transit=None,
                                   dining=None, accommodation="", nap_notes="",
                                   extra_notes="", transit_nap="",
@@ -301,15 +301,13 @@ class PlanningAgent:
             raise PlanningAgentError(
                 "No venues are available for this destination and age yet.")
 
-        ctx = dict(destination=destination, age_months=age_months, nap_1=nap_1,
-                   nap_2=nap_2, feeding_1=feeding_1, feeding_2=feeding_2,
+        ctx = dict(destination=destination, age_months=age_months, naps=naps,
                    pace=pace, wake_up=wake_up, bedtime=bedtime, dining=dining,
                    accommodation=accommodation, nap_notes=nap_notes,
                    extra_notes=extra_notes, transit=transit, transit_nap=transit_nap,
                    preferred_lunch_time=preferred_lunch_time,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),
-                   nap_duration_min=stop_duration("nap"),
                    transit_buffer_min=transit_buffer_min(transit))
         messages = self._build_messages(theme, candidates, ctx)
         reply, usage, elapsed = _call_openrouter(messages, self.model)

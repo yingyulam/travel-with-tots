@@ -62,33 +62,25 @@
           </label>
         </div>
 
-        <div class="field-row">
-          <label class="field">
-            <span>Nap time 1 <em>(optional)</em></span>
-            <input type="time" name="nap_1" value="{{ form.nap_1 }}">
-          </label>
-          <label class="field">
-            <span>Nap time 2 <em>(optional)</em></span>
-            <input type="time" name="nap_2" value="{{ form.nap_2 }}">
-          </label>
+        <div class="field field-full">
+          <span>Naps <em>(optional, up to {{ max_naps }})</em></span>
+          <div id="nap-rows" data-max-naps="{{ max_naps }}">
+            {% for nap in form.naps %}
+            <div class="nap-row field-row">
+              <label class="field">
+                <span>Nap start</span>
+                <input type="time" name="nap_start" value="{{ nap.start }}">
+              </label>
+              <label class="field">
+                <span>Typical duration (minutes)</span>
+                <input type="number" name="nap_duration" min="15" step="15" value="{{ nap.duration_min }}">
+              </label>
+              <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="button" class="preview-more-toggle" id="add-nap-btn">+ Add a nap</button>
         </div>
-
-        <div class="field-row">
-          <label class="field">
-            <span>Feeding time 1 <em>(optional)</em></span>
-            <input type="time" name="feeding_1" value="{{ form.feeding_1 }}">
-          </label>
-          <label class="field">
-            <span>Feeding time 2 <em>(optional)</em></span>
-            <input type="time" name="feeding_2" value="{{ form.feeding_2 }}">
-          </label>
-        </div>
-
-        <label class="field field-full">
-          <span>Tell us about your kid's nap/sleep habits</span>
-          <textarea name="nap_notes" rows="3"
-                    placeholder="e.g. sleeps in the car seat but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
-        </label>
 
         <fieldset class="group">
           <legend>Can your child nap during transit?</legend>
@@ -102,6 +94,12 @@
             {% endfor %}
           </div>
         </fieldset>
+
+        <label class="field field-full">
+          <span>Tell us more about your kid's nap/sleep habits.</span>
+          <textarea name="nap_notes" rows="3"
+                    placeholder="e.g. sleeps in the car seat but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
+        </label>
 
         <div class="field-row">
           {% if not (current_parent and current_parent_children) %}
@@ -323,6 +321,48 @@
       years.addEventListener("input", syncAgeCap);
       syncAgeCap();
     }
+
+    // Dynamic "Add a nap" rows, capped at data-max-naps. Existing (server-
+    // rendered) rows get their Remove button wired up here too, so a reload
+    // with previously-submitted naps still lets you remove them.
+    const napRows = document.getElementById("nap-rows");
+    const addNapBtn = document.getElementById("add-nap-btn");
+    const MAX_NAPS = Number(napRows.dataset.maxNaps);
+
+    function updateAddNapVisibility() {
+      addNapBtn.hidden = napRows.children.length >= MAX_NAPS;
+    }
+
+    function wireRemoveButton(row) {
+      row.querySelector(".remove-nap-btn").addEventListener("click", () => {
+        row.remove();
+        updateAddNapVisibility();
+      });
+    }
+
+    function addNapRow() {
+      if (napRows.children.length >= MAX_NAPS) return;
+      const row = document.createElement("div");
+      row.className = "nap-row field-row";
+      row.innerHTML = `
+        <label class="field">
+          <span>Nap start</span>
+          <input type="time" name="nap_start">
+        </label>
+        <label class="field">
+          <span>Typical duration (minutes)</span>
+          <input type="number" name="nap_duration" min="15" step="15">
+        </label>
+        <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
+      `;
+      wireRemoveButton(row);
+      napRows.appendChild(row);
+      updateAddNapVisibility();
+    }
+
+    Array.from(napRows.children).forEach(wireRemoveButton);
+    addNapBtn.addEventListener("click", addNapRow);
+    updateAddNapVisibility();
 
     // Per-theme AI plans, generated only when asked for, so no model call is
     // spent on a topic the parent isn't interested in.

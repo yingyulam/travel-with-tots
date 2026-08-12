@@ -4,10 +4,11 @@ A web app that builds a **nap-friendly, single-day itinerary** for parents
 travelling with young children (ages 0-5), backed by parent accounts and an
 AI chatbot that answers questions about how the site works.
 
-A parent enters their day's shape: wake-up time, bedtime, nap time(s),
-feeding time(s), the kid's age, destination, how they're getting around, and
-which family-friendly features matter, and the app arranges a timed list of
-suitable stops between wake-up and bedtime. Parents can create an account to
+A parent enters their day's shape: wake-up time, bedtime, up to four naps
+(each with a start time and typical duration), the kid's age, destination,
+how they're getting around, and which family-friendly features matter, and
+the app arranges a timed list of suitable stops between wake-up and bedtime.
+Parents can create an account to
 save children's profiles and past trips, and a chatbot widget on every page
 can answer questions about how the site works.
 
@@ -17,7 +18,9 @@ separate.
 ### Page 1 - Planning (`/plan`)
 
 - Collects trip details through a clean, mobile-friendly form (times, kid's
-  age in years + months, destination, transit, pace, and features).
+  age in years + months, destination, transit, pace, and features). Naps are
+  entered via an "+ Add a nap" control (up to 4), each with its own start
+  time and typical duration, rather than a fixed pair of time inputs.
 - Selects venues that match the parent's chosen features (kid-friendly,
   family room, nursing room, stroller/step-free access).
 - Lets the parent pick **1-3 themes** (Outdoorsy / Rainy-day / Culture) via
@@ -69,11 +72,12 @@ separate.
   paces more realistically, not only when the candidate list is thinner than
   that, and validation accepts anywhere from 1 up to that ceiling either way.
   To make "realistic" concrete, the prompt gives the model assumed durations
-  for an activity/meal/nap stop and a minimum per-transit-mode gap to leave
-  between stops (a heuristic placeholder pending a real routing API, in
-  keeping with the "no real geodata" limitation above), and treats every
-  given time -- wake-up, bedtime, nap, feeding, and the parent's **preferred
-  lunch time** -- as a target window rather than an exact appointment. Both
+  for an activity/meal stop, each nap's own real stated duration (rather than
+  a flat guess), and a minimum per-transit-mode gap to leave between stops
+  (a heuristic placeholder pending a real routing API, in keeping with the
+  "no real geodata" limitation above), and treats every given time --
+  wake-up, bedtime, each nap, and the parent's **preferred lunch time** --
+  as a target window rather than an exact appointment. Both
   planners schedule the lunch stop as close as possible to that preferred
   lunch time when one is given, instead of a fixed clock window. If no
   candidate fits any of the selected themes well, the model drops
@@ -281,7 +285,7 @@ databases via a small in-code migration):
 - **parents**: one row per account (email login, password hash, `is_admin` flag).
 - **children**: name, gender, and **date of birth** (age is computed from the
   DOB via `compute_age`, never stored). References `parents`.
-- **trips**: a single outing's nap/feeding schedule and details, owned by the
+- **trips**: a single outing's nap schedule and details, owned by the
   parent account (`parent_id`, `NOT NULL`). `child_id` is optional and only
   for display -- removing a child sets it to `NULL` (`ON DELETE SET NULL`)
   rather than deleting the trip.

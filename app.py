@@ -60,7 +60,7 @@ from src.interactions import (
     find_nearby,
     replan,
 )
-from src.itinerary import THEMES, generate_plans
+from src.itinerary import STOP_DURATION_MIN, THEMES, generate_plans
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
 
@@ -92,17 +92,15 @@ TRANSIT_NAP_OPTIONS = [
 # Age is capped at this many years, 0 months.
 MAX_AGE_YEARS = 5
 MAX_MONTHS = 11
+MAX_NAPS = 4
 FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 
 # Sensible defaults so the form is usable on first load.
 DEFAULTS = {
     "wake_up": "07:00",
     "bedtime": "20:00",
-    "nap_1": "",
-    "nap_2": "",
+    "naps": [],
     "transit_nap": "sometimes",
-    "feeding_1": "",
-    "feeding_2": "",
     "age_years": "2",
     "age_months": "0",
     "destination": "Vancouver",
@@ -147,14 +145,19 @@ def _total_months(date_of_birth):
 def _read_form(form):
     """Normalise the raw request form into the shape the logic expects."""
     age_years, age_months = _read_age(form)
+    naps = []
+    for start, duration in zip(form.getlist("nap_start"), form.getlist("nap_duration")):
+        if not start:
+            continue
+        naps.append({
+            "start": start,
+            "duration_min": _clamp_int(duration, 15, 180, STOP_DURATION_MIN["nap"]),
+        })
     values = {
         "wake_up": form.get("wake_up") or DEFAULTS["wake_up"],
         "bedtime": form.get("bedtime") or DEFAULTS["bedtime"],
-        "nap_1": form.get("nap_1", ""),
-        "nap_2": form.get("nap_2", ""),
+        "naps": naps[:MAX_NAPS],
         "transit_nap": form.get("transit_nap") or DEFAULTS["transit_nap"],
-        "feeding_1": form.get("feeding_1", ""),
-        "feeding_2": form.get("feeding_2", ""),
         "age_years": age_years,
         "age_months": age_months,
         "destination": form.get("destination") or DEFAULTS["destination"],
@@ -170,7 +173,6 @@ def _read_form(form):
         "child_ids": form.getlist("child_ids"),
         "plan_child_id": form.get("plan_child_id", ""),
     }
-    values["nap_times"] = [n for n in (values["nap_1"], values["nap_2"]) if n]
     return values
 
 
@@ -487,6 +489,7 @@ def save_trip():
     fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
     fields["transit"] = json.dumps(trip_form.get("transit", []))
     fields["features"] = json.dumps(trip_form.get("features", []))
+    fields["naps"] = json.dumps(trip_form.get("naps", []))
     fields["plan_label"] = plan_data.get("label")
     fields["plan_json"] = json.dumps(plan_data)
     fields["trip_date"] = date.today().isoformat()
@@ -545,6 +548,7 @@ def plan():
         feature_options=FEATURE_OPTIONS,
         theme_options=THEME_OPTIONS,
         transit_nap_options=TRANSIT_NAP_OPTIONS,
+        max_naps=MAX_NAPS,
     )
 
 
@@ -564,8 +568,7 @@ def plan_ai():
         result = PlanningAgent(model=model).generate_plan_for_themes(
             form["themes"],
             destination=form["destination"], age_months=age_months,
-            nap_1=form["nap_1"], nap_2=form["nap_2"],
-            feeding_1=form["feeding_1"], feeding_2=form["feeding_2"],
+            naps=form["naps"],
             pace=form["pace"], wake_up=form["wake_up"], bedtime=form["bedtime"],
             features=form["features"], transit=form["transit"],
             dining=form["dining"], accommodation=form["accommodation"],
