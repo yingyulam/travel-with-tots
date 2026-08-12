@@ -32,12 +32,15 @@
           <input type="time" id="current-time">
         </label>
       </div>
+      <!-- 2. Plan version selector: pinned at the top so the active version is
+           never ambiguous. Shows a single "Original" pill before any replan. -->
+      <div class="plan-picker" id="plan-picker"></div>
       <p id="replan-status" class="replan-status" hidden></p>
 
-      <!-- 2. Live timeline of the chosen plan -->
+      <!-- 3. Live timeline of the chosen plan -->
       <div id="timeline-host"></div>
 
-      <!-- 3. Situation buttons -->
+      <!-- 4. Situation buttons -->
       <div class="action-panel">
         <p class="panel-title">Something came up?</p>
         <div class="chips" id="situation-bar">
@@ -47,7 +50,7 @@
         </div>
         <div class="nap-prompt" id="nap-prompt" hidden>
           <div id="nap-ask">
-            <p>Your child fell asleep — want to stay at this stop longer while they nap?</p>
+            <p>Your child fell asleep, want to stay at this stop longer while they nap?</p>
             <div class="chips">
               <button type="button" class="tap-btn" id="nap-yes">Yes</button>
               <button type="button" class="tap-btn" id="nap-no">No</button>
@@ -72,9 +75,29 @@
             <button type="button" class="tap-btn" data-mins="60">1 hour</button>
           </div>
         </div>
+        <div class="nap-prompt" id="replan-confirm" hidden>
+          <p id="replan-confirm-text"></p>
+          <div class="chips">
+            <button type="button" class="tap-btn" id="replan-confirm-no">No, keep current plan</button>
+            <button type="button" class="tap-btn" id="replan-confirm-yes">Yes, replan</button>
+          </div>
+        </div>
+        <div class="nap-prompt" id="replan-method" hidden>
+          <p>How should we replan?</p>
+          <div class="replan-method-options">
+            <button type="button" class="replan-method-btn" id="replan-method-quick">
+              <strong>⚡ Quick Replan</strong>
+              <span>Instant, rule-based adjustment.</span>
+            </button>
+            <button type="button" class="replan-method-btn" id="replan-method-ai">
+              <strong>✨ AI Replan</strong>
+              <span>About 20-30 seconds. Weighs pacing, naps, and mood for a more tailored plan.</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <!-- 4. Need-nearby panel -->
+      <!-- 5. Need-nearby panel -->
       <div class="action-panel">
         <p class="panel-title">Need something now?</p>
         <div class="chips" id="need-bar">
@@ -87,13 +110,6 @@
           <button type="button" class="tap-btn" id="need-other-go">Find</button>
         </div>
         <div id="need-results"></div>
-      </div>
-
-      <!-- 5. Version switcher (original vs re-planned) -->
-      <div class="action-panel">
-        <p class="panel-title">Plan versions</p>
-        <div class="plan-picker" id="plan-picker"></div>
-        <button type="button" id="ai-replan-btn" class="cta-secondary">✨ Try AI replan</button>
       </div>
 
       {% if not saved %}
@@ -193,7 +209,7 @@
       const v = stop.venue;
       let body;
       if (stop.kind === "meal" && v) {
-        // A lunch break to fit in — deliberately lighter than a real stop.
+        // A lunch break to fit in, deliberately lighter than a real stop.
         body = `<div class="stop-body meal-body">
              <h3>🍽 Lunch break${stop.duration ? " · ⏱ " + stop.duration : ""}</h3>
              <p class="meta">${v.name} · ${v.neighbourhood}</p>
@@ -215,7 +231,7 @@
       } else {
         body = `<div class="stop-body empty-body">
              <h3>${stop.kind === "leave" ? "🚗 Leave by " + stop.time
-                  : stop.kind === "bonus" ? "✨ Free time — add a stop"
+                  : stop.kind === "bonus" ? "✨ Free time, add a stop"
                   : "No matching venue"}</h3>
              <p class="reason">${stop.reason}</p>
            </div>`;
@@ -234,15 +250,17 @@
         const state = i < nowI ? "done" : i === nowI ? "now" : "";
         return renderStop(s, state);
       }).join("");
-      host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
+      const badge = SLOT_BADGES[active] ? `<span class="badge">${SLOT_BADGES[active]}</span> ` : "";
+      host.innerHTML = `<p class="plan-blurb">${badge}${plan.blurb}</p><ol class="timeline">${items}</ol>`;
     }
 
-    // Fixed slots: Original (0, never changes), Current (1, the deterministic
-    // re-plan), AI Alternative (2, never overwrites slot 1). Iterating over
-    // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole if slot 2
-    // is filled before slot 1 ever is (AI replan tried before any situation
-    // button).
-    const SLOT_LABELS = ["Original", "Current", "AI Alternative"];
+    // Fixed slots: Original (0, never changes), Quick update (1, the
+    // deterministic re-plan), AI suggestion (2, never overwrites slot 1).
+    // Iterating over SLOT_LABELS rather than PLANS.map avoids a sparse-array
+    // hole if slot 2 is filled before slot 1 ever is (AI replan tried before
+    // any situation button).
+    const SLOT_LABELS = ["Original", "Quick update", "AI suggestion"];
+    const SLOT_BADGES = ["", "⚡ Instant update", "✨ AI suggestion"];
     function renderTabs() {
       picker.innerHTML = SLOT_LABELS
         .map((label, i) => PLANS[i]
@@ -271,17 +289,10 @@
       btn.setAttribute("aria-expanded", String(!expanded));
     });
 
-    // Remembers the most recent situation/duration so "Try AI replan" can
-    // reuse it without asking the parent to pick again.
-    let lastSituation = null;
-    let lastMinutes = null;
-
-    // Run a re-plan and install the result as the single "Current" version.
+    // Run a re-plan and install the result as the "Quick update" version.
     // minutes is the parent-entered duration (nap length / how far behind).
     async function runReplan(situation, minutes) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-      lastSituation = situation;
-      lastMinutes = minutes || null;
       status.hidden = false;
       status.textContent = "Re-planning…";
       try {
@@ -298,23 +309,22 @@
           }),
         });
         const newPlan = await res.json();
-        // Replace the single "Current" version (or create it the first time),
-        // so the switcher always shows exactly Original + Current.
+        // Replace the single "Quick update" version (or create it the first
+        // time), so the switcher always shows exactly Original + Quick update.
         PLANS[1] = newPlan;
         active = 1;
         renderTabs();
         renderTimeline();
-        status.textContent = `Updated from ${newPlan.from_time || nowDisplay()} — tap “Original” to compare.`;
+        const time = newPlan.from_time || nowDisplay();
+        status.textContent = `⚡ Quick update ready from ${time}. Instant rule-based adjustment, use the tabs above to compare with the original.`;
       } catch (e) {
         status.textContent = "Couldn't re-plan right now.";
       }
     }
 
-    // AI-assisted alternative, on demand -- never overwrites "Current" (slot
-    // 1), always lands in its own "AI Alternative" slot (2) so both stay
-    // switchable.
-    async function runAiReplan() {
-      if (!lastSituation) { status.hidden = false; status.textContent = "Pick what's going on first."; return; }
+    // AI-assisted alternative -- never overwrites "Quick update" (slot 1),
+    // always lands in its own "AI suggestion" slot (2) so both stay switchable.
+    async function runAiReplan(situation, minutes) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
       status.hidden = false;
       status.textContent = "Building an AI replan…";
@@ -324,7 +334,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             plan: PLANS[active],
-            situation: lastSituation,
+            situation: situation,
             current_time: timeField.value,
             destination: tripData.destination,
             age_months: tripData.age_months,
@@ -332,7 +342,7 @@
             transit: tripData.transit,
             dining: tripData.dining,
             bedtime: tripData.bedtime,
-            minutes: lastMinutes,
+            minutes: minutes || null,
           }),
         });
         const aiPlan = await res.json();
@@ -341,38 +351,74 @@
         active = 2;
         renderTabs();
         renderTimeline();
-        status.textContent = `AI replan ready from ${aiPlan.from_time || nowDisplay()} — tap “Current” or “Original” to compare.`;
+        const time = aiPlan.from_time || nowDisplay();
+        status.textContent = `✨ AI suggestion ready from ${time}. Use the tabs above to compare with the original.`;
       } catch (e) {
         status.textContent = e.message || "Couldn't build an AI replan right now.";
       }
     }
-    document.getElementById("ai-replan-btn").addEventListener("click", runAiReplan);
 
-    // Prompts that ask for a duration before re-planning.
+    // Prompts that ask for a duration, then confirm, then a method, before
+    // any re-plan actually runs.
     const napPrompt = document.getElementById("nap-prompt");
     const napAsk = document.getElementById("nap-ask");
     const napDuration = document.getElementById("nap-duration");
     const behindPrompt = document.getElementById("behind-prompt");
+    const replanConfirm = document.getElementById("replan-confirm");
+    const replanConfirmText = document.getElementById("replan-confirm-text");
+    const replanMethod = document.getElementById("replan-method");
     function hidePrompts() {
       napPrompt.hidden = true;
       napAsk.hidden = false;      // reset the nap prompt to its first step
       napDuration.hidden = true;
       behindPrompt.hidden = true;
+      replanConfirm.hidden = true;
+      replanMethod.hidden = true;
     }
 
+    // Label lookup for the confirm prompt, built from the chips already on
+    // the page so the situation doesn't need to be passed to Jinja twice.
+    const SITUATION_LABELS_JS = {};
+    document.querySelectorAll("#situation-bar [data-situation]").forEach((btn) => {
+      SITUATION_LABELS_JS[btn.dataset.situation] = btn.textContent.trim();
+    });
+
+    // Nothing re-plans until the parent confirms and picks a method.
+    let pendingSituation = null;
+    let pendingMinutes = null;
+    function showReplanConfirm(situation, minutes) {
+      pendingSituation = situation;
+      pendingMinutes = minutes;
+      const label = SITUATION_LABELS_JS[situation] || "Something happened";
+      replanConfirmText.textContent = `${label}. Want to replan?`;
+      replanConfirm.hidden = false;
+    }
+    document.getElementById("replan-confirm-no").addEventListener("click", hidePrompts);
+    document.getElementById("replan-confirm-yes").addEventListener("click", () => {
+      replanConfirm.hidden = true;
+      replanMethod.hidden = false;
+    });
+    document.getElementById("replan-method-quick").addEventListener("click", () => {
+      hidePrompts();
+      runReplan(pendingSituation, pendingMinutes);
+    });
+    document.getElementById("replan-method-ai").addEventListener("click", () => {
+      hidePrompts();
+      runAiReplan(pendingSituation, pendingMinutes);
+    });
+
     // Situation buttons. "Nap happened here" and "Running behind" ask for a
-    // duration first; the rest re-plan straight away.
+    // duration first; the rest go straight to the replan confirm prompt.
     document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const situation = btn.dataset.situation;
+        if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+        hidePrompts();
         if (situation === "nap_happened" || situation === "running_behind") {
-          if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-          hidePrompts();
           (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
           return;
         }
-        hidePrompts();
-        runReplan(situation);
+        showReplanConfirm(situation, null);
       });
     });
 
@@ -383,21 +429,21 @@
     });
     document.getElementById("nap-no").addEventListener("click", hidePrompts);
 
-    // Pick a nap stay length -> extend the current stop by that long.
+    // Pick a nap stay length -> confirm before extending the current stop.
     document.getElementById("nap-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const mins = Number(btn.dataset.mins);
         hidePrompts();
-        runReplan("nap_happened", mins);
+        showReplanConfirm("nap_happened", mins);
       });
     });
 
-    // Pick how far behind -> slide the rest of the day later by that much.
+    // Pick how far behind -> confirm before sliding the rest of the day later.
     document.getElementById("behind-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const mins = Number(btn.dataset.mins);
         hidePrompts();
-        runReplan("running_behind", mins);
+        showReplanConfirm("running_behind", mins);
       });
     });
 
@@ -447,7 +493,7 @@
     renderTabs();
     renderTimeline();
 
-    // Save whichever version (Original or Current) is on screen right now.
+    // Save whichever version (Original, Quick update, or AI suggestion) is on screen right now.
     const saveTripForm = document.getElementById("save-trip-form");
     if (saveTripForm) {
       saveTripForm.addEventListener("submit", () => {
