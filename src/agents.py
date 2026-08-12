@@ -212,6 +212,8 @@ class PlanningAgent:
             .replace("{dining}", ctx["dining"] or "dine_out")
             .replace("{accommodation}", ctx["accommodation"] or "not specified")
             .replace("{nap_notes}", ctx["nap_notes"] or "none")
+            .replace("{transit}", ", ".join(ctx["transit"]) if ctx.get("transit") else "none")
+            .replace("{transit_nap}", ctx["transit_nap"] or "sometimes")
         )
         return [{"role": "system", "content": prompt}]
 
@@ -265,7 +267,7 @@ class PlanningAgent:
                                   nap_1, nap_2, feeding_1, feeding_2, pace,
                                   wake_up, bedtime, features, transit=None,
                                   dining=None, accommodation="", nap_notes="",
-                                  extra_notes=""):
+                                  extra_notes="", transit_nap=""):
         """One plan combining the given theme(s), on demand, so a parent only
         spends a model call when they actually ask for it. `theme_labels` is
         whichever theme checkboxes were selected (falls back to all three,
@@ -284,7 +286,7 @@ class PlanningAgent:
                    nap_2=nap_2, feeding_1=feeding_1, feeding_2=feeding_2,
                    pace=pace, wake_up=wake_up, bedtime=bedtime, dining=dining,
                    accommodation=accommodation, nap_notes=nap_notes,
-                   extra_notes=extra_notes)
+                   extra_notes=extra_notes, transit=transit, transit_nap=transit_nap)
         messages = self._build_messages(theme, candidates, ctx)
         reply, usage, elapsed = _call_openrouter(messages, self.model)
 

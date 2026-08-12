@@ -83,6 +83,11 @@ TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
 PACE_OPTIONS = ["relaxed", "balanced", "adventurous"]
 DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
 THEME_OPTIONS = [t["label"] for t in THEMES]
+TRANSIT_NAP_OPTIONS = [
+    ("yes", "Yes -- naps well in a stroller, car, or bus"),
+    ("sometimes", "Sometimes -- depends on the situation"),
+    ("no", "No -- needs a proper place to nap"),
+]
 
 # Age is capped at this many years, 0 months.
 MAX_AGE_YEARS = 5
@@ -95,6 +100,7 @@ DEFAULTS = {
     "bedtime": "20:00",
     "nap_1": "",
     "nap_2": "",
+    "transit_nap": "sometimes",
     "feeding_1": "",
     "feeding_2": "",
     "age_years": "2",
@@ -145,6 +151,7 @@ def _read_form(form):
         "bedtime": form.get("bedtime") or DEFAULTS["bedtime"],
         "nap_1": form.get("nap_1", ""),
         "nap_2": form.get("nap_2", ""),
+        "transit_nap": form.get("transit_nap") or DEFAULTS["transit_nap"],
         "feeding_1": form.get("feeding_1", ""),
         "feeding_2": form.get("feeding_2", ""),
         "age_years": age_years,
@@ -535,6 +542,7 @@ def plan():
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
         theme_options=THEME_OPTIONS,
+        transit_nap_options=TRANSIT_NAP_OPTIONS,
     )
 
 
@@ -559,7 +567,8 @@ def plan_ai():
             pace=form["pace"], wake_up=form["wake_up"], bedtime=form["bedtime"],
             features=form["features"], transit=form["transit"],
             dining=form["dining"], accommodation=form["accommodation"],
-            nap_notes=form["nap_notes"], extra_notes=form["extra_notes"])
+            nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],
+            transit_nap=form["transit_nap"])
     except KeyError:
         return jsonify({"error": "The AI planner isn't configured yet."}), 500
     except requests.exceptions.RequestException:

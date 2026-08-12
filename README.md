@@ -53,7 +53,12 @@ separate.
   act on them rather than just display them: ordering stops sensibly around
   the accommodation, picking the nap stop to suit the child's specific sleep
   habits (not just general nap-friendliness), and letting other notes change
-  venue choice, timing, or pace when they're relevant. The model must choose
+  venue choice, timing, or pace when they're relevant. A **"Can your child
+  nap during transit?"** field (yes/sometimes/no) also shapes the nap stop:
+  "yes" lets transit itself cover the nap window, "sometimes" prefers a
+  proper nap venue but tolerates transit overlap, and "no" keeps transit and
+  high-energy stops out of the nap window entirely, requiring a genuine
+  rest-friendly venue instead. The model must choose
   exclusively from those `venue_id`s, and **every stop must cite one**: if
   even one stop cites an id outside the list, repeats an id already used
   elsewhere in the same plan, or is otherwise malformed, the *whole*

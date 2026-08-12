@@ -90,6 +90,19 @@
                     placeholder="e.g. sleeps in the car seat but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
         </label>
 
+        <fieldset class="group">
+          <legend>Can your child nap during transit?</legend>
+          <div class="chips">
+            {% for key, label in transit_nap_options %}
+            <label class="chip">
+              <input type="radio" name="transit_nap" value="{{ key }}"
+                     {% if form.transit_nap == key %}checked{% endif %}>
+              <span>{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
         <div class="field-row">
           {% if not (current_parent and current_parent_children) %}
           <label class="field">
