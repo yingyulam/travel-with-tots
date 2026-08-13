@@ -36,6 +36,7 @@
            never ambiguous. Shows a single "Original" pill before any replan. -->
       <div class="plan-picker" id="plan-picker"></div>
       <p id="replan-status" class="replan-status" hidden></p>
+      <div id="replan-feedback" hidden></div>
 
       <!-- 3. Live timeline of the chosen plan -->
       <div id="timeline-host"></div>
@@ -147,6 +148,7 @@
     const host = document.getElementById("timeline-host");
     const timeField = document.getElementById("current-time");
     const status = document.getElementById("replan-status");
+    const replanFeedback = document.getElementById("replan-feedback");
 
     // Default the current-time field to the local clock (adjustable).
     function pad(n) { return String(n).padStart(2, "0"); }
@@ -252,6 +254,7 @@
       }).join("");
       const badge = SLOT_BADGES[active] ? `<span class="badge">${SLOT_BADGES[active]}</span> ` : "";
       host.innerHTML = `<p class="plan-blurb">${badge}${plan.blurb}</p><ol class="timeline">${items}</ol>`;
+      replanFeedback.hidden = !(active === 2 && PLANS[2]);
     }
 
     // Fixed slots: Original (0, never changes), Quick update (1, the
@@ -329,21 +332,22 @@
       status.hidden = false;
       status.textContent = "Building an AI replan…";
       try {
+        const requestBody = {
+          plan: PLANS[active],
+          situation: situation,
+          current_time: timeField.value,
+          destination: tripData.destination,
+          age_months: tripData.age_months,
+          features: tripData.features,
+          transit: tripData.transit,
+          dining: tripData.dining,
+          bedtime: tripData.bedtime,
+          minutes: minutes || null,
+        };
         const res = await fetch("/replan/ai", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan: PLANS[active],
-            situation: situation,
-            current_time: timeField.value,
-            destination: tripData.destination,
-            age_months: tripData.age_months,
-            features: tripData.features,
-            transit: tripData.transit,
-            dining: tripData.dining,
-            bedtime: tripData.bedtime,
-            minutes: minutes || null,
-          }),
+          body: JSON.stringify(requestBody),
         });
         const aiPlan = await res.json();
         if (!res.ok) throw new Error(aiPlan.error || "Something went wrong.");
@@ -353,6 +357,16 @@
         renderTimeline();
         const time = aiPlan.from_time || nowDisplay();
         status.textContent = `✨ AI suggestion ready from ${time}. Use the tabs above to compare with the original.`;
+        replanFeedback.innerHTML = "";
+        replanFeedback.appendChild(buildFeedbackRow({
+          question: JSON.stringify(requestBody),
+          response: JSON.stringify(aiPlan),
+          model: aiPlan.model,
+          response_time: aiPlan.response_time,
+          input_tokens: aiPlan.input_tokens,
+          output_tokens: aiPlan.output_tokens,
+          kind: "replan",
+        }));
       } catch (e) {
         status.textContent = e.message || "Couldn't build an AI replan right now.";
       }

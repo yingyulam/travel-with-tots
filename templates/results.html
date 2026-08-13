@@ -2,7 +2,7 @@
 {% from "_results_session.html" import results_session %}
 {% block title %}Travel with Tots: Results{% endblock %}
 {% block heading %}Ratings{% endblock %}
-{% block tagline %}Every rated chatbot response and AI-generated plan, with aggregate stats per session.{% endblock %}
+{% block tagline %}Every rated chatbot response, AI-generated plan, and AI replan, with aggregate stats per session.{% endblock %}
 
 {% block content %}
 <div id="results-root" data-total="{{ sessions|sum(attribute='stats.total') }}">

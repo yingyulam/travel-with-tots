@@ -36,4 +36,15 @@
     <button type="submit" class="cta">Save planner prompt</button>
   </form>
 </section>
+
+<section class="card">
+  <form method="post" action="{{ url_for('save_replan_prompt') }}" class="section-form">
+    <h2>Replan prompt</h2>
+    <p class="meta">The AI replanning agent's role and instructions (src/prompts/replan_day.txt).</p>
+    <label class="field field-full">
+      <textarea name="content" rows="20">{{ replan_prompt }}</textarea>
+    </label>
+    <button type="submit" class="cta">Save replan prompt</button>
+  </form>
+</section>
 {% endblock %}

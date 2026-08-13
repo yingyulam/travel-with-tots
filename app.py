@@ -28,6 +28,7 @@ from src.agents import (
     ALLOWED_CHAT_MODELS,
     DEFAULT_MODEL,
     PLANNER_PROMPT_PATH,
+    REPLAN_DAY_PROMPT_PATH,
     WEBSITE_CHATBOT_PROMPT_PATH,
     PlanningAgent,
     PlanningAgentError,
@@ -35,6 +36,7 @@ from src.agents import (
     ReplanningAgentError,
     ask_website_chatbot,
     reload_planner_prompt,
+    reload_replan_day_prompt,
     reload_website_chatbot_prompt,
 )
 from src.data_loader import FEATURE_LABELS, load_venues
@@ -308,9 +310,11 @@ def settings():
         prompt = f.read()
     with open(PLANNER_PROMPT_PATH) as f:
         planner_prompt = f.read()
+    with open(REPLAN_DAY_PROMPT_PATH) as f:
+        replan_prompt = f.read()
     return render_template(
         "settings.html", knowledge_base=knowledge_base, prompt=prompt,
-        planner_prompt=planner_prompt)
+        planner_prompt=planner_prompt, replan_prompt=replan_prompt)
 
 
 @app.route("/settings/knowledge-base", methods=["POST"])
@@ -351,6 +355,19 @@ def save_planner_prompt():
     return redirect(url_for("settings"))
 
 
+@app.route("/settings/replan-prompt", methods=["POST"])
+@login_required
+@admin_required
+def save_replan_prompt():
+    """Save the AI replanning agent's system prompt."""
+    content = request.form.get("content", "").replace("\r\n", "\n")
+    with open(REPLAN_DAY_PROMPT_PATH, "w") as f:
+        f.write(content)
+    reload_replan_day_prompt()
+    flash("Replan prompt saved.")
+    return redirect(url_for("settings"))
+
+
 @app.route("/rag/status")
 def rag_status():
     """Poll-able indexing status, used by the chatbot widget and Chunks page."""
@@ -378,7 +395,7 @@ def chunks_rerun():
 
 
 # (kind, display title) for each session shown on the Results page.
-RESULT_KINDS = [("chatbot", "Chatbox"), ("plan", "Generated Plan")]
+RESULT_KINDS = [("chatbot", "Chatbox"), ("plan", "Generated Plan"), ("replan", "AI Replan")]
 
 
 def _results_sessions():
@@ -390,8 +407,8 @@ def _results_sessions():
 @login_required
 @admin_required
 def results():
-    """Every rated chatbot response and AI-generated plan, with aggregate
-    stats per session."""
+    """Every rated chatbot response, AI-generated plan, and AI replan, with
+    aggregate stats per session."""
     return render_template("results.html", sessions=_results_sessions())
 
 
@@ -774,15 +791,15 @@ def chatbot_route():
 
 @app.route("/feedback", methods=["POST"])
 def feedback_route():
-    """Save a thumbs up/down rating on a chatbot response or AI-generated
-    plan, as JSON."""
+    """Save a thumbs up/down rating on a chatbot response, an AI-generated
+    plan, or an AI replan, as JSON."""
     data = request.get_json(silent=True) or {}
     question = (data.get("question") or "").strip()
     response_text = data.get("response") or ""
     rating = data.get("rating")
     kind = data.get("kind") or "chatbot"
     if (not question or not response_text or rating not in ("up", "down")
-            or kind not in ("chatbot", "plan")):
+            or kind not in ("chatbot", "plan", "replan")):
         return jsonify({"error": "question, response, and a valid rating/kind are required"}), 400
 
     save_result(
