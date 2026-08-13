@@ -12,8 +12,8 @@
       <summary class="twt-result-summary">
         <span class="twt-result-rating {{ 'up' if r.rating == 'up' else 'down' }}">{{ "👍" if r.rating == "up" else "👎" }}</span>
         <div class="twt-result-main">
-          <p class="twt-result-question">{{ r.question|truncate(50) }}</p>
-          <p class="twt-result-response">{{ r.response|truncate(50) }}</p>
+          <p class="twt-result-question">{{ r.question_display|truncate(50) }}</p>
+          <p class="twt-result-response">{{ r.response_display|truncate(50) }}</p>
         </div>
         <div class="twt-result-meta">
           <span class="twt-badge">{{ r.model }}</span>
@@ -22,8 +22,8 @@
         <span class="twt-result-chevron" aria-hidden="true">⌄</span>
       </summary>
       <div class="twt-result-details">
-        <p class="twt-chunk-text"><strong>Question:</strong> {{ r.question }}</p>
-        <p class="twt-chunk-text"><strong>Response:</strong> {{ r.response }}</p>
+        <p class="twt-chunk-text"><strong>Question:</strong> {{ r.question_display }}</p>
+        <p class="twt-chunk-text"><strong>Response:</strong> {{ r.response_display }}</p>
         <p class="meta">
           Model: {{ r.model }} ·
           Rating: {{ r.rating }} ·

@@ -23,10 +23,10 @@ function renderRow(r) {
   main.className = "twt-result-main";
   const questionLine = document.createElement("p");
   questionLine.className = "twt-result-question";
-  questionLine.textContent = truncate(r.question, 50);
+  questionLine.textContent = truncate(r.question_display, 50);
   const responseLine = document.createElement("p");
   responseLine.className = "twt-result-response";
-  responseLine.textContent = truncate(r.response, 50);
+  responseLine.textContent = truncate(r.response_display, 50);
   main.append(questionLine, responseLine);
   summary.appendChild(main);
 
@@ -56,14 +56,14 @@ function renderRow(r) {
   questionP.className = "twt-chunk-text";
   const questionLabel = document.createElement("strong");
   questionLabel.textContent = "Question:";
-  questionP.append(questionLabel, document.createTextNode(" " + r.question));
+  questionP.append(questionLabel, document.createTextNode(" " + r.question_display));
   body.appendChild(questionP);
 
   const responseP = document.createElement("p");
   responseP.className = "twt-chunk-text";
   const responseLabel = document.createElement("strong");
   responseLabel.textContent = "Response:";
-  responseP.append(responseLabel, document.createTextNode(" " + r.response));
+  responseP.append(responseLabel, document.createTextNode(" " + r.response_display));
   body.appendChild(responseP);
 
   const meta = document.createElement("p");

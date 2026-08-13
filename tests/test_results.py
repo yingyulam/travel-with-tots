@@ -56,6 +56,64 @@ class ResultsTest(unittest.TestCase):
         self.assertEqual(results.get_stats("chatbot")["total"], 1)
         self.assertEqual(results.get_stats("plan")["total"], 0)
 
+    def test_plan_question_response_are_humanized(self):
+        question = json.dumps({
+            "destination": "Vancouver", "age_years": "2", "age_months": "0",
+            "pace": "balanced", "dining": "dine_out", "transit": ["walk"],
+            "features": ["kid_friendly"], "bedtime": "19:30",
+        })
+        response = json.dumps({
+            "label": "Outdoorsy", "blurb": "A day out.",
+            "stops": [{"time": "9:00 AM", "kind": "activity", "reason": "fits",
+                       "venue": {"name": "Stanley Park", "neighbourhood": "West End"}}],
+        })
+        results.save_result(question=question, response=response, rating="up",
+                             model="m", response_time=1.0, input_tokens=1,
+                             output_tokens=1, kind="plan")
+        entry = results.get_results("plan")[0]
+        self.assertIn("Destination: Vancouver", entry["question_display"])
+        self.assertIn("Outdoorsy", entry["response_display"])
+        self.assertIn("Stanley Park (West End)", entry["response_display"])
+        # Raw fields stay untouched, still the source of truth on disk.
+        self.assertEqual(entry["question"], question)
+        self.assertEqual(entry["response"], response)
+
+    def test_replan_question_response_are_humanized(self):
+        question = json.dumps({
+            "situation": "finished_early", "current_time": "13:00",
+            "destination": "Vancouver", "age_months": 24,
+            "plan": {"label": "Outdoorsy"},
+        })
+        response = json.dumps({
+            "label": "Outdoorsy - AI replan from 1:00 PM",
+            "blurb": "AI-replanned after finishing early.",
+            "stops": [{"time": "1:00 PM", "kind": "activity", "reason": "nearby",
+                       "venue": {"name": "Science World", "neighbourhood": "False Creek"}}],
+        })
+        results.save_result(question=question, response=response, rating="down",
+                             model="m", response_time=1.0, input_tokens=1,
+                             output_tokens=1, kind="replan")
+        entry = results.get_results("replan")[0]
+        self.assertIn("finished_early", entry["question_display"])
+        self.assertIn("Replanning from: Outdoorsy", entry["question_display"])
+        self.assertIn("Science World (False Creek)", entry["response_display"])
+
+    def test_chatbot_display_fields_equal_raw_text(self):
+        results.save_result(question="How do I save a plan?", response="Tap Save.",
+                             rating="up", model="m", response_time=1.0,
+                             input_tokens=1, output_tokens=1, kind="chatbot")
+        entry = results.get_results("chatbot")[0]
+        self.assertEqual(entry["question_display"], "How do I save a plan?")
+        self.assertEqual(entry["response_display"], "Tap Save.")
+
+    def test_malformed_plan_json_falls_back_to_raw_text(self):
+        results.save_result(question="not json", response="also not json",
+                             rating="up", model="m", response_time=1.0,
+                             input_tokens=1, output_tokens=1, kind="plan")
+        entry = results.get_results("plan")[0]
+        self.assertEqual(entry["question_display"], "not json")
+        self.assertEqual(entry["response_display"], "also not json")
+
     def test_percent_positive_zero_when_no_ratings_for_kind(self):
         self.assertEqual(results.get_stats("chatbot"), {"up": 0, "down": 0, "total": 0, "percent_positive": 0})
         self.assertEqual(results.get_stats("plan"), {"up": 0, "down": 0, "total": 0, "percent_positive": 0})
