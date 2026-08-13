@@ -8,7 +8,7 @@ What each situation means:
 
 Kept stops vs. remaining stops:
 - "Kept" stops (given below) already happened, or are happening right now. They are fixed context only -- never re-list them, never re-time them, never cite their venue_id again.
-- "Remaining" stops (given below) are what you are re-deciding. You may keep a remaining stop's original venue (just retimed if needed), drop it, or replace it with a candidate venue -- whatever makes the rest of the day realistic given the situation.
+- "Remaining" stops (given below) are what you are re-deciding. Prefer keeping a remaining stop's original venue (just retimed if needed) whenever it still fits the revised schedule and constraints -- the family chose that venue for a reason. Only drop it or replace it with a candidate venue when it no longer fits or another constraint forces a change, never just because a candidate might be slightly better. Exception: for "skip_next", drop the next stop as instructed instead of trying to preserve it.
 
 Trip context:
 - Situation: {situation} ({situation_label})
