@@ -227,14 +227,16 @@
           <textarea name="extra_notes" rows="3"
                     placeholder="e.g. do not like staying in stroller all the time">{{ form.extra_notes }}</textarea>
         </label>
+        <input type="hidden" name="revise_count" id="revise-count-field" value="{{ revise_count or 0 }}">
+        <input type="hidden" name="revise_feedback" id="revise-feedback-field" value="{{ form.revise_feedback }}">
 
-        <button type="submit" class="cta">Plan my day</button>
+        <button type="submit" class="cta" id="plan-submit-btn">Plan my day</button>
       </form>
     </section>
 
     <!-- The generated plan, already AI-adjusted for flow if that step succeeded -->
     {% if plans is not none %}
-    <section class="card">
+    <section class="card" id="plan-results">
       <h2>Your plan</h2>
       {% if plans %}
       <p class="picker-hint">Tap “Start this day” when you’re ready.</p>
@@ -266,6 +268,29 @@
           {% else %}
           <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
           {% endif %}
+          <div class="plan-revise" id="plan-revise-block">
+            <p class="panel-title">Not quite right?</p>
+            <div class="chips">
+              {% if can_revise_more %}
+              <button type="button" class="cta-secondary" id="plan-reject-btn">Something's off</button>
+              {% endif %}
+              <button type="button" class="cta-secondary" id="plan-decline-btn">Try a new plan</button>
+            </div>
+            {% if can_revise_more %}
+            <div id="plan-reject-box" hidden>
+              <label class="field field-full">
+                <span>What would you change?</span>
+                <textarea id="plan-reject-text" rows="2" placeholder="e.g. the museum stop feels rushed"></textarea>
+              </label>
+              <button type="button" class="cta" id="plan-reject-submit">Update my plan</button>
+            </div>
+            {% else %}
+            <p class="field-hint">You've reached the limit for fine-tuning this plan, once your trip starts, you can always adjust things on the fly.</p>
+            {% endif %}
+            {% if revise_message %}
+            <p class="revise-result {{ 'revise-error' if revise_error else 'revise-success' }}">{{ revise_message }}</p>
+            {% endif %}
+          </div>
         </div>
         {% endfor %}
       </div>
@@ -290,6 +315,14 @@
     const HAS_SERVER_PLANS = {{ (plans is not none) | tojson }};
     const SNAPSHOT_KEY = "twt_plan_snapshot";
     const planMain = document.getElementById("plan-main");
+    const planForm = document.getElementById("plan-form");
+
+    // Point the next submit at a specific in-page anchor (or none), so the
+    // browser lands back near where the parent was instead of at the top.
+    function setFormAnchor(anchor) {
+      const base = planForm.action.split("#")[0];
+      planForm.action = anchor ? `${base}#${anchor}` : base;
+    }
 
     function saveSnapshot() {
       sessionStorage.setItem(SNAPSHOT_KEY, planMain.innerHTML);
@@ -360,15 +393,64 @@
     addNapBtn.addEventListener("click", addNapRow);
     updateAddNapVisibility();
 
-    // "+N more" toggle on a plan's preview list, restored from a snapshot or
-    // freshly rendered either way since this is delegated, not per-button.
+    // Delegated on planMain (not per-button) so every handler below keeps
+    // working whether the content was just server-rendered or restored
+    // wholesale from a snapshot.
     planMain.addEventListener("click", (e) => {
       const moreBtn = e.target.closest(".preview-more-toggle");
-      if (!moreBtn) return;
-      const list = moreBtn.closest(".preview-list");
-      list.querySelectorAll(".preview-extra").forEach((li) => { li.hidden = false; });
-      moreBtn.closest(".preview-more").remove();
-      saveSnapshot();
+      if (moreBtn) {
+        const list = moreBtn.closest(".preview-list");
+        list.querySelectorAll(".preview-extra").forEach((li) => { li.hidden = false; });
+        moreBtn.closest(".preview-more").remove();
+        saveSnapshot();
+        return;
+      }
+
+      // "Something's off" -> reveal the feedback box.
+      const rejectBtn = e.target.closest("#plan-reject-btn");
+      if (rejectBtn) {
+        rejectBtn.hidden = true;
+        document.getElementById("plan-reject-box").hidden = false;
+        return;
+      }
+
+      // Submit that feedback: keep it in its own hidden field (never the
+      // visible extra_notes box), bump the revise count, show a loading
+      // state right where the button was, and resubmit so the server
+      // re-adjusts with it in mind.
+      const submitBtn = e.target.closest("#plan-reject-submit");
+      if (submitBtn) {
+        const feedback = document.getElementById("plan-reject-text").value.trim();
+        if (!feedback) return;
+        const feedbackField = document.getElementById("revise-feedback-field");
+        feedbackField.value = feedbackField.value
+          ? feedbackField.value + "\n" + feedback : feedback;
+        const countField = document.getElementById("revise-count-field");
+        countField.value = String(Number(countField.value || 0) + 1);
+        document.getElementById("plan-reject-box").innerHTML =
+          '<p class="revise-progress">Updating your plan…</p>';
+        setFormAnchor("plan-revise-block");
+        planForm.submit();
+        return;
+      }
+
+      // A fresh "Plan my day" click starts a new attempt, not a revision.
+      if (e.target.closest("#plan-submit-btn")) {
+        document.getElementById("revise-count-field").value = "0";
+        document.getElementById("revise-feedback-field").value = "";
+        setFormAnchor("");
+        return;
+      }
+
+      // "Try a new plan" -- no feedback, no AI call, just make this plan go
+      // away and send the parent back to the form to submit again.
+      if (e.target.closest("#plan-decline-btn")) {
+        document.getElementById("revise-count-field").value = "0";
+        document.getElementById("revise-feedback-field").value = "";
+        document.getElementById("plan-results").remove();
+        saveSnapshot();
+        document.getElementById("plan-form").scrollIntoView({ behavior: "smooth" });
+      }
     });
   </script>
 

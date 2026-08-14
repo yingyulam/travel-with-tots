@@ -97,6 +97,9 @@ TRANSIT_NAP_OPTIONS = [
 MAX_AGE_YEARS = 5
 MAX_MONTHS = 11
 MAX_NAPS = 4
+# How many times a parent can say "something's off" and get the plan
+# adjusted again before we stop offering it and point at in-trip replanning.
+MAX_REVISE_ROUNDS = 2
 FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 
 # Sensible defaults so the form is usable on first load.
@@ -115,6 +118,7 @@ DEFAULTS = {
     "preferred_lunch_time": "",
     "nap_notes": "",
     "extra_notes": "",
+    "revise_feedback": "",
     "strict_schedule": False,
     "features": ["kid_friendly"],
     "themes": [],
@@ -173,6 +177,7 @@ def _read_form(form):
         "preferred_lunch_time": form.get("preferred_lunch_time", ""),
         "nap_notes": form.get("nap_notes", ""),
         "extra_notes": form.get("extra_notes", ""),
+        "revise_feedback": form.get("revise_feedback", ""),
         "strict_schedule": form.get("strict_schedule") == "on",
         "features": form.getlist("features"),
         "themes": form.getlist("themes"),
@@ -559,8 +564,19 @@ def plan():
 
     _resolve_plan_child(form, _current_parent())
 
+    revise_count = _clamp_int(request.form.get("revise_count"), 0, MAX_REVISE_ROUNDS, 0)
+    is_revise = revise_count > 0
+    revise_message, revise_error = None, False
+
     if request.method == "POST":
         plans = generate_plans(VENUES, form)
+        # The visible "extra_notes" box only ever holds what the parent typed
+        # there; feedback from "Something's off" travels separately in
+        # revise_feedback and is merged in here, just for the AI call.
+        notes_for_ai = form["extra_notes"]
+        if form["revise_feedback"]:
+            notes_for_ai = (f"{notes_for_ai}\n{form['revise_feedback']}"
+                            if notes_for_ai else form["revise_feedback"])
         # Always try to smooth the rule-based draft's flow and apply any
         # free-text notes -- an enhancement, not a requirement, so a failed
         # AI call just leaves the already-valid draft on screen unchanged.
@@ -572,15 +588,21 @@ def plan():
                 wake_up=form["wake_up"], bedtime=form["bedtime"], pace=form["pace"],
                 dining=form["dining"], naps=form["naps"],
                 preferred_lunch_time=form["preferred_lunch_time"],
-                nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],
+                nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
                 transit=form["transit"], accommodation=form["accommodation"],
                 features=form["features"], strict_schedule=form["strict_schedule"],
             )
             plans[0] = Plan(label=plans[0].label, blurb=plans[0].blurb,
                              stops=adjustment["stops"], source=plans[0].source)
+            if is_revise:
+                revise_message = "Your plan has been updated."
         except (PlanningAgentError, requests.exceptions.RequestException, KeyError) as e:
             print(f"Plan adjustment skipped, showing the unadjusted draft: {e}")
-            flash("Showing the standard plan, couldn't fine-tune it right now.")
+            if is_revise:
+                revise_message = "Couldn't fine-tune your plan right now. Showing the plan you had."
+                revise_error = True
+            else:
+                flash("Showing the standard plan, couldn't fine-tune it right now.")
         # The whole form is carried to the in-trip page when a plan is chosen,
         # so a plan can still be saved from there without re-asking for it.
         trip_context = form
@@ -600,6 +622,10 @@ def plan():
         theme_options=THEME_OPTIONS,
         transit_nap_options=TRANSIT_NAP_OPTIONS,
         max_naps=MAX_NAPS,
+        revise_count=revise_count,
+        can_revise_more=revise_count < MAX_REVISE_ROUNDS,
+        revise_message=revise_message,
+        revise_error=revise_error,
     )
 
 

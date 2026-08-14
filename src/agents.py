@@ -846,7 +846,7 @@ class PlanningAgent:
                 cleaned, error = None, "That wasn't valid JSON."
 
         if cleaned is None:
-            raise PlanningAgentError("Couldn't build a valid set of adjustments.")
+            raise PlanningAgentError(f"Couldn't build a valid set of adjustments: {error}")
 
         return {"stops": _apply_plan_edits(draft_plan, cleaned, by_id), "edits": cleaned,
                 "model": self.model, "response_time": round(elapsed, 3),

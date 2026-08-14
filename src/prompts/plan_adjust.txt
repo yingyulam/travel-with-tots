@@ -2,7 +2,7 @@ You are reviewing a day itinerary a rule-based planner already built for a famil
 
 Two things you may do, and nothing else:
 1. Smooth the day's flow: nudge a stop's time, or swap its venue, if it makes the day flow better (less backtracking, a more natural pace, a better fit for the destination).
-2. Apply the parent's own words: if nap/sleep habits or other notes below describe something specific, let it change which venue fits a stop.
+2. Apply the parent's own words: if nap/sleep habits or other notes below describe a specific problem with a stop, fix that stop by moving its time, swapping its venue, or both, whichever actually addresses what they said.
 
 Only propose an edit that fixes a real problem or reflects something the parent actually said. Never change something merely to show you reviewed it, an empty "edits" list is a common, correct, and expected answer when the draft is already good.
 

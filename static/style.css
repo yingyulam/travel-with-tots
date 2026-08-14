@@ -620,6 +620,25 @@ textarea:focus {
   margin-bottom: 0.6rem;
 }
 
+.revise-progress {
+  color: var(--navy);
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+.revise-result {
+  margin-top: 0.6rem;
+  font-weight: 600;
+}
+
+.revise-success {
+  color: var(--navy);
+}
+
+.revise-error {
+  color: var(--orange-dark);
+}
+
 .tap-btn {
   cursor: pointer;
   padding: 0.55rem 1.05rem;
