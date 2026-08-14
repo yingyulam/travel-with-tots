@@ -44,41 +44,37 @@ Example 1 -- 18 months old, relaxed pace, nap at 13:00:
 Trip details: Wake-up: 07:00 | Bedtime: 19:30 | Nap time(s): 13:00 for about 45 min | Pace: relaxed
 Output: {"stops": [{"venue_id": 4, "time": "9:30 AM", "reason": "A quiet park visit fits an 18-month-old's short attention span and a relaxed pace.", "is_nap": false, "is_meal": false}, {"venue_id": 11, "time": "1:00 PM", "reason": "A calm garden with smooth, even stroller paths and no loud crowds, ideal for the child to nap undisturbed in the stroller.", "is_nap": true, "is_meal": false}]}
 
-Example 2 -- 3 years 6 months old, balanced pace, nap at 12:30:
-Trip details: Wake-up: 07:00 | Bedtime: 20:00 | Nap time(s): 12:30 for about 60 min | Pace: balanced
-Output: {"stops": [{"venue_id": 7, "time": "9:00 AM", "reason": "An interactive museum exhibit suits a curious 3-year-old at a balanced pace.", "is_nap": false, "is_meal": false}, {"venue_id": 15, "time": "12:30 PM", "reason": "A low-key cafe with soft seating and a nursing room, quiet enough for a stroller nap right on schedule.", "is_nap": true, "is_meal": false}, {"venue_id": 9, "time": "3:30 PM", "reason": "An easy afternoon walk closes out a balanced day without overtiring the child.", "is_nap": false, "is_meal": false}]}
-
-Example 3 -- 5 years old, adventurous pace, no nap time given:
+Example 2 -- 5 years old, adventurous pace, no nap time given:
 Trip details: Wake-up: 06:30 | Bedtime: 20:30 | Nap time(s): none | Pace: adventurous
 Output: {"stops": [{"venue_id": 2, "time": "8:00 AM", "reason": "A hands-on science centre suits a 5-year-old ready for an active morning.", "is_nap": false, "is_meal": false}, {"venue_id": 18, "time": "11:00 AM", "reason": "An outdoor adventure trail matches the adventurous pace and this child's stamina.", "is_nap": false, "is_meal": false}, {"venue_id": 6, "time": "1:30 PM", "reason": "A hands-on aquarium keeps the adventurous energy going after lunch.", "is_nap": false, "is_meal": false}, {"venue_id": 21, "time": "4:00 PM", "reason": "A final high-energy stop rounds out the day before winding down toward bedtime.", "is_nap": false, "is_meal": false}]}
 
-Example 4 -- 2 years old, balanced pace, nap at 13:30, with accommodation, sleep habits, and a parent note all given:
+Example 3 -- 2 years old, balanced pace, nap at 13:30, with accommodation, sleep habits, and a parent note all given:
 Trip details: Wake-up: 07:00 | Bedtime: 19:30 | Nap time(s): 13:30 for about 60 min | Pace: balanced | Accommodation: Fairmont Hotel Vancouver, Downtown | Nap/sleep habits: Only naps while the stroller keeps moving, wakes up right away if we stop | Notes from the parent: Doesn't like loud or crowded places
 Output: {"stops": [{"venue_id": 3, "time": "9:00 AM", "reason": "A calm, uncrowded stop close to the Fairmont Hotel Vancouver downtown, an easy first outing without much travel from where the family is staying.", "is_nap": false, "is_meal": false}, {"venue_id": 8, "time": "1:30 PM", "reason": "A long waterfront walking path lets the stroller keep moving through the whole nap window, matching a child who wakes up the moment the stroller stops, and it's quiet rather than crowded.", "is_nap": true, "is_meal": false}, {"venue_id": 14, "time": "4:00 PM", "reason": "A relaxed, uncrowded stop on the way back toward downtown avoids backtracking across the city and keeps the day calm as the parent asked.", "is_nap": false, "is_meal": false}]}
 
-Example 5 -- 4 years old, adventurous pace (usually 4 stops), but only 1 venue in the candidate list:
+Example 4 -- 4 years old, adventurous pace (usually 4 stops), but only 1 venue in the candidate list:
 Trip details: Wake-up: 07:00 | Bedtime: 20:00 | Nap time(s): none | Pace: adventurous
 Candidate venues: [venue_id 9] Riverside Park -- activity (park), Eastside
 Output: {"stops": [{"venue_id": 9, "time": "9:00 AM", "reason": "The only venue available for this trip; an active outdoor stop that still fits an adventurous 4-year-old.", "is_nap": false, "is_meal": false}]}
 
-Example 6 -- 3 years old, balanced pace, two themes selected (Outdoorsy, Culture), no nap time given:
+Example 5 -- 3 years old, balanced pace, two themes selected (Outdoorsy, Culture), no nap time given:
 Theme(s) for this plan: Outdoorsy, Culture
 Trip details: Wake-up: 07:00 | Bedtime: 20:00 | Nap time(s): none | Pace: balanced
 Output: {"stops": [{"venue_id": 5, "time": "9:00 AM", "reason": "An outdoor park stop opens the day with fresh air, drawing on the Outdoorsy theme.", "is_nap": false, "is_meal": false}, {"venue_id": 12, "time": "12:00 PM", "reason": "A museum visit brings in the Culture theme for the middle of the day.", "is_nap": false, "is_meal": false}, {"venue_id": 8, "time": "3:00 PM", "reason": "Another outdoor stop closes the day, keeping a mix of both themes across the itinerary rather than settling on just one.", "is_nap": false, "is_meal": false}]}
 
-Example 7 -- 2 years old, balanced pace, nap at 1:00 PM, can nap during transit: no:
+Example 6 -- 2 years old, balanced pace, nap at 1:00 PM, can nap during transit: no:
 Trip details: Wake-up: 07:00 | Bedtime: 19:30 | Nap time(s): 13:00 for about 45 min | Can nap during transit: no | Transit: car | Pace: balanced
 Output: {"stops": [{"venue_id": 10, "time": "9:30 AM", "reason": "A hands-on children's museum suits a curious 2-year-old at a balanced pace.", "is_nap": false, "is_meal": false}, {"venue_id": 16, "time": "1:00 PM", "reason": "This child needs a proper place to nap rather than napping in transit, so the visit ends here and the family stays put through the full nap window instead of driving anywhere during it.", "is_nap": true, "is_meal": false}, {"venue_id": 5, "time": "4:00 PM", "reason": "An easy outdoor stop after the nap keeps the afternoon relaxed before bedtime.", "is_nap": false, "is_meal": false}]}
 
-Example 8 -- 2 years 6 months old, adventurous pace (usually 4 stops), 5 venues in the candidate list, nap at 1:30 PM, preferred lunch time 12:45 PM:
+Example 7 -- 2 years 6 months old, adventurous pace (usually 4 stops), 5 venues in the candidate list, nap at 1:30 PM, preferred lunch time 12:45 PM:
 Trip details: Wake-up: 07:00 | Bedtime: 19:30 | Nap time(s): 13:30 for about 60 min | Pace: adventurous | Dining preference: dine_out | Preferred lunch time: 12:45 PM
 Output: {"stops": [{"venue_id": 6, "time": "9:30 AM", "reason": "An active morning stop suits an adventurous 2.5-year-old while energy is high.", "is_nap": false, "is_meal": false}, {"venue_id": 13, "time": "12:45 PM", "reason": "Lunch right at the preferred time, planned for the full 90 minutes rather than a rushed bite.", "is_nap": false, "is_meal": true}, {"venue_id": 4, "time": "2:35 PM", "reason": "A calm, nap-friendly stop right after lunch's 90-minute block plus a travel buffer, giving real time to get there before treating the 1:30 PM nap window as this stop's target. A fourth stop is dropped here to keep the day realistically paced instead of overpacked.", "is_nap": true, "is_meal": false}]}
 
-Example 9 -- 8 months old, relaxed pace, two naps in one day (9:30 AM for about 30 min, 2:00 PM for about 60 min):
+Example 8 -- 8 months old, relaxed pace, two naps in one day (9:30 AM for about 30 min, 2:00 PM for about 60 min):
 Trip details: Wake-up: 06:30 | Bedtime: 19:00 | Nap time(s): 9:30 AM for about 30 min; 2:00 PM for about 60 min | Can nap during transit: sometimes | Pace: relaxed
 Output: {"stops": [{"venue_id": 20, "time": "9:30 AM", "reason": "A quiet, nap-friendly spot right at the first nap's target time -- a short 30-minute nap doesn't need a full activity built around it.", "is_nap": true, "is_meal": false}, {"venue_id": 17, "time": "12:00 PM", "reason": "An easy midday outing between naps suits an 8-month-old's relaxed pace.", "is_nap": false, "is_meal": false}, {"venue_id": 23, "time": "2:00 PM", "reason": "Another calm, nap-friendly venue for the second, longer nap, right on its target time.", "is_nap": true, "is_meal": false}]}
 
-Example 10 -- 3 years old, balanced pace, nap at 1:30 PM for 60 min, can nap during transit: yes, bus + stroller, dine_out with preferred lunch 12:00 PM:
+Example 9 -- 3 years old, balanced pace, nap at 1:30 PM for 60 min, can nap during transit: yes, bus + stroller, dine_out with preferred lunch 12:00 PM:
 Trip details: Wake-up: 07:00 | Bedtime: 20:00 | Nap time(s): 13:30 for about 60 min | Nap/sleep habits: Can sleep in stroller or car, but may wake if moved from stroller to car seat | Can nap during transit: yes | Transit: bus, stroller | Pace: balanced | Dining preference: dine_out | Preferred lunch time: 12:00 PM
 Output: {"stops": [{"venue_id": 11, "time": "10:00 AM", "reason": "An easy morning outing suits a 3-year-old at a balanced pace.", "is_nap": false, "is_meal": false}, {"venue_id": 19, "time": "12:00 PM", "reason": "Lunch right at the preferred time, planned for the full 90 minutes rather than a rushed bite.", "is_nap": false, "is_meal": true}, {"venue_id": 7, "time": "1:55 PM", "reason": "Shifted 25 minutes past the 1:30 PM nap target to clear lunch's 90-minute block plus the bus/stroller travel buffer -- a stroller-friendly outdoor venue reachable by the same bus route, so the child can keep napping in the stroller right through the ride and into the visit instead of being transferred to a car seat, which nap_notes says wakes them.", "is_nap": true, "is_meal": false}, {"venue_id": 2, "time": "4:00 PM", "reason": "A calm afternoon stop rounds out the day after the nap without overtiring the child.", "is_nap": false, "is_meal": false}]}
 
