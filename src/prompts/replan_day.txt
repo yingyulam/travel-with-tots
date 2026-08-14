@@ -22,6 +22,8 @@ Trip context:
 - Bedtime: {bedtime}
 - Dining preference: {dining}
 - Meal stops already happened today: {already_meal_count}
+- Nap/sleep habits: {nap_notes}
+- Notes from the parent: {extra_notes}
 
 Kept stops (context only, do not modify or re-cite):
 {kept_stops}
@@ -42,6 +44,7 @@ Rules:
 - At most one stop across the whole day (including any already in "Meal stops already happened today") may be a meal: if a meal has already happened, set "is_meal": false on every stop you return.
 - Set "is_nap": true only if a stop is specifically a nap stop; a stop is never both "is_nap" and "is_meal".
 - Give each stop a short, one-sentence "reason" that explains why it fits the situation.
+- If {nap_notes} or {extra_notes} is not "none", actually apply it when picking or timing a remaining stop, not just acknowledge it: let it influence which candidate venue fits best, the same way it would have shaped the original plan. If it doesn't affect a given stop, you don't need to force it in.
 - If nothing realistic fits before bedtime, it's fine to return fewer stops than originally planned rather than forcing an unrealistic day.
 - For "finished_early" or "skip_next", if the freed-up time realistically fits one more stop before {bedtime}, add it from the candidate list, even if that means returning more stops than were in "Remaining stops" above or more than the day's original pace would suggest -- don't leave the day artificially short just to match the old count.
 

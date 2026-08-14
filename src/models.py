@@ -61,6 +61,8 @@ class Trip:
     bedtime: str = ""
     age_months: int = 0
     dining: str = ""
+    nap_notes: str = ""
+    extra_notes: str = ""
     versions: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -81,5 +83,7 @@ class Trip:
             "bedtime": self.bedtime,
             "age_months": self.age_months,
             "dining": self.dining,
+            "nap_notes": self.nap_notes,
+            "extra_notes": self.extra_notes,
             "plans": [p.to_dict() for p in self.versions],
         }

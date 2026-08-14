@@ -624,7 +624,8 @@ def plan_ai():
     })
 
 
-def _build_trip(destination, transit, features, bedtime, age_months, dining, plan_data):
+def _build_trip(destination, transit, features, bedtime, age_months, dining, plan_data,
+                 nap_notes="", extra_notes=""):
     """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
     and reopening a saved itinerary from the dashboard."""
     return Trip(
@@ -634,6 +635,8 @@ def _build_trip(destination, transit, features, bedtime, age_months, dining, pla
         bedtime=bedtime,
         age_months=age_months,
         dining=dining,
+        nap_notes=nap_notes,
+        extra_notes=extra_notes,
         original=Plan.from_dict(plan_data),
     )
 
@@ -675,6 +678,8 @@ def trip():
         age_months=age_months,
         dining=context.get("dining", ""),
         plan_data=plan_data,
+        nap_notes=context.get("nap_notes", ""),
+        extra_notes=context.get("extra_notes", ""),
     )
     return _render_trip(trip, trip_form=context)
 
@@ -701,6 +706,8 @@ def view_trip(trip_id):
         age_months=age_months,
         dining=row["dining"] or "",
         plan_data=json.loads(row["plan_json"]),
+        nap_notes=row["nap_notes"] or "",
+        extra_notes=row["extra_notes"] or "",
     )
     return _render_trip(trip, saved=True)
 
@@ -747,6 +754,8 @@ def replan_ai_route():
             bedtime=data.get("bedtime"),
             minutes=data.get("minutes"),
             theme=data.get("theme"),
+            nap_notes=data.get("nap_notes", ""),
+            extra_notes=data.get("extra_notes", ""),
         )
     except KeyError:
         return jsonify({"error": "The AI replanner isn't configured yet."}), 500

@@ -225,6 +225,75 @@ def _format_venue_candidates(venues: list) -> str:
     return "\n\n".join(blocks)
 
 
+def _parse_json_reply(text: str):
+    """Strip a ``` fence if present, then parse strict JSON. Shared by
+    PlanningAgent and ReplanningAgent, which both expect the same
+    {"stops": [...]} shape back from the model."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        text = text[4:] if text.startswith("json") else text
+    return json.loads(text)
+
+
+def _clean_stops(stops: list, valid_ids: set):
+    """Shared structural checks for a "stops" JSON array: every stop cites a
+    real, non-repeated venue_id, has a non-empty time/reason, and is never
+    both is_nap and is_meal. Returns (cleaned, None), or (None, error)
+    describing the first problem found. Shared by PlanningAgent and
+    ReplanningAgent, which only diverge in what they check beyond this
+    (pace ceiling vs. anchor-time floor, meal-cap baseline, stop-duration
+    lookup for spacing)."""
+    cleaned = []
+    seen_ids = set()
+    for stop in stops:
+        if not isinstance(stop, dict):
+            return None, "Every stop must be a JSON object."
+        venue_id = stop.get("venue_id")
+        if venue_id not in valid_ids:
+            return None, f"venue_id {venue_id!r} is not in the candidate list."
+        if venue_id in seen_ids:
+            return None, f"venue_id {venue_id!r} is used more than once."
+        if not stop.get("time") or not stop.get("reason"):
+            return None, "Every stop needs a non-empty \"time\" and \"reason\"."
+        is_nap, is_meal = bool(stop.get("is_nap")), bool(stop.get("is_meal"))
+        if is_nap and is_meal:
+            return None, (
+                f"The stop at {stop['time']} has both \"is_nap\" and "
+                "\"is_meal\" true -- a stop is never both.")
+        seen_ids.add(venue_id)
+        cleaned.append({
+            "time": stop["time"],
+            "venue_id": venue_id,
+            "reason": stop["reason"],
+            "is_nap": is_nap,
+            "is_meal": is_meal,
+        })
+    return cleaned, None
+
+
+def _check_transit_spacing(cleaned: list, transit_buffer_min: int, duration_fn):
+    """Shared consecutive-stop spacing check: every stop must start no
+    earlier than the previous stop's end plus the transit buffer. Assumes
+    `cleaned` is already sorted by time. `duration_fn(stop)` returns that
+    stop's occupied minutes -- callers supply their own since PlanningAgent
+    looks up a matched nap's real duration while ReplanningAgent uses a
+    flat activity/meal duration; this only shares the loop, not that
+    lookup, so each agent's existing behavior is unchanged. Returns an
+    error string, or None if every stop is spaced correctly."""
+    for prev, nxt in zip(cleaned, cleaned[1:]):
+        prev_end = display_to_min(prev["time"]) + duration_fn(prev)
+        next_start = display_to_min(nxt["time"])
+        if next_start < prev_end + transit_buffer_min:
+            return (
+                f"{nxt['time']} (venue_id {nxt['venue_id']}) starts before "
+                f"the previous stop ({prev['time']}, venue_id "
+                f"{prev['venue_id']}, ends {min_to_display(prev_end)}) plus "
+                f"the {transit_buffer_min}-minute travel buffer -- push it to at least "
+                f"{min_to_display(prev_end + transit_buffer_min)}, or drop a stop.")
+    return None
+
+
 def _finalize_stops(cleaned: list, by_id: dict) -> list:
     """Turn validated {venue_id, time, reason, is_nap, is_meal} dicts into the
     {time, kind, venue, reason} shape the rest of the app expects. Shared by
@@ -287,13 +356,6 @@ class PlanningAgent:
         )
         return [{"role": "system", "content": prompt}]
 
-    def _parse(self, text):
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            text = text[4:] if text.startswith("json") else text
-        return json.loads(text)
-
     @staticmethod
     def _stop_duration(stop, ctx):
         """Minutes this stop occupies, mirroring itinerary.py's per-kind stop
@@ -332,31 +394,9 @@ class PlanningAgent:
         if not isinstance(stops, list) or not stops:
             return None, "\"stops\" must be a non-empty JSON array."
 
-        cleaned = []
-        seen_ids = set()
-        for stop in stops:
-            if not isinstance(stop, dict):
-                return None, "Every stop must be a JSON object."
-            venue_id = stop.get("venue_id")
-            if venue_id not in valid_ids:
-                return None, f"venue_id {venue_id!r} is not in the candidate list."
-            if venue_id in seen_ids:
-                return None, f"venue_id {venue_id!r} is used more than once."
-            if not stop.get("time") or not stop.get("reason"):
-                return None, "Every stop needs a non-empty \"time\" and \"reason\"."
-            is_nap, is_meal = bool(stop.get("is_nap")), bool(stop.get("is_meal"))
-            if is_nap and is_meal:
-                return None, (
-                    f"The stop at {stop['time']} has both \"is_nap\" and "
-                    "\"is_meal\" true -- a stop is never both.")
-            seen_ids.add(venue_id)
-            cleaned.append({
-                "time": stop["time"],
-                "venue_id": venue_id,
-                "reason": stop["reason"],
-                "is_nap": is_nap,
-                "is_meal": is_meal,
-            })
+        cleaned, error = _clean_stops(stops, valid_ids)
+        if cleaned is None:
+            return None, error
 
         meal_stops = [s for s in cleaned if s["is_meal"]]
         max_meals = MAX_MEAL_STOPS if ctx["dining"] == "dine_out" else 0
@@ -373,17 +413,11 @@ class PlanningAgent:
                 f"count); pace {ctx['pace']!r} allows 1 to {cap}.")
 
         cleaned.sort(key=lambda s: display_to_min(s["time"]))
-        buffer = ctx["transit_buffer_min"]
-        for prev, nxt in zip(cleaned, cleaned[1:]):
-            prev_end = display_to_min(prev["time"]) + self._stop_duration(prev, ctx)
-            next_start = display_to_min(nxt["time"])
-            if next_start < prev_end + buffer:
-                return None, (
-                    f"{nxt['time']} (venue_id {nxt['venue_id']}) starts before "
-                    f"the previous stop ({prev['time']}, venue_id "
-                    f"{prev['venue_id']}, ends {min_to_display(prev_end)}) plus "
-                    f"the {buffer}-minute travel buffer -- push it to at least "
-                    f"{min_to_display(prev_end + buffer)}, or drop a stop.")
+        error = _check_transit_spacing(
+            cleaned, ctx["transit_buffer_min"],
+            lambda s: self._stop_duration(s, ctx))
+        if error:
+            return None, error
 
         return cleaned, None
 
@@ -422,7 +456,7 @@ class PlanningAgent:
 
         cleaned, error = None, None
         try:
-            cleaned, error = self._validate(self._parse(reply), set(by_id), ctx)
+            cleaned, error = self._validate(_parse_json_reply(reply), set(by_id), ctx)
         except (ValueError, AttributeError):
             cleaned, error = None, "That wasn't valid JSON."
 
@@ -442,7 +476,7 @@ class PlanningAgent:
             input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
             output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
             try:
-                cleaned, error = self._validate(self._parse(reply2), set(by_id), ctx)
+                cleaned, error = self._validate(_parse_json_reply(reply2), set(by_id), ctx)
             except (ValueError, AttributeError):
                 cleaned, error = None, "That wasn't valid JSON."
 
@@ -525,6 +559,8 @@ class ReplanningAgent:
             .replace("{bedtime}", ctx["bedtime"] or "")
             .replace("{dining}", ctx["dining"] or "none")
             .replace("{already_meal_count}", str(ctx["already_meals"]))
+            .replace("{nap_notes}", ctx.get("nap_notes") or "none")
+            .replace("{extra_notes}", ctx.get("extra_notes") or "none")
             .replace("{kept_stops}", _format_stops_for_prompt(kept))
             .replace("{remaining_stops}", _format_stops_for_prompt(remaining))
             .replace("{candidate_venues}", _format_venue_candidates(candidates))
@@ -534,55 +570,27 @@ class ReplanningAgent:
         )
         return [{"role": "system", "content": prompt}]
 
-    def _parse(self, text):
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            text = text[4:] if text.startswith("json") else text
-        return json.loads(text)
-
     def _validate(self, parsed, valid_ids, ctx):
         """Returns (stops, None) if well-formed and realistic, or (None,
-        error). Mirrors PlanningAgent._validate's structural checks (real,
+        error). Shares PlanningAgent._validate's structural checks (real,
         non-duplicate venue_id, non-empty time/reason, is_nap/is_meal
-        mutual exclusivity, transit-buffer spacing between consecutive new
-        stops), plus one check specific to replanning (nothing may start
-        before the situation's anchor time) and a meal cap adjusted for
-        meals already in `kept`. Deliberately does NOT enforce a pace
-        ceiling (meaningless for "however many stops remain") or bedtime/
-        hours (prompt-only, same as PlanningAgent today). An empty "stops"
-        array is valid -- a shorter remaining day is not an error."""
+        mutual exclusivity) via _clean_stops, and its transit-buffer spacing
+        loop via _check_transit_spacing, plus one check specific to
+        replanning (nothing may start before the situation's anchor time)
+        and a meal cap adjusted for meals already in `kept`. Deliberately
+        does NOT enforce a pace ceiling (meaningless for "however many
+        stops remain") or bedtime/hours (prompt-only, same as PlanningAgent
+        today). An empty "stops" array is valid -- a shorter remaining day
+        is not an error."""
         stops = parsed.get("stops") if isinstance(parsed, dict) else None
         if not isinstance(stops, list):
             return None, "\"stops\" must be a JSON array."
         if not stops:
             return [], None
 
-        cleaned = []
-        seen_ids = set()
-        for stop in stops:
-            if not isinstance(stop, dict):
-                return None, "Every stop must be a JSON object."
-            venue_id = stop.get("venue_id")
-            if venue_id not in valid_ids:
-                return None, f"venue_id {venue_id!r} is not in the candidate list."
-            if venue_id in seen_ids:
-                return None, f"venue_id {venue_id!r} is used more than once."
-            if not stop.get("time") or not stop.get("reason"):
-                return None, "Every stop needs a non-empty \"time\" and \"reason\"."
-            is_nap, is_meal = bool(stop.get("is_nap")), bool(stop.get("is_meal"))
-            if is_nap and is_meal:
-                return None, (
-                    f"The stop at {stop['time']} has both \"is_nap\" and "
-                    "\"is_meal\" true -- a stop is never both.")
-            seen_ids.add(venue_id)
-            cleaned.append({
-                "time": stop["time"],
-                "venue_id": venue_id,
-                "reason": stop["reason"],
-                "is_nap": is_nap,
-                "is_meal": is_meal,
-            })
+        cleaned, error = _clean_stops(stops, valid_ids)
+        if cleaned is None:
+            return None, error
 
         new_meals = sum(1 for s in cleaned if s["is_meal"])
         max_meals = MAX_MEAL_STOPS if ctx["dining"] == "dine_out" else 0
@@ -599,31 +607,27 @@ class ReplanningAgent:
                 f"starts before {min_to_display(ctx['anchor_min'])}, the "
                 "earliest this situation allows.")
 
-        buffer = ctx["transit_buffer_min"]
-        for prev, nxt in zip(cleaned, cleaned[1:]):
-            prev_duration = (ctx["meal_duration_min"] if prev["is_meal"]
-                             else ctx["activity_duration_min"])
-            prev_end = display_to_min(prev["time"]) + prev_duration
-            next_start = display_to_min(nxt["time"])
-            if next_start < prev_end + buffer:
-                return None, (
-                    f"{nxt['time']} (venue_id {nxt['venue_id']}) starts before "
-                    f"the previous stop ({prev['time']}, venue_id "
-                    f"{prev['venue_id']}, ends {min_to_display(prev_end)}) plus "
-                    f"the {buffer}-minute travel buffer -- push it to at least "
-                    f"{min_to_display(prev_end + buffer)}, or drop a stop.")
+        error = _check_transit_spacing(
+            cleaned, ctx["transit_buffer_min"],
+            lambda s: ctx["meal_duration_min"] if s["is_meal"] else ctx["activity_duration_min"])
+        if error:
+            return None, error
 
         return cleaned, None
 
     def replan_day(self, situation, current_plan, *, current_time, destination,
                     age_months, features=None, transit=None, dining=None,
-                    bedtime=None, minutes=None, theme=None):
+                    bedtime=None, minutes=None, theme=None,
+                    nap_notes="", extra_notes=""):
         """Returns a NEW plan dict: {"label", "blurb", "from_time", "stops",
         "source", "model", "response_time", "input_tokens", "output_tokens"}.
         `current_plan` is never modified -- callers must store the result as
         an additional version, never in place of it. `theme` is the
         parent-picked target theme for "change_theme" (ignored otherwise --
-        "weather_rain" always targets "Rainy-day")."""
+        "weather_rain" always targets "Rainy-day"). `nap_notes`/`extra_notes`
+        are the same free-text fields PlanningAgent uses, so a replan can
+        also account for sleep habits or preferences the parent already
+        described, not just the structured situation/theme."""
         stops = current_plan.get("stops", [])
         now = hhmm_to_min(current_time)
         kept = [dict(s) for s in stops if display_to_min(s["time"]) <= now]
@@ -660,7 +664,7 @@ class ReplanningAgent:
         ctx = dict(destination=destination, age_months=age_months,
                    current_time=current_time, bedtime=bedtime, dining=dining,
                    anchor_min=anchor_min, already_meals=already_meals,
-                   theme=effective_theme,
+                   theme=effective_theme, nap_notes=nap_notes, extra_notes=extra_notes,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),
                    transit_buffer_min=transit_buffer_min(transit))
@@ -672,7 +676,7 @@ class ReplanningAgent:
 
         cleaned, error = None, None
         try:
-            cleaned, error = self._validate(self._parse(reply), set(by_id), ctx)
+            cleaned, error = self._validate(_parse_json_reply(reply), set(by_id), ctx)
         except (ValueError, AttributeError):
             cleaned, error = None, "That wasn't valid JSON."
 
@@ -690,7 +694,7 @@ class ReplanningAgent:
             input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
             output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
             try:
-                cleaned, error = self._validate(self._parse(reply2), set(by_id), ctx)
+                cleaned, error = self._validate(_parse_json_reply(reply2), set(by_id), ctx)
             except (ValueError, AttributeError):
                 cleaned, error = None, "That wasn't valid JSON."
 

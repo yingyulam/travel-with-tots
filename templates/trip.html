@@ -354,6 +354,8 @@
           bedtime: tripData.bedtime,
           minutes: minutes || null,
           theme: theme || null,
+          nap_notes: tripData.nap_notes,
+          extra_notes: tripData.extra_notes,
         };
         const res = await fetch("/replan/ai", {
           method: "POST",

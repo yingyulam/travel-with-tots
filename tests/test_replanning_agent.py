@@ -198,6 +198,39 @@ class ReplanningAgentTest(unittest.TestCase):
                                    destination="Vancouver", age_months=30)
         self.assertNotIn("Theme for the rest of the day", captured["prompt"])
 
+    def test_nap_notes_and_extra_notes_reach_the_prompt(self):
+        current_plan = self._current_plan()
+        captured = {}
+
+        def fake_call(messages, model):
+            captured["prompt"] = messages[0]["content"]
+            return self._good_reply(), {}, 1.0
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.replan_day(
+                "skip_next", current_plan, current_time="13:00",
+                destination="Vancouver", age_months=30,
+                nap_notes="Wakes up if moved from stroller to car seat",
+                extra_notes="Doesn't like loud or crowded places")
+        self.assertIn("Wakes up if moved from stroller to car seat", captured["prompt"])
+        self.assertIn("Doesn't like loud or crowded places", captured["prompt"])
+
+    def test_nap_notes_and_extra_notes_default_to_none(self):
+        current_plan = self._current_plan()
+        captured = {}
+
+        def fake_call(messages, model):
+            captured["prompt"] = messages[0]["content"]
+            return self._good_reply(), {}, 1.0
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.replan_day("skip_next", current_plan, current_time="13:00",
+                                   destination="Vancouver", age_months=30)
+        self.assertIn("Nap/sleep habits: none", captured["prompt"])
+        self.assertIn("Notes from the parent: none", captured["prompt"])
+
     def test_no_candidates_raises_without_calling_model(self):
         current_plan = self._current_plan()
         with mock.patch("src.agents.db.get_candidate_venues", return_value=[]), \
