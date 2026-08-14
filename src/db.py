@@ -237,18 +237,22 @@ def _migrate_trips_ownership(conn):
 
 
 def _seed_venues(conn):
-    """Load the bundled venues into an empty table as 'curated' source."""
-    if conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]:
-        return
+    """Insert any bundled venues not already present (matched by name) as
+    'curated' source. Idempotent: safe to run on every startup, so adding
+    more entries to the seed file always reaches the database on the next
+    run instead of only ever seeding once on a completely empty table."""
+    existing = {row[0] for row in conn.execute("SELECT name FROM venues").fetchall()}
     venues = json.loads(VENUES_SEED.read_text(encoding="utf-8"))
     rows = [
         (v["name"], v["type"], v["neighbourhood"], int(v["kid_friendly"]),
          int(v["has_family_room"]), int(v["has_nursing_room"]),
          int(v["stroller_accessible"]), "curated", "Vancouver", v["category"],
          int(v["nap_friendly"]), int(v["can_eat"]), v["open"], v["close"])
-        for v in venues
+        for v in venues if v["name"] not in existing
     ]
-    with conn:  # single transaction for the whole seed
+    if not rows:
+        return
+    with conn:  # single transaction for the whole batch
         conn.executemany(
             "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
             "has_family_room, has_nursing_room, stroller_accessible, source, "
