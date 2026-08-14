@@ -4,7 +4,7 @@ from unittest import mock
 
 sys.path.insert(0, ".")
 
-from src.agents import ReplanningAgent, ReplanningAgentError
+from src.agents import ReplanningAgent, ReplanningAgentError, STOPS_RESPONSE_FORMAT
 
 
 def _venue(id, name, neighbourhood="Downtown", **overrides):
@@ -108,7 +108,7 @@ class ReplanningAgentTest(unittest.TestCase):
         current_plan = self._current_plan()
         calls = []
 
-        def fake_call(messages, model):
+        def fake_call(messages, model, response_format=None):
             calls.append(messages)
             return '{"stops": [{"venue_id": 999, "time": "2:00 PM", "reason": "r", "is_nap": false, "is_meal": false}]}', {}, 1.0
 
@@ -123,7 +123,7 @@ class ReplanningAgentTest(unittest.TestCase):
         current_plan = self._current_plan()
         calls = []
 
-        def fake_call(messages, model):
+        def fake_call(messages, model, response_format=None):
             calls.append(messages)
             if len(calls) == 1:
                 return ('{"stops": [{"venue_id": 999, "time": "2:00 PM", "reason": "r", '
@@ -168,7 +168,7 @@ class ReplanningAgentTest(unittest.TestCase):
         current_plan = self._current_plan()
         captured = {}
 
-        def fake_call(messages, model):
+        def fake_call(messages, model, response_format=None):
             captured["prompt"] = messages[0]["content"]
             return self._good_reply(), {}, 1.0
 
@@ -188,7 +188,7 @@ class ReplanningAgentTest(unittest.TestCase):
         current_plan = self._current_plan()
         captured = {}
 
-        def fake_call(messages, model):
+        def fake_call(messages, model, response_format=None):
             captured["prompt"] = messages[0]["content"]
             return self._good_reply(), {}, 1.0
 
@@ -202,7 +202,7 @@ class ReplanningAgentTest(unittest.TestCase):
         current_plan = self._current_plan()
         captured = {}
 
-        def fake_call(messages, model):
+        def fake_call(messages, model, response_format=None):
             captured["prompt"] = messages[0]["content"]
             return self._good_reply(), {}, 1.0
 
@@ -220,7 +220,7 @@ class ReplanningAgentTest(unittest.TestCase):
         current_plan = self._current_plan()
         captured = {}
 
-        def fake_call(messages, model):
+        def fake_call(messages, model, response_format=None):
             captured["prompt"] = messages[0]["content"]
             return self._good_reply(), {}, 1.0
 
@@ -230,6 +230,20 @@ class ReplanningAgentTest(unittest.TestCase):
                                    destination="Vancouver", age_months=30)
         self.assertIn("Nap/sleep habits: none", captured["prompt"])
         self.assertIn("Notes from the parent: none", captured["prompt"])
+
+    def test_calls_openrouter_with_the_shared_stops_schema(self):
+        current_plan = self._current_plan()
+        captured = {}
+
+        def fake_call(messages, model, response_format=None):
+            captured["response_format"] = response_format
+            return self._good_reply(), {}, 1.0
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.replan_day("skip_next", current_plan, current_time="13:00",
+                                   destination="Vancouver", age_months=30)
+        self.assertEqual(captured["response_format"], STOPS_RESPONSE_FORMAT)
 
     def test_no_candidates_raises_without_calling_model(self):
         current_plan = self._current_plan()

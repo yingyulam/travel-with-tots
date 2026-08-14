@@ -14,9 +14,10 @@ from .interactions import (
     SITUATION_LABELS,
 )
 from .itinerary import (
-    LUNCH_DURATION_LABEL, MAX_MEAL_STOPS, PACE_STOPS, combine_themes,
-    display_to_min, hhmm_to_min, min_to_display, resolve_themes,
-    stop_duration, transit_buffer_min,
+    DEFAULT_LUNCH_TARGET_MIN, LUNCH_DURATION_LABEL, LUNCH_SEARCH_RADIUS_MIN,
+    MAX_MEAL_STOPS, PACE_STOPS, combine_themes, display_to_min, hhmm_to_min,
+    min_to_display, resolve_themes, stop_duration, transit_buffer_min,
+    venue_open_for,
 )
 
 load_dotenv()
@@ -42,9 +43,18 @@ PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
 PLANNER_PROMPT_PATH = os.path.join(PROMPTS_DIR, "planner.txt")
 REPLAN_DAY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "replan_day.txt")
+PLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "plan_adjust.txt")
 _WEBSITE_CHATBOT_TEMPLATE = None
 _PLANNER_TEMPLATE = None
 _REPLAN_DAY_TEMPLATE = None
+_PLAN_ADJUST_TEMPLATE = None
+
+# How far a stop's time may drift from the rule-based draft's own choice
+# during an adjustment -- a nudge for flow, not a re-decision.
+MAX_ADJUST_NUDGE_MIN = 45
+# Bedtime and nap timing are targets the day can gently orbit, not walls,
+# unless the parent said their schedule is strict.
+SCHEDULE_OVERRUN_MIN = 30
 
 
 def _print_usage_report(model: str, usage: dict | None, elapsed: float) -> None:
@@ -71,9 +81,17 @@ def _log_request_failure(model: str, detail: str) -> None:
     print("└" + "─" * 44)
 
 
-def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float]:
-    """Returns (reply text, usage dict, elapsed seconds)."""
+def _call_openrouter(messages: list[dict], model: str, response_format: dict | None = None) -> tuple[str, dict, float]:
+    """Returns (reply text, usage dict, elapsed seconds). `response_format`,
+    when given, is OpenRouter's json_schema structured-output shape -- makes
+    schema-valid JSON the model's actual output contract instead of only a
+    prompt instruction, so a caller's own parse/validate step catches fewer
+    avoidable misses."""
     api_key = os.environ["OPENROUTER_API_KEY"]
+
+    body = {"model": model, "messages": messages, "usage": {"include": True}}
+    if response_format is not None:
+        body["response_format"] = response_format
 
     malformed_error = None
     for attempt in range(MAX_MALFORMED_BODY_RETRIES + 1):
@@ -82,7 +100,7 @@ def _call_openrouter(messages: list[dict], model: str) -> tuple[str, dict, float
             response = requests.post(
                 OPENROUTER_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": model, "messages": messages, "usage": {"include": True}},
+                json=body,
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
             elapsed = time.perf_counter() - start
@@ -208,6 +226,17 @@ def reload_planner_prompt() -> None:
     _PLANNER_TEMPLATE = None
 
 
+def _load_plan_adjust_template() -> str:
+    with open(PLAN_ADJUST_PROMPT_PATH) as f:
+        return f.read()
+
+
+def reload_plan_adjust_prompt() -> None:
+    """Force the next PlanningAgent.adjust_plan call to re-read the prompt template from disk."""
+    global _PLAN_ADJUST_TEMPLATE
+    _PLAN_ADJUST_TEMPLATE = None
+
+
 def _format_venue_candidates(venues: list) -> str:
     if not venues:
         return "No venues matched this trip's destination, age, and features."
@@ -234,6 +263,73 @@ def _parse_json_reply(text: str):
         text = text.split("```")[1]
         text = text[4:] if text.startswith("json") else text
     return json.loads(text)
+
+
+# OpenRouter structured-output schema for the {"stops": [...]} shape both
+# PlanningAgent and ReplanningAgent expect back -- shared since the shape is
+# identical, only the semantic checks in _clean_stops/_validate differ.
+STOPS_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "day_stops",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "stops": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "venue_id": {"type": "integer"},
+                            "time": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "is_nap": {"type": "boolean"},
+                            "is_meal": {"type": "boolean"},
+                        },
+                        "required": ["venue_id", "time", "reason", "is_nap", "is_meal"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["stops"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+# OpenRouter structured-output schema for the {"edits": [...]} shape
+# PlanningAgent.adjust_plan() expects back -- a short list of changes
+# against an already-valid draft, not a full stops array.
+PLAN_EDITS_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "plan_edits",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "current_venue_name": {"type": "string"},
+                            "new_venue_id": {"type": ["integer", "null"]},
+                            "new_time": {"type": ["string", "null"]},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["current_venue_name", "new_venue_id", "new_time", "reason"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["edits"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def _clean_stops(stops: list, valid_ids: set):
@@ -310,6 +406,187 @@ def _finalize_stops(cleaned: list, by_id: dict) -> list:
             "reason": stop["reason"],
         })
     return stops
+
+
+def _format_draft_stops_for_prompt(stops: list) -> str:
+    """Compact rendering of a rule-based draft's stops for the adjuster
+    prompt -- distinct from _format_stops_for_prompt (ReplanningAgent's
+    kept/remaining lists): a Plan-shaped stop has no venue_id to cite, so
+    edits reference it by venue name instead."""
+    if not stops:
+        return "(no stops)"
+    lines = []
+    for s in stops:
+        venue = s.get("venue")
+        name = venue["name"] if venue else s.get("kind", "stop")
+        place = f", {venue['neighbourhood']}" if venue and venue.get("neighbourhood") else ""
+        lines.append(f"- {s['time']}: {name} ({s.get('kind', 'activity')}{place}) -- {s.get('reason', '')}")
+    return "\n".join(lines)
+
+
+def _format_schedule_flexibility(strict: bool) -> str:
+    if strict:
+        return ("This family's wake-up and bedtime are strict: never place or move a "
+                "stop before wake-up or past bedtime, even briefly.")
+    return (
+        "This family's wake-up and bedtime have some flexibility: a stop may run a "
+        f"little before wake-up or past bedtime (up to about {SCHEDULE_OVERRUN_MIN} "
+        "minutes) if it clearly improves the day, but don't drift far.")
+
+
+def _plan_stop_duration(stop: dict, ctx: dict) -> int:
+    """Minutes this Plan-shaped stop ({time, kind, venue, reason}) occupies,
+    mirroring PlanningAgent._stop_duration's per-kind logic for the shape
+    the rule-based draft and its edited result use."""
+    if stop["kind"] == "meal":
+        return ctx["meal_duration_min"]
+    if stop["kind"] == "nap":
+        naps = ctx.get("naps") or []
+        if naps:
+            start = display_to_min(stop["time"])
+            nearest = min(naps, key=lambda n: abs(hhmm_to_min(n["start"]) - start))
+            return nearest["duration_min"]
+    return ctx["activity_duration_min"]
+
+
+def _apply_plan_edits(draft_plan: dict, edits: list, by_id: dict) -> list:
+    """Apply already-validated edits to a copy of the draft's stops. Never
+    mutates `draft_plan`. Each edit's target stop (matched by its current
+    venue name -- rule-based venues carry no numeric id) gets a new venue
+    and/or a new time; its "kind" is always preserved, edits change what
+    or when a stop is, never what kind of stop it is."""
+    stops = [dict(s) for s in draft_plan.get("stops", [])]
+    index_by_name = {s["venue"]["name"]: i for i, s in enumerate(stops) if s.get("venue")}
+    for edit in edits:
+        idx = index_by_name.get(edit["current_venue_name"])
+        if idx is None:
+            continue
+        stop = dict(stops[idx])
+        if edit.get("new_venue_id") is not None:
+            venue = dict(by_id[edit["new_venue_id"]])
+            venue["maps_url"] = maps_url(venue["name"], venue.get("city") or "Vancouver")
+            stop["venue"] = venue
+        if edit.get("new_time"):
+            stop["time"] = edit["new_time"]
+        stop["reason"] = edit.get("reason") or stop["reason"]
+        stop["adjusted"] = True
+        stops[idx] = stop
+    stops.sort(key=lambda s: display_to_min(s["time"]))
+    return stops
+
+
+def _validate_plan_edits(edits, draft_stops: list, by_id: dict, ctx: dict):
+    """Returns (edits, None) if every edit is well-formed and the resulting
+    day stays realistic, or (None, error) describing the first problem
+    found. Unlike PlanningAgent/ReplanningAgent._validate, this checks
+    EDITS against an already-valid draft, not a full plan built from
+    scratch: each edit must reference a real stop by its current venue
+    name, may change venue and/or time but never a stop's kind, and
+    nudges must stay small. Bedtime and nap timing may run over by
+    SCHEDULE_OVERRUN_MIN unless the parent said their schedule is strict;
+    the meal count, venue open hours, and travel buffer never flex. An
+    empty "edits" array is valid -- an unchanged draft is not an error."""
+    if not isinstance(edits, list):
+        return None, "\"edits\" must be a JSON array."
+    if not edits:
+        return [], None
+
+    draft_by_name = {s["venue"]["name"]: s for s in draft_stops if s.get("venue")}
+    cleaned = []
+    seen_targets = set()
+    seen_new_ids = set()
+    for edit in edits:
+        if not isinstance(edit, dict):
+            return None, "Every edit must be a JSON object."
+        name = edit.get("current_venue_name")
+        target = draft_by_name.get(name)
+        if target is None:
+            return None, f"{name!r} is not a venue in the current draft."
+        if name in seen_targets:
+            return None, f"{name!r} is targeted by more than one edit."
+        seen_targets.add(name)
+
+        new_venue_id = edit.get("new_venue_id")
+        new_time = edit.get("new_time")
+        reason = edit.get("reason")
+        if new_venue_id is None and not new_time:
+            return None, f"The edit for {name!r} changes nothing -- omit it instead."
+        if not reason:
+            return None, f"The edit for {name!r} needs a non-empty \"reason\"."
+
+        if new_venue_id is not None:
+            if new_venue_id not in by_id:
+                return None, f"venue_id {new_venue_id!r} is not in the candidate list."
+            if new_venue_id in seen_new_ids:
+                return None, f"venue_id {new_venue_id!r} is used by more than one edit."
+            candidate = by_id[new_venue_id]
+            if target["kind"] == "meal" and not candidate.get("can_eat"):
+                return None, (
+                    f"venue_id {new_venue_id!r} isn't a venue where a meal is "
+                    f"possible, needed for the meal stop at {name!r}.")
+            if target["kind"] == "nap" and not candidate.get("nap_friendly"):
+                return None, (
+                    f"venue_id {new_venue_id!r} isn't nap-friendly, needed for "
+                    f"the nap stop at {name!r}.")
+            seen_new_ids.add(new_venue_id)
+
+        if new_time:
+            try:
+                new_min = display_to_min(new_time)
+            except (ValueError, IndexError):
+                return None, f"{new_time!r} isn't a recognizable time."
+            original_min = display_to_min(target["time"])
+            if abs(new_min - original_min) > MAX_ADJUST_NUDGE_MIN:
+                return None, (
+                    f"{name!r} moved from {target['time']} to {new_time}, more than "
+                    f"the {MAX_ADJUST_NUDGE_MIN}-minute nudge an adjustment is allowed to make.")
+            if target["kind"] == "meal":
+                lunch_target = (hhmm_to_min(ctx["preferred_lunch_time"])
+                                 if ctx.get("preferred_lunch_time") else DEFAULT_LUNCH_TARGET_MIN)
+                if abs(new_min - lunch_target) > LUNCH_SEARCH_RADIUS_MIN:
+                    return None, (
+                        f"{new_time} is outside a sensible lunch window around "
+                        f"{min_to_display(lunch_target)}.")
+
+        cleaned.append({"current_venue_name": name, "new_venue_id": new_venue_id,
+                         "new_time": new_time, "reason": reason})
+
+    resulting = _apply_plan_edits({"stops": draft_stops}, cleaned, by_id)
+
+    # These checks only hold edits accountable for the region they actually
+    # touched -- the draft is already valid everywhere else by construction,
+    # so an edit shouldn't get rejected for a pre-existing condition
+    # elsewhere in the day that it never came near.
+    overrun = 0 if ctx.get("strict_schedule") else SCHEDULE_OVERRUN_MIN
+    bedtime_min = hhmm_to_min(ctx["bedtime"]) if ctx.get("bedtime") else None
+    if bedtime_min is not None and resulting and resulting[-1].get("adjusted"):
+        last = resulting[-1]
+        last_end = display_to_min(last["time"]) + _plan_stop_duration(last, ctx)
+        if last_end > bedtime_min + overrun:
+            return None, (
+                f"The edited day now ends at {min_to_display(last_end)}, too far "
+                f"past bedtime ({ctx['bedtime']}) even with some flexibility.")
+
+    buffer = ctx["transit_buffer_min"]
+    for prev, nxt in zip(resulting, resulting[1:]):
+        if not (prev.get("adjusted") or nxt.get("adjusted")):
+            continue
+        prev_end = display_to_min(prev["time"]) + _plan_stop_duration(prev, ctx)
+        next_start = display_to_min(nxt["time"])
+        if next_start < prev_end + buffer:
+            return None, (
+                f"After these edits, {nxt['venue']['name']} at {nxt['time']} starts "
+                f"before the previous stop ends plus the {buffer}-minute travel buffer.")
+
+    for stop in resulting:
+        if not stop.get("adjusted") or not stop.get("venue"):
+            continue
+        start = display_to_min(stop["time"])
+        dur = _plan_stop_duration(stop, ctx)
+        if not venue_open_for(stop["venue"], start, dur):
+            return None, f"{stop['venue']['name']} isn't open at {stop['time']}."
+
+    return cleaned, None
 
 
 class PlanningAgent:
@@ -450,7 +727,7 @@ class PlanningAgent:
                    meal_duration_min=stop_duration("meal"),
                    transit_buffer_min=transit_buffer_min(transit))
         messages = self._build_messages(theme, candidates, ctx)
-        reply, usage, elapsed = _call_openrouter(messages, self.model)
+        reply, usage, elapsed = _call_openrouter(messages, self.model, STOPS_RESPONSE_FORMAT)
         input_tokens = usage.get("prompt_tokens")
         output_tokens = usage.get("completion_tokens")
 
@@ -471,7 +748,7 @@ class PlanningAgent:
                     "distinct venue_id values from the candidate list above -- "
                     "never invent or repeat one.")},
             ]
-            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model)
+            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, STOPS_RESPONSE_FORMAT)
             elapsed += elapsed2
             input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
             output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
@@ -485,6 +762,93 @@ class PlanningAgent:
 
         return {"label": theme["label"], "blurb": theme["blurb"],
                 "stops": _finalize_stops(cleaned, by_id),
+                "model": self.model, "response_time": round(elapsed, 3),
+                "input_tokens": input_tokens, "output_tokens": output_tokens}
+
+    def _build_adjust_messages(self, draft_stops, candidates, ctx):
+        global _PLAN_ADJUST_TEMPLATE
+        if _PLAN_ADJUST_TEMPLATE is None:
+            _PLAN_ADJUST_TEMPLATE = _load_plan_adjust_template()
+        prompt = (
+            _PLAN_ADJUST_TEMPLATE
+            .replace("{destination}", ctx["destination"] or "")
+            .replace("{age_months}", str(ctx["age_months"]))
+            .replace("{wake_up}", ctx["wake_up"] or "")
+            .replace("{bedtime}", ctx["bedtime"] or "")
+            .replace("{schedule_flexibility}", _format_schedule_flexibility(ctx["strict_schedule"]))
+            .replace("{pace}", ctx["pace"] or "balanced")
+            .replace("{transit}", ", ".join(ctx["transit"]) if ctx.get("transit") else "none")
+            .replace("{accommodation}", ctx["accommodation"] or "not specified")
+            .replace("{dining}", ctx["dining"] or "dine_out")
+            .replace("{preferred_lunch_time}", ctx["preferred_lunch_time"] or "none")
+            .replace("{nap_notes}", ctx["nap_notes"] or "none")
+            .replace("{extra_notes}", ctx["extra_notes"] or "none")
+            .replace("{draft_stops}", _format_draft_stops_for_prompt(draft_stops))
+            .replace("{candidate_venues}", _format_venue_candidates(candidates))
+        )
+        return [{"role": "system", "content": prompt}]
+
+    def adjust_plan(self, draft_plan, *, destination, age_months, wake_up, bedtime,
+                     pace, dining, naps=None, preferred_lunch_time="", nap_notes="",
+                     extra_notes="", transit=None, accommodation="", features=None,
+                     strict_schedule=False):
+        """Given an already-valid rule-based draft, proposes a short list of
+        edits (never a full regeneration) that smooth the day's flow and/or
+        apply nap_notes/extra_notes, then applies them. Returns
+        {"stops", "edits", "model", "response_time", "input_tokens",
+        "output_tokens"}. Never mutates `draft_plan`."""
+        draft_stops = draft_plan.get("stops", [])
+        used_names = {s["venue"]["name"] for s in draft_stops if s.get("venue")}
+        candidates = db.get_candidate_venues(
+            destination, age_months, features, transit=transit, dining=dining)
+        candidates = [v for v in candidates if v["name"] not in used_names]
+        by_id = {v["id"]: v for v in candidates}
+
+        ctx = dict(destination=destination, age_months=age_months, wake_up=wake_up,
+                   bedtime=bedtime, pace=pace, dining=dining, naps=naps,
+                   preferred_lunch_time=preferred_lunch_time, nap_notes=nap_notes,
+                   extra_notes=extra_notes, transit=transit, accommodation=accommodation,
+                   strict_schedule=strict_schedule,
+                   activity_duration_min=stop_duration("activity"),
+                   meal_duration_min=stop_duration("meal"),
+                   transit_buffer_min=transit_buffer_min(transit))
+
+        messages = self._build_adjust_messages(draft_stops, candidates, ctx)
+        reply, usage, elapsed = _call_openrouter(messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
+        input_tokens = usage.get("prompt_tokens")
+        output_tokens = usage.get("completion_tokens")
+
+        cleaned, error = None, None
+        try:
+            parsed = _parse_json_reply(reply)
+            edits = parsed.get("edits") if isinstance(parsed, dict) else None
+            cleaned, error = _validate_plan_edits(edits, draft_stops, by_id, ctx)
+        except (ValueError, AttributeError):
+            cleaned, error = None, "That wasn't valid JSON."
+
+        if cleaned is None:
+            retry_messages = messages + [
+                {"role": "assistant", "content": reply},
+                {"role": "user", "content": (
+                    f"That response was invalid: {error} Reply again with ONLY "
+                    "strict JSON in the same {\"edits\": [...]} shape, or an "
+                    "empty \"edits\" list if nothing actually needs to change.")},
+            ]
+            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
+            elapsed += elapsed2
+            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
+            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
+            try:
+                parsed2 = _parse_json_reply(reply2)
+                edits2 = parsed2.get("edits") if isinstance(parsed2, dict) else None
+                cleaned, error = _validate_plan_edits(edits2, draft_stops, by_id, ctx)
+            except (ValueError, AttributeError):
+                cleaned, error = None, "That wasn't valid JSON."
+
+        if cleaned is None:
+            raise PlanningAgentError("Couldn't build a valid set of adjustments.")
+
+        return {"stops": _apply_plan_edits(draft_plan, cleaned, by_id), "edits": cleaned,
                 "model": self.model, "response_time": round(elapsed, 3),
                 "input_tokens": input_tokens, "output_tokens": output_tokens}
 
@@ -670,7 +1034,7 @@ class ReplanningAgent:
                    transit_buffer_min=transit_buffer_min(transit))
 
         messages = self._build_messages(situation, kept, remaining, candidates, ctx)
-        reply, usage, elapsed = _call_openrouter(messages, self.model)
+        reply, usage, elapsed = _call_openrouter(messages, self.model, STOPS_RESPONSE_FORMAT)
         input_tokens = usage.get("prompt_tokens")
         output_tokens = usage.get("completion_tokens")
 
@@ -689,7 +1053,7 @@ class ReplanningAgent:
                     "distinct venue_id values from the candidate list above -- "
                     "never invent or repeat one.")},
             ]
-            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model)
+            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, STOPS_RESPONSE_FORMAT)
             elapsed += elapsed2
             input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
             output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))

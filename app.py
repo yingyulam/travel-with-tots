@@ -115,6 +115,7 @@ DEFAULTS = {
     "preferred_lunch_time": "",
     "nap_notes": "",
     "extra_notes": "",
+    "strict_schedule": False,
     "features": ["kid_friendly"],
     "themes": [],
     "child_ids": [],
@@ -172,6 +173,7 @@ def _read_form(form):
         "preferred_lunch_time": form.get("preferred_lunch_time", ""),
         "nap_notes": form.get("nap_notes", ""),
         "extra_notes": form.get("extra_notes", ""),
+        "strict_schedule": form.get("strict_schedule") == "on",
         "features": form.getlist("features"),
         "themes": form.getlist("themes"),
         "child_ids": form.getlist("child_ids"),
@@ -559,6 +561,26 @@ def plan():
 
     if request.method == "POST":
         plans = generate_plans(VENUES, form)
+        # Always try to smooth the rule-based draft's flow and apply any
+        # free-text notes -- an enhancement, not a requirement, so a failed
+        # AI call just leaves the already-valid draft on screen unchanged.
+        try:
+            age_months = int(form["age_years"]) * 12 + int(form["age_months"])
+            adjustment = PlanningAgent().adjust_plan(
+                plans[0].to_dict(),
+                destination=form["destination"], age_months=age_months,
+                wake_up=form["wake_up"], bedtime=form["bedtime"], pace=form["pace"],
+                dining=form["dining"], naps=form["naps"],
+                preferred_lunch_time=form["preferred_lunch_time"],
+                nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],
+                transit=form["transit"], accommodation=form["accommodation"],
+                features=form["features"], strict_schedule=form["strict_schedule"],
+            )
+            plans[0] = Plan(label=plans[0].label, blurb=plans[0].blurb,
+                             stops=adjustment["stops"], source=plans[0].source)
+        except (PlanningAgentError, requests.exceptions.RequestException, KeyError) as e:
+            print(f"Plan adjustment skipped, showing the unadjusted draft: {e}")
+            flash("Showing the standard plan, couldn't fine-tune it right now.")
         # The whole form is carried to the in-trip page when a plan is chosen,
         # so a plan can still be saved from there without re-asking for it.
         trip_context = form

@@ -1,0 +1,41 @@
+You are reviewing a day itinerary a rule-based planner already built for a family with a young child. It's already realistic, but every time in it (wake-up, bedtime, meal time, nap time) was computed as a literal target, not lived experience. Your job is to make it feel like a thoughtfully planned day rather than a mechanically computed one, by proposing a short list of edits, or none at all if the draft is already good.
+
+Two things you may do, and nothing else:
+1. Smooth the day's flow: nudge a stop's time, or swap its venue, if it makes the day flow better (less backtracking, a more natural pace, a better fit for the destination).
+2. Apply the parent's own words: if nap/sleep habits or other notes below describe something specific, let it change which venue fits a stop.
+
+Only propose an edit that fixes a real problem or reflects something the parent actually said. Never change something merely to show you reviewed it, an empty "edits" list is a common, correct, and expected answer when the draft is already good.
+
+Trip context:
+- Destination: {destination}
+- Child's age: {age_months} months
+- Wake-up: {wake_up} | Bedtime: {bedtime}
+- {schedule_flexibility}
+- Pace: {pace}
+- Transit: {transit}
+- Accommodation: {accommodation}
+- Dining preference: {dining}
+- Preferred lunch time: {preferred_lunch_time}
+- Nap/sleep habits: {nap_notes}
+- Notes from the parent: {extra_notes}
+
+The current draft. You are proposing edits against this; any stop you don't mention in your edits stays exactly as it is:
+{draft_stops}
+
+Candidate venues you may swap in. This is the live result of a fresh database query: choose a replacement venue ONLY from this list, and only when a candidate here is a genuinely better fit than the stop's current venue.
+
+{candidate_venues}
+
+Rules:
+- Reference the stop you're editing by its exact current venue name, exactly as shown in the draft above.
+- Never invent a venue_id, a venue name, or any venue detail not present in the candidate list above.
+- An edit may change the venue ("new_venue_id"), the time ("new_time"), or both, but never what kind of stop it is: a meal stays a meal, a nap stays a nap, an activity stays an activity. A replacement venue for a meal stop must be somewhere a meal is possible; a replacement for a nap stop must be genuinely nap-friendly.
+- Never introduce a second meal stop, or remove the only one, that count is fixed by the parent's dining choice, not something to adjust.
+- Keep every nudge grounded: moving a stop by tens of minutes to smooth the day is normal and expected; moving it by hours is not, that's a different day, not an adjustment. A meal stop should still land somewhere a real lunch would.
+- A venue must actually be open at whatever time you place a stop.
+- Every "new_venue_id" you use must be distinct, and must not duplicate a venue already elsewhere in the day.
+- Give each edit a short, one-sentence "reason" that names the actual problem it fixes or the actual note it's applying.
+- If nothing needs to change, return an empty "edits" list rather than forcing one.
+
+Respond with strict JSON only. No markdown code fences, no commentary before or after, in exactly this shape:
+{"edits": [{"current_venue_name": "Stanley Park Seawall", "new_venue_id": 7, "new_time": "12:15 PM", "reason": "..."}]}
