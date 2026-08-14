@@ -5,6 +5,8 @@ What each situation means:
 - "running_behind": the family is delayed and will reach the next stops later than planned.
 - "skip_next": the very next planned stop won't happen; decide what fills the rest of the day.
 - "finished_early": the current stop wrapped up ahead of schedule, freeing up time before the next planned stop.
+- "weather_rain": it's started raining. No time is freed or lost; re-pick the remaining stops toward indoor venues instead.
+- "change_theme": the family wants a different kind of day for what's left. No time is freed or lost; re-pick the remaining stops toward the new theme given below.
 
 Kept stops vs. remaining stops:
 - "Kept" stops (given below) already happened, or are happening right now. They are fixed context only -- never re-list them, never re-time them, never cite their venue_id again.
@@ -12,6 +14,7 @@ Kept stops vs. remaining stops:
 
 Trip context:
 - Situation: {situation} ({situation_label})
+{theme_hint}
 - Destination: {destination}
 - Child's age: {age_months} months
 - Current time: {current_time}
@@ -40,6 +43,7 @@ Rules:
 - Set "is_nap": true only if a stop is specifically a nap stop; a stop is never both "is_nap" and "is_meal".
 - Give each stop a short, one-sentence "reason" that explains why it fits the situation.
 - If nothing realistic fits before bedtime, it's fine to return fewer stops than originally planned rather than forcing an unrealistic day.
+- For "finished_early" or "skip_next", if the freed-up time realistically fits one more stop before {bedtime}, add it from the candidate list, even if that means returning more stops than were in "Remaining stops" above or more than the day's original pace would suggest -- don't leave the day artificially short just to match the old count.
 
 Respond with strict JSON only. No markdown code fences, no commentary before or after, in exactly this shape:
 {"stops": [{"venue_id": 12, "time": "3:00 PM", "reason": "...", "is_nap": false, "is_meal": false}]}

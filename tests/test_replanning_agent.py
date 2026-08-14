@@ -164,6 +164,40 @@ class ReplanningAgentTest(unittest.TestCase):
                 self.agent.replan_day("nap_happened", current_plan, current_time="13:00",
                                        destination="Vancouver", age_months=30, minutes=60)
 
+    def test_theme_hint_populated_for_weather_rain_and_change_theme(self):
+        current_plan = self._current_plan()
+        captured = {}
+
+        def fake_call(messages, model):
+            captured["prompt"] = messages[0]["content"]
+            return self._good_reply(), {}, 1.0
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.replan_day("weather_rain", current_plan, current_time="13:00",
+                                   destination="Vancouver", age_months=30)
+        self.assertIn("Theme for the rest of the day: Rainy-day", captured["prompt"])
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.replan_day("change_theme", current_plan, current_time="13:00",
+                                   destination="Vancouver", age_months=30, theme="Outdoorsy")
+        self.assertIn("Theme for the rest of the day: Outdoorsy", captured["prompt"])
+
+    def test_theme_hint_empty_for_other_situations(self):
+        current_plan = self._current_plan()
+        captured = {}
+
+        def fake_call(messages, model):
+            captured["prompt"] = messages[0]["content"]
+            return self._good_reply(), {}, 1.0
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.replan_day("skip_next", current_plan, current_time="13:00",
+                                   destination="Vancouver", age_months=30)
+        self.assertNotIn("Theme for the rest of the day", captured["prompt"])
+
     def test_no_candidates_raises_without_calling_model(self):
         current_plan = self._current_plan()
         with mock.patch("src.agents.db.get_candidate_venues", return_value=[]), \

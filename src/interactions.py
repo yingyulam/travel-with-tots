@@ -8,7 +8,7 @@ location calls without changing their signatures or the UI that calls them.
 from datetime import datetime
 
 from .filters import filter_by_features
-from .itinerary import stop_duration, venue_open_for
+from .itinerary import THEMES, stop_duration, venue_open_for
 
 # Situation buttons shown on a chosen plan: (key, label).
 SITUATION_OPTIONS = [
@@ -16,6 +16,8 @@ SITUATION_OPTIONS = [
     ("running_behind", "Running behind"),
     ("skip_next", "Skip next stop"),
     ("finished_early", "Finished this stop early"),
+    ("weather_rain", "It's raining"),
+    ("change_theme", "Change the theme"),
 ]
 SITUATION_LABELS = dict(SITUATION_OPTIONS)
 
@@ -108,6 +110,33 @@ def _open_alternative(kind, venues, features, used, start_min, duration_min):
     return None
 
 
+def _retheme_stop(stop, theme_types, venues, features, used):
+    """Swap in an open, unused venue matching `theme_types` for a plain
+    activity stop, at the same time (this doesn't free or consume time,
+    unlike the timing situations). Meal and nap stops are untouched --
+    theme doesn't override dining/nap needs. Best-effort: if nothing
+    matches, the stop is left exactly as it was rather than dropped."""
+    venue = stop.get("venue")
+    if stop.get("kind") != "activity" or venue is None:
+        return stop
+    if venue.get("type") in theme_types:
+        return stop
+    start = _display_to_minutes(stop["time"])
+    dur = stop_duration(stop["kind"])
+    pool = filter_by_features(venues or [], features or [])
+    candidates = [v for v in pool if v.get("type") in theme_types
+                  and v["name"] not in used and venue_open_for(v, start, dur)]
+    if not candidates:
+        return stop
+    pick = candidates[0]
+    used.discard(venue["name"])
+    used.add(pick["name"])
+    swapped = dict(stop)
+    swapped["venue"] = pick
+    swapped["reason"] = "Swapped for the new theme. " + stop.get("reason", "")
+    return swapped
+
+
 def _enforce_hours(stops, venues, features):
     """After any re-timing, keep only stops whose venue is open for the slot --
     swapping in an open alternative where possible, otherwise dropping the stop.
@@ -136,11 +165,24 @@ def _enforce_hours(stops, venues, features):
     return result
 
 
-def _apply_situation(situation, remaining, now, venues, features, used_names):
+def _apply_situation(situation, remaining, now, venues, features, used_names, theme=None):
     """Re-decide the stops still ahead. Returns a fresh list of stop dicts."""
+    if situation in ("weather_rain", "change_theme"):
+        # Neither situation frees or consumes time -- just re-pick remaining
+        # activity stops toward the target theme's venue types, same times.
+        theme_types = next((t["types"] for t in THEMES if t["label"] == theme), set())
+        used = set(used_names)
+        return [_retheme_stop(dict(s), theme_types, venues, features, used) for s in remaining]
+
     if situation == "skip_next":
-        # Drop the very next stop; leave the rest of the day as planned.
-        return [dict(s) for s in remaining[1:]]
+        # Drop the very next stop, but fill its slot with a different open
+        # venue rather than leaving a gap in the day.
+        if not remaining:
+            return []
+        dropped = remaining[0]
+        rest = [dict(s) for s in remaining[1:]]
+        bonus = _bonus_stop(_display_to_minutes(dropped["time"]), venues, features, used_names)
+        return [bonus] + rest
 
     if situation == "finished_early":
         # This stop wrapped up early. Keep going, just sooner: pull the rest of
@@ -216,7 +258,7 @@ def _nap_here(kept, remaining, bedtime_min, nap_length):
 
 
 def replan(plan, situation, current_time, venues=None, features=None,
-           bedtime=None, minutes=None):
+           bedtime=None, minutes=None, theme=None):
     """Return a NEW proposed plan, re-deciding only the stops ahead of now.
 
     The stop happening now and everything before it are kept exactly as they
@@ -226,7 +268,9 @@ def replan(plan, situation, current_time, venues=None, features=None,
     situation fill freed time with a real, feature-matched venue that isn't
     already in the day. ``bedtime`` ('HH:MM') caps the day; ``minutes`` is the
     parent-entered duration -- the nap length for "nap happened here", the
-    delay for "running behind".
+    delay for "running behind". ``theme`` is the parent-picked target theme
+    for "change_theme" (ignored otherwise -- "weather_rain" always targets
+    "Rainy-day").
 
     This is a deterministic placeholder; a real implementation would hand the
     same inputs to an AI planner and return a plan in the same shape.
@@ -258,8 +302,9 @@ def replan(plan, situation, current_time, venues=None, features=None,
     else:
         # Situations that re-time stops can push a venue past closing (or before
         # opening); re-decide only the stops ahead so their venues still fit.
+        effective_theme = "Rainy-day" if situation == "weather_rain" else theme
         new_remaining = _enforce_hours(
-            _apply_situation(situation, remaining, now, venues, features, used_names),
+            _apply_situation(situation, remaining, now, venues, features, used_names, effective_theme),
             venues, features)
         new_stops = kept + new_remaining
     new_stops.sort(key=lambda s: _display_to_minutes(s["time"]))

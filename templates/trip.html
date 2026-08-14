@@ -76,6 +76,14 @@
             <button type="button" class="tap-btn" data-mins="60">1 hour</button>
           </div>
         </div>
+        <div class="nap-prompt" id="theme-prompt" hidden>
+          <p>What kind of day instead?</p>
+          <div class="chips" id="theme-choice-bar">
+            <button type="button" class="tap-btn" data-theme="Outdoorsy">Outdoorsy</button>
+            <button type="button" class="tap-btn" data-theme="Rainy-day">Rainy-day</button>
+            <button type="button" class="tap-btn" data-theme="Culture">Culture</button>
+          </div>
+        </div>
         <div class="nap-prompt" id="replan-confirm" hidden>
           <p id="replan-confirm-text"></p>
           <div class="chips">
@@ -293,8 +301,9 @@
     });
 
     // Run a re-plan and install the result as the "Quick update" version.
-    // minutes is the parent-entered duration (nap length / how far behind).
-    async function runReplan(situation, minutes) {
+    // minutes is the parent-entered duration (nap length / how far behind);
+    // theme is the parent-picked target for "change_theme".
+    async function runReplan(situation, minutes, theme) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
       status.hidden = false;
       status.textContent = "Re-planning…";
@@ -309,6 +318,7 @@
             features: tripData.features,
             bedtime: tripData.bedtime,
             minutes: minutes || null,
+            theme: theme || null,
           }),
         });
         const newPlan = await res.json();
@@ -327,7 +337,7 @@
 
     // AI-assisted alternative -- never overwrites "Quick update" (slot 1),
     // always lands in its own "AI suggestion" slot (2) so both stay switchable.
-    async function runAiReplan(situation, minutes) {
+    async function runAiReplan(situation, minutes, theme) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
       status.hidden = false;
       status.textContent = "Building an AI replan…";
@@ -343,6 +353,7 @@
           dining: tripData.dining,
           bedtime: tripData.bedtime,
           minutes: minutes || null,
+          theme: theme || null,
         };
         const res = await fetch("/replan/ai", {
           method: "POST",
@@ -378,6 +389,7 @@
     const napAsk = document.getElementById("nap-ask");
     const napDuration = document.getElementById("nap-duration");
     const behindPrompt = document.getElementById("behind-prompt");
+    const themePrompt = document.getElementById("theme-prompt");
     const replanConfirm = document.getElementById("replan-confirm");
     const replanConfirmText = document.getElementById("replan-confirm-text");
     const replanMethod = document.getElementById("replan-method");
@@ -386,6 +398,7 @@
       napAsk.hidden = false;      // reset the nap prompt to its first step
       napDuration.hidden = true;
       behindPrompt.hidden = true;
+      themePrompt.hidden = true;
       replanConfirm.hidden = true;
       replanMethod.hidden = true;
     }
@@ -400,10 +413,14 @@
     // Nothing re-plans until the parent confirms and picks a method.
     let pendingSituation = null;
     let pendingMinutes = null;
-    function showReplanConfirm(situation, minutes) {
+    let pendingTheme = null;
+    function showReplanConfirm(situation, minutes, theme) {
       pendingSituation = situation;
       pendingMinutes = minutes;
-      const label = SITUATION_LABELS_JS[situation] || "Something happened";
+      pendingTheme = theme || null;
+      const label = pendingTheme
+        ? `Change the theme to “${pendingTheme}”`
+        : (SITUATION_LABELS_JS[situation] || "Something happened");
       replanConfirmText.textContent = `${label}. Want to replan?`;
       replanConfirm.hidden = false;
     }
@@ -414,15 +431,16 @@
     });
     document.getElementById("replan-method-quick").addEventListener("click", () => {
       hidePrompts();
-      runReplan(pendingSituation, pendingMinutes);
+      runReplan(pendingSituation, pendingMinutes, pendingTheme);
     });
     document.getElementById("replan-method-ai").addEventListener("click", () => {
       hidePrompts();
-      runAiReplan(pendingSituation, pendingMinutes);
+      runAiReplan(pendingSituation, pendingMinutes, pendingTheme);
     });
 
     // Situation buttons. "Nap happened here" and "Running behind" ask for a
-    // duration first; the rest go straight to the replan confirm prompt.
+    // duration first; "Change the theme" asks which theme first; the rest go
+    // straight to the replan confirm prompt.
     document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const situation = btn.dataset.situation;
@@ -432,7 +450,19 @@
           (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
           return;
         }
+        if (situation === "change_theme") {
+          themePrompt.hidden = false;
+          return;
+        }
         showReplanConfirm(situation, null);
+      });
+    });
+
+    // Pick a theme -> confirm before re-picking the remaining stops toward it.
+    document.getElementById("theme-choice-bar").querySelectorAll("[data-theme]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        hidePrompts();
+        showReplanConfirm("change_theme", null, btn.dataset.theme);
       });
     });
 

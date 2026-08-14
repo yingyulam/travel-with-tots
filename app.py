@@ -715,7 +715,8 @@ def replan_route():
         return jsonify({"error": "plan and current_time are required"}), 400
     return jsonify(replan(plan, data.get("situation", ""), current_time,
                           VENUES, data.get("features") or [],
-                          bedtime=data.get("bedtime"), minutes=data.get("minutes")))
+                          bedtime=data.get("bedtime"), minutes=data.get("minutes"),
+                          theme=data.get("theme")))
 
 
 @app.route("/replan/ai", methods=["POST"])
@@ -745,6 +746,7 @@ def replan_ai_route():
             dining=data.get("dining"),
             bedtime=data.get("bedtime"),
             minutes=data.get("minutes"),
+            theme=data.get("theme"),
         )
     except KeyError:
         return jsonify({"error": "The AI replanner isn't configured yet."}), 500

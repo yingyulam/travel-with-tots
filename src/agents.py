@@ -479,6 +479,22 @@ def _format_stops_for_prompt(stops: list) -> str:
     return "\n".join(lines)
 
 
+def _format_theme_hint(theme: str | None) -> str:
+    """A soft, non-mandatory theme-biasing line for "weather_rain"/
+    "change_theme" -- same spirit as planner.txt's theme bias, not a hard
+    filter. Empty string (no hint at all) for every other situation."""
+    if not theme:
+        return ""
+    matched = resolve_themes([theme])
+    if len(matched) != 1:
+        return ""
+    t = matched[0]
+    return (f"Theme for the rest of the day: {t['label']} -- {t['blurb']} "
+            "Bias remaining-stop venue choices toward this theme where a "
+            "good candidate exists in the list below; don't force a poor "
+            "fit or drop a stop just to match it.\n")
+
+
 class ReplanningAgentError(Exception):
     """Raised when the model's replanned response can't be validated, even
     after one retry, or when there are no candidate venues to ground it on."""
@@ -501,6 +517,7 @@ class ReplanningAgent:
             _REPLAN_DAY_TEMPLATE
             .replace("{situation}", situation)
             .replace("{situation_label}", SITUATION_LABELS.get(situation, situation))
+            .replace("{theme_hint}", _format_theme_hint(ctx.get("theme")))
             .replace("{destination}", ctx["destination"] or "")
             .replace("{age_months}", str(ctx["age_months"]))
             .replace("{current_time}", ctx["current_time"] or "")
@@ -600,11 +617,13 @@ class ReplanningAgent:
 
     def replan_day(self, situation, current_plan, *, current_time, destination,
                     age_months, features=None, transit=None, dining=None,
-                    bedtime=None, minutes=None):
+                    bedtime=None, minutes=None, theme=None):
         """Returns a NEW plan dict: {"label", "blurb", "from_time", "stops",
         "source", "model", "response_time", "input_tokens", "output_tokens"}.
         `current_plan` is never modified -- callers must store the result as
-        an additional version, never in place of it."""
+        an additional version, never in place of it. `theme` is the
+        parent-picked target theme for "change_theme" (ignored otherwise --
+        "weather_rain" always targets "Rainy-day")."""
         stops = current_plan.get("stops", [])
         now = hhmm_to_min(current_time)
         kept = [dict(s) for s in stops if display_to_min(s["time"]) <= now]
@@ -635,10 +654,13 @@ class ReplanningAgent:
             anchor_min = now + FINISHED_EARLY_BUFFER
         # skip_next: the freed time starts right now, no extra buffer.
 
+        effective_theme = "Rainy-day" if situation == "weather_rain" else theme
+
         already_meals = sum(1 for s in kept if s.get("kind") == "meal")
         ctx = dict(destination=destination, age_months=age_months,
                    current_time=current_time, bedtime=bedtime, dining=dining,
                    anchor_min=anchor_min, already_meals=already_meals,
+                   theme=effective_theme,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),
                    transit_buffer_min=transit_buffer_min(transit))
