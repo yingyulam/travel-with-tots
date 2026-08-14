@@ -9,6 +9,7 @@ from src.agents import (
     _apply_plan_edits,
     _validate_plan_edits,
 )
+from src.itinerary import MAX_STOP_COUNT, MIN_STOP_COUNT, realistic_stop_count
 
 
 def _venue(id, name, **overrides):
@@ -56,7 +57,7 @@ class PlanningAgentStructuredOutputTest(unittest.TestCase):
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
              mock.patch("src.agents._call_openrouter", side_effect=fake_call):
             self.agent.generate_plan_for_themes(
-                [], destination="Vancouver", age_months=30, pace="balanced",
+                [], destination="Vancouver", age_months=30, stop_count=3,
                 wake_up="07:00", bedtime="19:30", features=[])
 
         self.assertEqual(captured["response_format"], STOPS_RESPONSE_FORMAT)
@@ -74,7 +75,7 @@ class PlanningAgentStructuredOutputTest(unittest.TestCase):
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
              mock.patch("src.agents._call_openrouter", side_effect=fake_call):
             self.agent.generate_plan_for_themes(
-                [], destination="Vancouver", age_months=30, pace="balanced",
+                [], destination="Vancouver", age_months=30, stop_count=3,
                 wake_up="07:00", bedtime="19:30", features=[])
 
         self.assertEqual(len(calls), 2)
@@ -275,7 +276,7 @@ class AdjustPlanTest(unittest.TestCase):
              mock.patch("src.agents._call_openrouter", side_effect=fake_call):
             result = self.agent.adjust_plan(
                 self.draft, destination="Vancouver", age_months=30,
-                wake_up="07:00", bedtime="19:30", pace="balanced", dining="dine_out")
+                wake_up="07:00", bedtime="19:30", stop_count=3, dining="dine_out")
 
         self.assertEqual(captured["response_format"], PLAN_EDITS_RESPONSE_FORMAT)
         self.assertEqual(result["stops"][0]["venue"]["name"], "New Museum")
@@ -289,7 +290,7 @@ class AdjustPlanTest(unittest.TestCase):
              mock.patch("src.agents._call_openrouter", side_effect=fake_call):
             result = self.agent.adjust_plan(
                 self.draft, destination="Vancouver", age_months=30,
-                wake_up="07:00", bedtime="19:30", pace="balanced", dining="dine_out")
+                wake_up="07:00", bedtime="19:30", stop_count=3, dining="dine_out")
 
         self.assertEqual(result["stops"][0]["venue"]["name"], "Old Park")
         self.assertEqual(result["edits"], [])
@@ -307,8 +308,23 @@ class AdjustPlanTest(unittest.TestCase):
             with self.assertRaises(PlanningAgentError):
                 self.agent.adjust_plan(
                     self.draft, destination="Vancouver", age_months=30,
-                    wake_up="07:00", bedtime="19:30", pace="balanced", dining="dine_out")
+                    wake_up="07:00", bedtime="19:30", stop_count=3, dining="dine_out")
         self.assertEqual(len(calls), 2)
+
+
+class RealisticStopCountTest(unittest.TestCase):
+    def test_within_range_is_unchanged(self):
+        self.assertEqual(realistic_stop_count(3, age_months=30), 3)
+
+    def test_capped_at_max_for_older_child(self):
+        self.assertEqual(realistic_stop_count(6, age_months=30), MAX_STOP_COUNT)
+
+    def test_capped_one_lower_under_24_months(self):
+        self.assertEqual(realistic_stop_count(6, age_months=18), MAX_STOP_COUNT - 1)
+
+    def test_never_below_the_floor(self):
+        self.assertEqual(realistic_stop_count(1, age_months=30), MIN_STOP_COUNT)
+        self.assertEqual(realistic_stop_count(0, age_months=18), MIN_STOP_COUNT)
 
 
 if __name__ == "__main__":

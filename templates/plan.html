@@ -165,18 +165,11 @@
           </div>
         </fieldset>
 
-        <fieldset class="group">
-          <legend>Trip pace</legend>
-          <div class="chips">
-            {% for option in pace_options %}
-            <label class="chip">
-              <input type="radio" name="pace" value="{{ option }}"
-                     {% if form.pace == option %}checked{% endif %}>
-              <span>{{ option|capitalize }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
+        <label class="field field-full">
+          <span>How many places would you like to visit? <em>(not counting lunch)</em></span>
+          <input type="number" name="stop_count" min="1" max="6" value="{{ form.stop_count }}">
+          <span class="field-hint">We'll adjust this a little for your child's age if needed.</span>
+        </label>
 
         <fieldset class="group">
           <legend>Lunch</legend>

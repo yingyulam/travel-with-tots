@@ -15,9 +15,9 @@ from .interactions import (
 )
 from .itinerary import (
     DEFAULT_LUNCH_TARGET_MIN, LUNCH_DURATION_LABEL, LUNCH_SEARCH_RADIUS_MIN,
-    MAX_MEAL_STOPS, PACE_STOPS, combine_themes, display_to_min, hhmm_to_min,
-    min_to_display, resolve_themes, stop_duration, transit_buffer_min,
-    venue_open_for,
+    MAX_MEAL_STOPS, combine_themes, display_to_min, hhmm_to_min,
+    min_to_display, realistic_stop_count, resolve_themes, stop_duration,
+    transit_buffer_min, venue_open_for,
 )
 
 load_dotenv()
@@ -338,8 +338,8 @@ def _clean_stops(stops: list, valid_ids: set):
     both is_nap and is_meal. Returns (cleaned, None), or (None, error)
     describing the first problem found. Shared by PlanningAgent and
     ReplanningAgent, which only diverge in what they check beyond this
-    (pace ceiling vs. anchor-time floor, meal-cap baseline, stop-duration
-    lookup for spacing)."""
+    (stop-count ceiling vs. anchor-time floor, meal-cap baseline, stop-
+    duration lookup for spacing)."""
     cleaned = []
     seen_ids = set()
     for stop in stops:
@@ -618,7 +618,7 @@ class PlanningAgent:
             .replace("{wake_up}", ctx["wake_up"] or "")
             .replace("{bedtime}", ctx["bedtime"] or "")
             .replace("{nap_times}", nap_times)
-            .replace("{pace}", ctx["pace"] or "balanced")
+            .replace("{stop_count}", str(ctx["stop_count"]))
             .replace("{extra_notes}", ctx["extra_notes"] or "none")
             .replace("{dining}", ctx["dining"] or "dine_out")
             .replace("{accommodation}", ctx["accommodation"] or "not specified")
@@ -654,19 +654,20 @@ class PlanningAgent:
         or (None, error) describing the first problem found. The whole
         response is rejected (and retried) if even one stop is invalid,
         rather than silently dropping it -- so a plan never ships with fewer
-        stops than its pace requires just because one citation didn't check
-        out.
+        stops than requested just because one citation didn't check out.
 
-        The pace's stop count is a ceiling on activity/nap stops only, not a
-        mandate: anywhere from 1 up to min(pace count, available candidates)
-        is valid, whether the candidate list is thin or the model simply
-        chose a shorter, more realistically-paced day -- neither is an
-        error. A dedicated meal stop (is_meal) is additional and never
-        counts against that ceiling, mirroring the rule-based planner.
-        Consecutive stops must also leave enough time for the previous
-        stop's duration plus the transit buffer -- this is enforced here,
-        not just requested in the prompt, since nothing else catches a
-        model that ignores its own stated spacing rule."""
+        The requested stop count (clamped to what's realistic for the
+        child's age via realistic_stop_count, the same rule the rule-based
+        planner uses) is a ceiling on activity/nap stops only, not a
+        mandate: anywhere from 1 up to min(that ceiling, available
+        candidates) is valid, whether the candidate list is thin or the
+        model simply chose a shorter, more realistically-paced day --
+        neither is an error. A dedicated meal stop (is_meal) is additional
+        and never counts against that ceiling, mirroring the rule-based
+        planner. Consecutive stops must also leave enough time for the
+        previous stop's duration plus the transit buffer -- this is
+        enforced here, not just requested in the prompt, since nothing else
+        catches a model that ignores its own stated spacing rule."""
         stops = parsed.get("stops") if isinstance(parsed, dict) else None
         if not isinstance(stops, list) or not stops:
             return None, "\"stops\" must be a non-empty JSON array."
@@ -683,11 +684,11 @@ class PlanningAgent:
                 f"{ctx['dining']!r} allows at most {max_meals}.")
 
         non_meal_count = len(cleaned) - len(meal_stops)
-        cap = min(PACE_STOPS.get(ctx["pace"], 3), len(valid_ids))
+        cap = min(realistic_stop_count(ctx["stop_count"], ctx["age_months"]), len(valid_ids))
         if not (1 <= non_meal_count <= cap):
             return None, (
                 f"{non_meal_count} non-meal stop(s) (the meal stop doesn't "
-                f"count); pace {ctx['pace']!r} allows 1 to {cap}.")
+                f"count); requested {ctx['stop_count']} stop(s) allows 1 to {cap}.")
 
         cleaned.sort(key=lambda s: display_to_min(s["time"]))
         error = _check_transit_spacing(
@@ -699,7 +700,7 @@ class PlanningAgent:
         return cleaned, None
 
     def generate_plan_for_themes(self, theme_labels, *, destination, age_months,
-                                  naps=None, pace,
+                                  naps=None, stop_count,
                                   wake_up, bedtime, features, transit=None,
                                   dining=None, accommodation="", nap_notes="",
                                   extra_notes="", transit_nap="",
@@ -719,7 +720,7 @@ class PlanningAgent:
                 "No venues are available for this destination and age yet.")
 
         ctx = dict(destination=destination, age_months=age_months, naps=naps,
-                   pace=pace, wake_up=wake_up, bedtime=bedtime, dining=dining,
+                   stop_count=stop_count, wake_up=wake_up, bedtime=bedtime, dining=dining,
                    accommodation=accommodation, nap_notes=nap_notes,
                    extra_notes=extra_notes, transit=transit, transit_nap=transit_nap,
                    preferred_lunch_time=preferred_lunch_time,
@@ -776,7 +777,7 @@ class PlanningAgent:
             .replace("{wake_up}", ctx["wake_up"] or "")
             .replace("{bedtime}", ctx["bedtime"] or "")
             .replace("{schedule_flexibility}", _format_schedule_flexibility(ctx["strict_schedule"]))
-            .replace("{pace}", ctx["pace"] or "balanced")
+            .replace("{stop_count}", str(ctx["stop_count"]))
             .replace("{transit}", ", ".join(ctx["transit"]) if ctx.get("transit") else "none")
             .replace("{accommodation}", ctx["accommodation"] or "not specified")
             .replace("{dining}", ctx["dining"] or "dine_out")
@@ -789,7 +790,7 @@ class PlanningAgent:
         return [{"role": "system", "content": prompt}]
 
     def adjust_plan(self, draft_plan, *, destination, age_months, wake_up, bedtime,
-                     pace, dining, naps=None, preferred_lunch_time="", nap_notes="",
+                     stop_count, dining, naps=None, preferred_lunch_time="", nap_notes="",
                      extra_notes="", transit=None, accommodation="", features=None,
                      strict_schedule=False):
         """Given an already-valid rule-based draft, proposes a short list of
@@ -805,7 +806,7 @@ class PlanningAgent:
         by_id = {v["id"]: v for v in candidates}
 
         ctx = dict(destination=destination, age_months=age_months, wake_up=wake_up,
-                   bedtime=bedtime, pace=pace, dining=dining, naps=naps,
+                   bedtime=bedtime, stop_count=stop_count, dining=dining, naps=naps,
                    preferred_lunch_time=preferred_lunch_time, nap_notes=nap_notes,
                    extra_notes=extra_notes, transit=transit, accommodation=accommodation,
                    strict_schedule=strict_schedule,
@@ -942,7 +943,7 @@ class ReplanningAgent:
         loop via _check_transit_spacing, plus one check specific to
         replanning (nothing may start before the situation's anchor time)
         and a meal cap adjusted for meals already in `kept`. Deliberately
-        does NOT enforce a pace ceiling (meaningless for "however many
+        does NOT enforce a stop-count ceiling (meaningless for "however many
         stops remain") or bedtime/hours (prompt-only, same as PlanningAgent
         today). An empty "stops" array is valid -- a shorter remaining day
         is not an error."""

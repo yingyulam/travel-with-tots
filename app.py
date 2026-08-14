@@ -84,7 +84,6 @@ VENUES = load_venues()
 # Transit choices and feature checkboxes, defined once and shared with the
 # template so the form and the plan stay in sync.
 TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
-PACE_OPTIONS = ["relaxed", "balanced", "adventurous"]
 DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
 THEME_OPTIONS = [t["label"] for t in THEMES]
 TRANSIT_NAP_OPTIONS = [
@@ -102,6 +101,12 @@ MAX_NAPS = 4
 MAX_REVISE_ROUNDS = 2
 FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 
+# Sanity bounds on the raw "how many places" form input -- the realistic
+# range for a given child's age is enforced downstream by
+# itinerary.realistic_stop_count, not here.
+STOP_COUNT_FORM_MIN = 1
+STOP_COUNT_FORM_MAX = 6
+
 # Sensible defaults so the form is usable on first load.
 DEFAULTS = {
     "wake_up": "07:00",
@@ -113,7 +118,7 @@ DEFAULTS = {
     "destination": "Vancouver",
     "accommodation": "",
     "transit": ["stroller"],
-    "pace": "balanced",
+    "stop_count": "3",
     "dining": "dine_out",
     "preferred_lunch_time": "",
     "nap_notes": "",
@@ -172,7 +177,8 @@ def _read_form(form):
         "destination": form.get("destination") or DEFAULTS["destination"],
         "accommodation": form.get("accommodation", "").strip(),
         "transit": form.getlist("transit"),
-        "pace": form.get("pace") or DEFAULTS["pace"],
+        "stop_count": str(_clamp_int(form.get("stop_count"), STOP_COUNT_FORM_MIN,
+                                     STOP_COUNT_FORM_MAX, int(DEFAULTS["stop_count"]))),
         "dining": form.get("dining") or DEFAULTS["dining"],
         "preferred_lunch_time": form.get("preferred_lunch_time", ""),
         "nap_notes": form.get("nap_notes", ""),
@@ -585,7 +591,8 @@ def plan():
             adjustment = PlanningAgent().adjust_plan(
                 plans[0].to_dict(),
                 destination=form["destination"], age_months=age_months,
-                wake_up=form["wake_up"], bedtime=form["bedtime"], pace=form["pace"],
+                wake_up=form["wake_up"], bedtime=form["bedtime"],
+                stop_count=int(form["stop_count"]),
                 dining=form["dining"], naps=form["naps"],
                 preferred_lunch_time=form["preferred_lunch_time"],
                 nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
@@ -616,7 +623,6 @@ def plan():
         plans=plans,
         trip_context=trip_context,
         transit_options=TRANSIT_OPTIONS,
-        pace_options=PACE_OPTIONS,
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
         theme_options=THEME_OPTIONS,
@@ -646,7 +652,7 @@ def plan_ai():
             form["themes"],
             destination=form["destination"], age_months=age_months,
             naps=form["naps"],
-            pace=form["pace"], wake_up=form["wake_up"], bedtime=form["bedtime"],
+            stop_count=int(form["stop_count"]), wake_up=form["wake_up"], bedtime=form["bedtime"],
             features=form["features"], transit=form["transit"],
             dining=form["dining"], accommodation=form["accommodation"],
             nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],

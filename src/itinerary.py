@@ -88,12 +88,13 @@ def venue_open_for(venue, start_min, duration_min):
             and start_min <= close_min - CLOSING_BUFFER_MIN)
 
 
-# How many stops a plan has, before age adjustment, by pace.
-PACE_STOPS = {"relaxed": 2, "balanced": 3, "adventurous": 4}
+# Realistic range for how many stops a single day can hold.
+MIN_STOP_COUNT = 2
+MAX_STOP_COUNT = 4
 
 # Dedicated meal (lunch) stops a "dine_out" plan gets, always in addition to
-# PACE_STOPS's ceiling, never counted against it (mirrors _build_plan, which
-# appends the lunch stop after the pace-driven stops already exist).
+# the stop-count ceiling, never counted against it (mirrors _build_plan, which
+# appends the lunch stop after the requested-count stops already exist).
 MAX_MEAL_STOPS = 1
 
 # Candidate themes. Each biases activity choices toward certain venue types;
@@ -184,15 +185,13 @@ def _round_to(dt, minutes=15):
     return dt.replace(hour=total // 60, minute=total % 60, second=0, microsecond=0)
 
 
-def _stop_count(pace, age_years, age_months):
-    """Choose 2-4 stops: fewer for younger/relaxed, more for older/adventurous."""
-    count = PACE_STOPS.get(pace, 3)
-    total_months = int(age_years) * 12 + int(age_months)
-    if total_months < 24:
-        count -= 1
-    elif total_months >= 48:
-        count += 1
-    return max(2, min(4, count))
+def realistic_stop_count(requested, age_months):
+    """Clamp a parent's requested stop count to what's realistic: at most
+    MAX_STOP_COUNT, one lower for a child under 24 months, never below
+    MIN_STOP_COUNT. Shared with agents.py so the AI planner enforces the
+    same ceiling as this rule-based one."""
+    ceiling = MAX_STOP_COUNT - 1 if age_months < 24 else MAX_STOP_COUNT
+    return max(MIN_STOP_COUNT, min(ceiling, int(requested)))
 
 
 def _plan_times(wake, bedtime, count):
@@ -348,7 +347,7 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
 def generate_plans(venues, inputs):
     """Return a single candidate day plan for the parent to review.
 
-    ``inputs`` is the normalised form dict (wake_up, bedtime, naps, pace,
+    ``inputs`` is the normalised form dict (wake_up, bedtime, naps, stop_count,
     age_years, age_months, features, themes, ...). Returns a one-item list
     holding a ``Plan`` (label, blurb, ordered stops) that draws from whichever
     themes were selected in ``inputs["themes"]`` (or all three, "Mixed", if
@@ -356,16 +355,18 @@ def generate_plans(venues, inputs):
     so callers that loop over "candidate plans" don't need to change.
 
     Placeholder logic: filter venues by the chosen features, decide how many
-    stops fit the child's age and pace, then arrange a plan with a food venue
-    around midday and a nap-friendly venue during the nap window. The
-    structure is what a future LLM-backed implementation would return, so
-    only this function's body needs to change later.
+    stops fit the child's age and the parent's requested count, then arrange
+    a plan with a food venue around midday and a nap-friendly venue during
+    the nap window. The structure is what a future LLM-backed implementation
+    would return, so only this function's body needs to change later.
     """
     matches = filter_by_features(venues, inputs["features"])
     wake = _parse(inputs["wake_up"])
     bedtime = _parse(inputs["bedtime"])
     naps = sorted(_parse(n["start"]) for n in inputs.get("naps", []) if n.get("start"))
-    count = _stop_count(inputs["pace"], inputs["age_years"], inputs["age_months"])
+    total_months = int(inputs["age_years"]) * 12 + int(inputs["age_months"])
+    requested_count = int(inputs["stop_count"])
+    count = realistic_stop_count(requested_count, total_months)
     accommodation = inputs.get("accommodation", "")
     dining = inputs.get("dining", "dine_out")
     preferred_lunch_time = inputs.get("preferred_lunch_time") or ""
@@ -376,4 +377,8 @@ def generate_plans(venues, inputs):
     leave = _leave_stop(accommodation, stops)
     if leave:
         stops = [leave] + stops
-    return [Plan(label=theme["label"], blurb=theme["blurb"], stops=stops)]
+    blurb = theme["blurb"]
+    if count != requested_count:
+        blurb += (f" You asked for {requested_count} stops; we planned {count} "
+                  "instead, a more realistic pace for this age.")
+    return [Plan(label=theme["label"], blurb=blurb, stops=stops)]

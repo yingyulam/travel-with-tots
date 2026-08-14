@@ -11,7 +11,7 @@ Trip context:
 - Child's age: {age_months} months
 - Wake-up: {wake_up} | Bedtime: {bedtime}
 - {schedule_flexibility}
-- Pace: {pace}
+- Stops in the day: {stop_count}
 - Transit: {transit}
 - Accommodation: {accommodation}
 - Dining preference: {dining}

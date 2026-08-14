@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS trips (
     destination   TEXT,
     accommodation TEXT,
     transit       TEXT,                   -- JSON array of transit modes
-    pace          TEXT,
+    stop_count    TEXT,                   -- how many places the parent asked to visit
     dining        TEXT,
     preferred_lunch_time TEXT,             -- "HH:MM": when the parent wants lunch scheduled
     features      TEXT,                   -- JSON array of feature keys
@@ -114,7 +114,7 @@ MIN_CLUSTER_SIZE = 6
 TRIP_FIELDS = (
     "trip_date", "wake_up", "bedtime", "naps", "transit_nap",
     "destination", "accommodation", "transit",
-    "pace", "dining", "preferred_lunch_time", "features", "nap_notes",
+    "stop_count", "dining", "preferred_lunch_time", "features", "nap_notes",
     "extra_notes", "plan_label", "plan_json",
 )
 
@@ -159,6 +159,9 @@ def _ensure_columns(conn):
     if "naps" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN naps TEXT")
+    if "pace" in existing and "stop_count" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips RENAME COLUMN pace TO stop_count")
 
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(parents)")}
     if "is_admin" not in existing:
@@ -208,7 +211,7 @@ def _migrate_trips_ownership(conn):
                 destination   TEXT,
                 accommodation TEXT,
                 transit       TEXT,
-                pace          TEXT,
+                stop_count    TEXT,
                 dining        TEXT,
                 preferred_lunch_time TEXT,
                 features      TEXT,
@@ -222,13 +225,13 @@ def _migrate_trips_ownership(conn):
         conn.execute("""
             INSERT INTO trips (id, parent_id, child_id, trip_date, wake_up,
                 bedtime, nap_1, nap_2, naps, transit_nap, feeding_1, feeding_2,
-                destination, accommodation, transit, pace, dining,
+                destination, accommodation, transit, stop_count, dining,
                 preferred_lunch_time, features, nap_notes, extra_notes,
                 plan_label, plan_json, created_at)
             SELECT t.id, c.parent_id, t.child_id, t.trip_date, t.wake_up,
                 t.bedtime, t.nap_1, t.nap_2, t.naps, t.transit_nap, t.feeding_1,
                 t.feeding_2, t.destination, t.accommodation, t.transit,
-                t.pace, t.dining, t.preferred_lunch_time, t.features,
+                t.stop_count, t.dining, t.preferred_lunch_time, t.features,
                 t.nap_notes, t.extra_notes, t.plan_label, t.plan_json,
                 t.created_at
             FROM trips_old t JOIN children c ON c.id = t.child_id
@@ -299,12 +302,12 @@ def _seed_sample_data(conn):
             (parent_id, "Sam", "male", "2023-05-10")).lastrowid
         conn.execute(
             "INSERT INTO trips (parent_id, child_id, trip_date, wake_up, bedtime, "
-            "nap_1, nap_2, destination, accommodation, transit, pace, dining, "
+            "nap_1, nap_2, destination, accommodation, transit, stop_count, dining, "
             "features, nap_notes, extra_notes) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (parent_id, child_id, "2026-08-01", "07:00", "20:00", "13:00", "",
              "Vancouver", "Fairmont Hotel Vancouver",
-             json.dumps(["stroller", "bus"]), "balanced", "dine_out",
+             json.dumps(["stroller", "bus"]), "3", "dine_out",
              json.dumps(["kid_friendly", "has_nursing_room"]),
              "Naps well in the stroller.", "Loves parks and open space."))
 

@@ -59,7 +59,7 @@ class ResultsTest(unittest.TestCase):
     def test_plan_question_response_are_humanized(self):
         question = json.dumps({
             "destination": "Vancouver", "age_years": "2", "age_months": "0",
-            "pace": "balanced", "dining": "dine_out", "transit": ["walk"],
+            "stop_count": "3", "dining": "dine_out", "transit": ["walk"],
             "features": ["kid_friendly"], "bedtime": "19:30",
         })
         response = json.dumps({

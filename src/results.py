@@ -85,8 +85,8 @@ def _format_plan_question(ctx: dict) -> str:
     ) if part)
     if age:
         lines.append(f"Child's age: {age}")
-    if ctx.get("pace"):
-        lines.append(f"Pace: {ctx['pace']}")
+    if ctx.get("stop_count"):
+        lines.append(f"Stops requested: {ctx['stop_count']}")
     if ctx.get("dining"):
         lines.append(f"Dining: {ctx['dining']}")
     if ctx.get("transit"):
