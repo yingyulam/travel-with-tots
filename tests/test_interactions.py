@@ -76,7 +76,10 @@ class ReplanThemeTest(unittest.TestCase):
         result = replan(plan, "change_theme", "13:00", venues=venues, theme="Outdoorsy")
         self.assertEqual(result["stops"][0]["venue"]["name"], "Stanley Park")
 
-    def test_already_on_theme_stop_is_left_alone(self):
+    def test_already_on_theme_venue_is_kept_but_may_move_earlier(self):
+        # 2:00 PM is further off than the 30-min wrap-up buffer from 1:00 PM,
+        # so the stop gets pulled forward -- the venue itself, already on
+        # theme, is left as-is.
         stop = {"time": "2:00 PM", "kind": "activity",
                 "venue": _venue("Science World", type="museum"), "reason": "kept"}
         plan = {"label": "P", "blurb": "b", "stops": [stop]}
@@ -84,6 +87,16 @@ class ReplanThemeTest(unittest.TestCase):
                   _venue("Another Museum", type="museum")]
         result = replan(plan, "weather_rain", "13:00", venues=venues)
         self.assertEqual(result["stops"][0]["venue"]["name"], "Science World")
+        self.assertEqual(result["stops"][0]["time"], "1:30 PM")
+        self.assertIn("Moved earlier for the theme change.", result["stops"][0]["reason"])
+
+    def test_stop_already_within_the_wrap_up_buffer_is_untouched(self):
+        stop = {"time": "1:15 PM", "kind": "activity",
+                "venue": _venue("Science World", type="museum"), "reason": "kept"}
+        plan = {"label": "P", "blurb": "b", "stops": [stop]}
+        venues = [_venue("Science World", type="museum")]
+        result = replan(plan, "weather_rain", "13:00", venues=venues)
+        self.assertEqual(result["stops"][0]["time"], "1:15 PM")
         self.assertEqual(result["stops"][0]["reason"], "kept")
 
     def test_meal_and_nap_stops_are_never_rethemed(self):
@@ -98,14 +111,58 @@ class ReplanThemeTest(unittest.TestCase):
         self.assertEqual(result["stops"][0]["venue"]["name"], "Picnic Spot")
         self.assertEqual(result["stops"][1]["venue"]["name"], "Nap Park")
 
-    def test_no_matching_theme_venue_leaves_stop_unchanged(self):
+    def test_meal_stop_time_is_never_pulled_earlier(self):
+        # Regression: the earlier-shift for weather_rain/change_theme once
+        # dragged a meal stop along with everything else, landing "lunch"
+        # absurdly early (e.g. 9:40 AM). The meal must keep its own time;
+        # only the activity stop is eligible to be pulled into the gap.
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "12:00 PM", "kind": "meal",
+             "venue": _venue("Lunch Spot", type="cafe", category="food"), "reason": "lunch"},
+            {"time": "2:00 PM", "kind": "activity",
+             "venue": _venue("Afternoon Park", type="park"), "reason": "afternoon"},
+        ]}
+        venues = [_venue("Lunch Spot", type="cafe", category="food"),
+                  _venue("Afternoon Park", type="park"),
+                  _venue("Rainy Museum", type="museum")]
+        result = replan(plan, "change_theme", "09:10", venues=venues,
+                        bedtime="20:00", theme="Rainy-day")
+        meal = next(s for s in result["stops"] if s["kind"] == "meal")
+        activity = next(s for s in result["stops"] if s["kind"] == "activity")
+        self.assertEqual(meal["time"], "12:00 PM")
+        self.assertEqual(meal["reason"], "lunch")
+        self.assertEqual(activity["time"], "9:40 AM")
+
+    def test_no_matching_theme_venue_leaves_venue_unchanged(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "2:00 PM", "kind": "activity",
              "venue": _venue("Stanley Park", type="park"), "reason": "kept"},
         ]}
         result = replan(plan, "weather_rain", "13:00", venues=[_venue("Stanley Park", type="park")])
         self.assertEqual(result["stops"][0]["venue"]["name"], "Stanley Park")
-        self.assertEqual(result["stops"][0]["reason"], "kept")
+        self.assertEqual(result["stops"][0]["time"], "1:30 PM")
+
+    def test_no_remaining_stops_inserts_a_themed_bonus_stop(self):
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "1:00 PM", "kind": "activity",
+             "venue": _venue("Stanley Park", type="park"), "reason": "kept"},
+        ]}
+        venues = [_venue("Stanley Park", type="park"), _venue("Science World", type="museum")]
+        result = replan(plan, "weather_rain", "13:00", venues=venues, bedtime="20:00")
+        self.assertEqual(len(result["stops"]), 2)
+        bonus = result["stops"][1]
+        self.assertEqual(bonus["kind"], "bonus")
+        self.assertEqual(bonus["time"], "1:30 PM")
+        self.assertEqual(bonus["venue"]["name"], "Science World")
+
+    def test_stale_adjusted_flag_is_stripped(self):
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "1:00 PM", "kind": "activity",
+             "venue": _venue("Stanley Park", type="park"), "reason": "kept", "adjusted": True},
+        ]}
+        result = replan(plan, "change_theme", "13:30", venues=[_venue("Stanley Park", type="park")],
+                        theme="Outdoorsy")
+        self.assertNotIn("adjusted", result["stops"][0])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,42 @@
+You are reviewing an updated itinerary for the rest of a family's day. Something changed ("{situation_label}" at {current_time}), so a rule-based replanner already rebuilt the remaining stops to fit. It's realistic, but every remaining time was computed as a literal target, not lived experience. Your job is to make the rest of the day feel thoughtfully planned rather than mechanically recomputed, by proposing a short list of edits to the remaining stops, or none at all if the draft is already good.
+
+Two things you may do, and nothing else:
+1. Smooth the remaining stops' flow: nudge a stop's time, or swap its venue, if it makes the rest of the day flow better (less backtracking, a more natural pace, a better fit for the destination).
+2. Apply the parent's own words: if nap/sleep habits or other notes below describe a specific problem with a remaining stop, fix it by moving its time, swapping its venue, or both, whichever actually addresses what they said.
+
+Never touch the stops already done today (shown below for context only) -- they already happened and can't change.
+
+Trip context:
+- Situation just now: {situation_label}
+- Current time: {current_time}
+- Destination: {destination}
+- Child's age: {age_months} months
+- Bedtime: {bedtime}
+- This family's bedtime has some flexibility: a stop may run a little past it if it clearly improves the rest of the day, but don't drift far.
+- Transit: {transit}
+- Dining preference: {dining}
+- Nap/sleep habits: {nap_notes}
+- Notes from the parent: {extra_notes}
+
+Stops already done today (context only -- never propose an edit against these):
+{kept_stops}
+
+The remaining draft. You are proposing edits against this; any stop you don't mention in your edits stays exactly as it is:
+{remaining_stops}
+
+Candidate venues you may swap in. This is the live result of a fresh database query near where the family is now: choose a replacement venue ONLY from this list, and only when a candidate here is a genuinely better fit than the stop's current venue.
+
+{candidate_venues}
+
+Rules:
+- Reference the stop you're editing by its exact current venue name, exactly as shown in the remaining draft above -- never a stop from "Stops already done today".
+- Never invent a venue_id, a venue name, or any venue detail not present in the candidate list above.
+- An edit may change the venue ("new_venue_id"), the time ("new_time"), or both, but never what kind of stop it is: a meal stays a meal, a nap stays a nap, an activity stays an activity. A replacement venue for a meal stop must be somewhere a meal is possible; a replacement for a nap stop must be genuinely nap-friendly.
+- Keep every nudge grounded: moving a stop by tens of minutes to smooth the flow is normal and expected; moving it by hours is not, that's a different afternoon, not an adjustment.
+- A venue must actually be open at whatever time you place a stop.
+- Every "new_venue_id" you use must be distinct, and must not duplicate a venue already elsewhere in the day (done or remaining).
+- Give each edit a short, one-sentence "reason" that names the actual problem it fixes or the actual note it's applying.
+- If nothing needs to change, return an empty "edits" list rather than forcing one.
+
+Respond with strict JSON only. No markdown code fences, no commentary before or after, in exactly this shape:
+{"edits": [{"current_venue_name": "Stanley Park Seawall", "new_venue_id": 7, "new_time": "3:15 PM", "reason": "..."}]}

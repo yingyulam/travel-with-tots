@@ -36,7 +36,6 @@
            never ambiguous. Shows a single "Original" pill before any replan. -->
       <div class="plan-picker" id="plan-picker"></div>
       <p id="replan-status" class="replan-status" hidden></p>
-      <div id="replan-feedback" hidden></div>
 
       <!-- 3. Live timeline of the chosen plan -->
       <div id="timeline-host"></div>
@@ -87,21 +86,10 @@
         <div class="nap-prompt" id="replan-confirm" hidden>
           <p id="replan-confirm-text"></p>
           <div class="chips">
+            <input type="text" id="replan-note-text" class="replan-note-input" hidden
+                   placeholder="Anything specific? (optional)">
             <button type="button" class="tap-btn" id="replan-confirm-no">No, keep current plan</button>
             <button type="button" class="tap-btn" id="replan-confirm-yes">Yes, replan</button>
-          </div>
-        </div>
-        <div class="nap-prompt" id="replan-method" hidden>
-          <p>How should we replan?</p>
-          <div class="replan-method-options">
-            <button type="button" class="replan-method-btn" id="replan-method-quick">
-              <strong>⚡ Quick Replan</strong>
-              <span>Instant, rule-based adjustment.</span>
-            </button>
-            <button type="button" class="replan-method-btn" id="replan-method-ai">
-              <strong>✨ AI Replan</strong>
-              <span>About 20-30 seconds. Weighs pacing, naps, and mood for a more tailored plan.</span>
-            </button>
           </div>
         </div>
       </div>
@@ -156,7 +144,6 @@
     const host = document.getElementById("timeline-host");
     const timeField = document.getElementById("current-time");
     const status = document.getElementById("replan-status");
-    const replanFeedback = document.getElementById("replan-feedback");
 
     // Default the current-time field to the local clock (adjustable).
     function pad(n) { return String(n).padStart(2, "0"); }
@@ -230,7 +217,7 @@
            </div>`;
       } else if (v) {
         body = `<div class="stop-body">
-             <h3>${v.name}</h3>
+             <h3>${v.name}${stop.adjusted ? ' <span class="badge">✨ adjusted</span>' : ''}</h3>
              <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
              <div class="badges">${badges(v)}</div>
              <p class="reason">💡 ${stop.reason}</p>
@@ -260,18 +247,13 @@
         const state = i < nowI ? "done" : i === nowI ? "now" : "";
         return renderStop(s, state);
       }).join("");
-      const badge = SLOT_BADGES[active] ? `<span class="badge">${SLOT_BADGES[active]}</span> ` : "";
-      host.innerHTML = `<p class="plan-blurb">${badge}${plan.blurb}</p><ol class="timeline">${items}</ol>`;
-      replanFeedback.hidden = !(active === 2 && PLANS[2]);
+      host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
     }
 
-    // Fixed slots: Original (0, never changes), Quick update (1, the
-    // deterministic re-plan), AI suggestion (2, never overwrites slot 1).
-    // Iterating over SLOT_LABELS rather than PLANS.map avoids a sparse-array
-    // hole if slot 2 is filled before slot 1 ever is (AI replan tried before
-    // any situation button).
-    const SLOT_LABELS = ["Original", "Quick update", "AI suggestion"];
-    const SLOT_BADGES = ["", "⚡ Instant update", "✨ AI suggestion"];
+    // Fixed slots: Original (0, never changes), Updated (1, rule-based
+    // replan with the AI adjuster's edits already applied). Iterating over
+    // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole.
+    const SLOT_LABELS = ["Original", "Updated"];
     function renderTabs() {
       picker.innerHTML = SLOT_LABELS
         .map((label, i) => PLANS[i]
@@ -300,93 +282,55 @@
       btn.setAttribute("aria-expanded", String(!expanded));
     });
 
-    // Run a re-plan and install the result as the "Quick update" version.
-    // minutes is the parent-entered duration (nap length / how far behind);
-    // theme is the parent-picked target for "change_theme".
-    async function runReplan(situation, minutes, theme) {
+    // Re-plan the rest of the day (rule-based), then let the AI adjuster
+    // smooth it, in one request -- same draft-then-adjust pattern the
+    // planning page uses. Always installs the result as the single
+    // "Updated" version. minutes is the parent-entered duration (nap
+    // length / how far behind); theme is the parent-picked target for
+    // "change_theme"; note is an optional one-off addition to extra_notes
+    // for weather_rain/change_theme, never stored back into tripData.
+    async function runReplan(situation, minutes, theme, note) {
       if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
       status.hidden = false;
-      status.textContent = "Re-planning…";
+      status.textContent = "Updating your plan…";
       try {
-        const res = await fetch("/replan", {
+        const res = await fetch("/replan/adjust", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             plan: PLANS[active],
             situation: situation,
             current_time: timeField.value,
+            destination: tripData.destination,
+            age_months: tripData.age_months,
             features: tripData.features,
+            transit: tripData.transit,
+            dining: tripData.dining,
             bedtime: tripData.bedtime,
             minutes: minutes || null,
             theme: theme || null,
+            nap_notes: tripData.nap_notes,
+            extra_notes: tripData.extra_notes,
+            replan_note: note || "",
           }),
         });
         const newPlan = await res.json();
-        // Replace the single "Quick update" version (or create it the first
-        // time), so the switcher always shows exactly Original + Quick update.
+        if (!res.ok) throw new Error(newPlan.error || "Something went wrong.");
         PLANS[1] = newPlan;
         active = 1;
         renderTabs();
         renderTimeline();
         const time = newPlan.from_time || nowDisplay();
-        status.textContent = `⚡ Quick update ready from ${time}. Instant rule-based adjustment, use the tabs above to compare with the original.`;
+        status.textContent = newPlan.adjusted
+          ? `Updated ready from ${time}. Use the tabs above to compare with the original.`
+          : `Updated using the quick plan; couldn't fine-tune it right now.`;
       } catch (e) {
-        status.textContent = "Couldn't re-plan right now.";
+        status.textContent = e.message || "Couldn't re-plan right now.";
       }
     }
 
-    // AI-assisted alternative -- never overwrites "Quick update" (slot 1),
-    // always lands in its own "AI suggestion" slot (2) so both stay switchable.
-    async function runAiReplan(situation, minutes, theme) {
-      if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-      status.hidden = false;
-      status.textContent = "Building an AI replan…";
-      try {
-        const requestBody = {
-          plan: PLANS[active],
-          situation: situation,
-          current_time: timeField.value,
-          destination: tripData.destination,
-          age_months: tripData.age_months,
-          features: tripData.features,
-          transit: tripData.transit,
-          dining: tripData.dining,
-          bedtime: tripData.bedtime,
-          minutes: minutes || null,
-          theme: theme || null,
-          nap_notes: tripData.nap_notes,
-          extra_notes: tripData.extra_notes,
-        };
-        const res = await fetch("/replan/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        });
-        const aiPlan = await res.json();
-        if (!res.ok) throw new Error(aiPlan.error || "Something went wrong.");
-        PLANS[2] = aiPlan;
-        active = 2;
-        renderTabs();
-        renderTimeline();
-        const time = aiPlan.from_time || nowDisplay();
-        status.textContent = `✨ AI suggestion ready from ${time}. Use the tabs above to compare with the original.`;
-        replanFeedback.innerHTML = "";
-        replanFeedback.appendChild(buildFeedbackRow({
-          question: JSON.stringify(requestBody),
-          response: JSON.stringify(aiPlan),
-          model: aiPlan.model,
-          response_time: aiPlan.response_time,
-          input_tokens: aiPlan.input_tokens,
-          output_tokens: aiPlan.output_tokens,
-          kind: "replan",
-        }));
-      } catch (e) {
-        status.textContent = e.message || "Couldn't build an AI replan right now.";
-      }
-    }
-
-    // Prompts that ask for a duration, then confirm, then a method, before
-    // any re-plan actually runs.
+    // Prompts that ask for a duration, then confirm, before any re-plan
+    // actually runs.
     const napPrompt = document.getElementById("nap-prompt");
     const napAsk = document.getElementById("nap-ask");
     const napDuration = document.getElementById("nap-duration");
@@ -394,7 +338,7 @@
     const themePrompt = document.getElementById("theme-prompt");
     const replanConfirm = document.getElementById("replan-confirm");
     const replanConfirmText = document.getElementById("replan-confirm-text");
-    const replanMethod = document.getElementById("replan-method");
+    const replanNoteText = document.getElementById("replan-note-text");
     function hidePrompts() {
       napPrompt.hidden = true;
       napAsk.hidden = false;      // reset the nap prompt to its first step
@@ -402,7 +346,8 @@
       behindPrompt.hidden = true;
       themePrompt.hidden = true;
       replanConfirm.hidden = true;
-      replanMethod.hidden = true;
+      replanNoteText.hidden = true;
+      replanNoteText.value = "";
     }
 
     // Label lookup for the confirm prompt, built from the chips already on
@@ -411,6 +356,9 @@
     document.querySelectorAll("#situation-bar [data-situation]").forEach((btn) => {
       SITUATION_LABELS_JS[btn.dataset.situation] = btn.textContent.trim();
     });
+
+    // Situations vague enough as buttons alone that a free-text note helps.
+    const NOTE_ELIGIBLE_SITUATIONS = new Set(["weather_rain", "change_theme"]);
 
     // Nothing re-plans until the parent confirms and picks a method.
     let pendingSituation = null;
@@ -424,20 +372,14 @@
         ? `Change the theme to “${pendingTheme}”`
         : (SITUATION_LABELS_JS[situation] || "Something happened");
       replanConfirmText.textContent = `${label}. Want to replan?`;
+      replanNoteText.hidden = !NOTE_ELIGIBLE_SITUATIONS.has(situation);
       replanConfirm.hidden = false;
     }
     document.getElementById("replan-confirm-no").addEventListener("click", hidePrompts);
     document.getElementById("replan-confirm-yes").addEventListener("click", () => {
-      replanConfirm.hidden = true;
-      replanMethod.hidden = false;
-    });
-    document.getElementById("replan-method-quick").addEventListener("click", () => {
+      const note = replanNoteText.value.trim();
       hidePrompts();
-      runReplan(pendingSituation, pendingMinutes, pendingTheme);
-    });
-    document.getElementById("replan-method-ai").addEventListener("click", () => {
-      hidePrompts();
-      runAiReplan(pendingSituation, pendingMinutes, pendingTheme);
+      runReplan(pendingSituation, pendingMinutes, pendingTheme, note);
     });
 
     // Situation buttons. "Nap happened here" and "Running behind" ask for a

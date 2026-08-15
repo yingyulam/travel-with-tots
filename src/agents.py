@@ -11,7 +11,7 @@ from . import db, rag
 from .data_loader import maps_url
 from .interactions import (
     DEFAULT_NAP_LENGTH_MIN, FINISHED_EARLY_BUFFER, RUNNING_BEHIND_DELAY,
-    SITUATION_LABELS,
+    SITUATION_LABELS, THEME_CHANGE_BUFFER_MIN,
 )
 from .itinerary import (
     DEFAULT_LUNCH_TARGET_MIN, LUNCH_DURATION_LABEL, LUNCH_SEARCH_RADIUS_MIN,
@@ -44,10 +44,12 @@ WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
 PLANNER_PROMPT_PATH = os.path.join(PROMPTS_DIR, "planner.txt")
 REPLAN_DAY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "replan_day.txt")
 PLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "plan_adjust.txt")
+REPLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "replan_adjust.txt")
 _WEBSITE_CHATBOT_TEMPLATE = None
 _PLANNER_TEMPLATE = None
 _REPLAN_DAY_TEMPLATE = None
 _PLAN_ADJUST_TEMPLATE = None
+_REPLAN_ADJUST_TEMPLATE = None
 
 # How far a stop's time may drift from the rule-based draft's own choice
 # during an adjustment -- a nudge for flow, not a re-decision.
@@ -865,6 +867,17 @@ def reload_replan_day_prompt() -> None:
     _REPLAN_DAY_TEMPLATE = None
 
 
+def _load_replan_adjust_template() -> str:
+    with open(REPLAN_ADJUST_PROMPT_PATH) as f:
+        return f.read()
+
+
+def reload_replan_adjust_prompt() -> None:
+    """Force the next ReplanningAgent.adjust_replan call to re-read the prompt template from disk."""
+    global _REPLAN_ADJUST_TEMPLATE
+    _REPLAN_ADJUST_TEMPLATE = None
+
+
 def _format_stops_for_prompt(stops: list) -> str:
     """Compact, human-readable rendering of a stop list for prompt context
     (kept or originally-planned remaining stops) -- distinct from
@@ -993,7 +1006,11 @@ class ReplanningAgent:
         are the same free-text fields PlanningAgent uses, so a replan can
         also account for sleep habits or preferences the parent already
         described, not just the structured situation/theme."""
-        stops = current_plan.get("stops", [])
+        # "adjusted" only ever means "this round's AI adjuster touched this
+        # stop" -- strip any leftover flag from an earlier round before
+        # deciding what's kept vs. still ahead.
+        stops = [{k: v for k, v in s.items() if k != "adjusted"}
+                 for s in current_plan.get("stops", [])]
         now = hhmm_to_min(current_time)
         kept = [dict(s) for s in stops if display_to_min(s["time"]) <= now]
         remaining = [s for s in stops if display_to_min(s["time"]) > now]
@@ -1021,6 +1038,8 @@ class ReplanningAgent:
             anchor_min = now + (int(minutes) if minutes else RUNNING_BEHIND_DELAY)
         elif situation == "finished_early":
             anchor_min = now + FINISHED_EARLY_BUFFER
+        elif situation in ("weather_rain", "change_theme"):
+            anchor_min = now + THEME_CHANGE_BUFFER_MIN
         # skip_next: the freed time starts right now, no extra buffer.
 
         effective_theme = "Rainy-day" if situation == "weather_rain" else theme
@@ -1082,3 +1101,106 @@ class ReplanningAgent:
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
         }
+
+    def _build_replan_adjust_messages(self, situation, kept, remaining, candidates, ctx):
+        global _REPLAN_ADJUST_TEMPLATE
+        if _REPLAN_ADJUST_TEMPLATE is None:
+            _REPLAN_ADJUST_TEMPLATE = _load_replan_adjust_template()
+        prompt = (
+            _REPLAN_ADJUST_TEMPLATE
+            .replace("{situation_label}", SITUATION_LABELS.get(situation, situation))
+            .replace("{current_time}", ctx["current_time"] or "")
+            .replace("{destination}", ctx["destination"] or "")
+            .replace("{age_months}", str(ctx["age_months"]))
+            .replace("{bedtime}", ctx["bedtime"] or "")
+            .replace("{transit}", ", ".join(ctx["transit"]) if ctx.get("transit") else "none")
+            .replace("{dining}", ctx["dining"] or "none")
+            .replace("{nap_notes}", ctx.get("nap_notes") or "none")
+            .replace("{extra_notes}", ctx.get("extra_notes") or "none")
+            .replace("{kept_stops}", _format_stops_for_prompt(kept))
+            .replace("{remaining_stops}", _format_draft_stops_for_prompt(remaining))
+            .replace("{candidate_venues}", _format_venue_candidates(candidates))
+        )
+        return [{"role": "system", "content": prompt}]
+
+    def adjust_replan(self, draft_plan, *, current_time, destination, age_months,
+                       features=None, transit=None, dining=None, bedtime=None,
+                       nap_notes="", extra_notes="", situation=""):
+        """Given an already-valid rule-based replan draft, proposes a short
+        list of edits (never a full regeneration) to the stops still ahead
+        of `current_time`, mirroring PlanningAgent.adjust_plan() for the
+        planning page. Stops at or before `current_time` ("kept") are never
+        passed to the edit validator/applier, so they're structurally
+        impossible to target -- no separate "locked stops" check needed.
+        Returns {"stops", "edits", "model", "response_time", "input_tokens",
+        "output_tokens"}. Never mutates `draft_plan`."""
+        # "adjusted" only ever means "this round's AI adjuster touched this
+        # stop" -- strip any leftover flag from an earlier round.
+        stops = [{k: v for k, v in s.items() if k != "adjusted"}
+                 for s in draft_plan.get("stops", [])]
+        now = hhmm_to_min(current_time)
+        kept = [s for s in stops if display_to_min(s["time"]) <= now]
+        remaining = [s for s in stops if display_to_min(s["time"]) > now]
+
+        near_neighbourhood = None
+        for s in reversed(kept):
+            if s.get("venue"):
+                near_neighbourhood = s["venue"]["neighbourhood"]
+                break
+
+        used_names = {s["venue"]["name"] for s in stops if s.get("venue")}
+        candidates = db.get_candidate_venues(
+            destination, age_months, features, transit=transit, dining=dining,
+            near_neighbourhood=near_neighbourhood)
+        candidates = [v for v in candidates if v["name"] not in used_names]
+        by_id = {v["id"]: v for v in candidates}
+
+        ctx = dict(destination=destination, age_months=age_months,
+                   current_time=current_time, bedtime=bedtime, dining=dining,
+                   nap_notes=nap_notes, extra_notes=extra_notes, transit=transit,
+                   strict_schedule=False,
+                   activity_duration_min=stop_duration("activity"),
+                   meal_duration_min=stop_duration("meal"),
+                   transit_buffer_min=transit_buffer_min(transit))
+
+        messages = self._build_replan_adjust_messages(situation, kept, remaining, candidates, ctx)
+        reply, usage, elapsed = _call_openrouter(messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
+        input_tokens = usage.get("prompt_tokens")
+        output_tokens = usage.get("completion_tokens")
+
+        cleaned, error = None, None
+        try:
+            parsed = _parse_json_reply(reply)
+            edits = parsed.get("edits") if isinstance(parsed, dict) else None
+            cleaned, error = _validate_plan_edits(edits, remaining, by_id, ctx)
+        except (ValueError, AttributeError):
+            cleaned, error = None, "That wasn't valid JSON."
+
+        if cleaned is None:
+            retry_messages = messages + [
+                {"role": "assistant", "content": reply},
+                {"role": "user", "content": (
+                    f"That response was invalid: {error} Reply again with ONLY "
+                    "strict JSON in the same {\"edits\": [...]} shape, or an "
+                    "empty \"edits\" list if nothing actually needs to change.")},
+            ]
+            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
+            elapsed += elapsed2
+            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
+            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
+            try:
+                parsed2 = _parse_json_reply(reply2)
+                edits2 = parsed2.get("edits") if isinstance(parsed2, dict) else None
+                cleaned, error = _validate_plan_edits(edits2, remaining, by_id, ctx)
+            except (ValueError, AttributeError):
+                cleaned, error = None, "That wasn't valid JSON."
+
+        if cleaned is None:
+            raise ReplanningAgentError(f"Couldn't build a valid set of adjustments: {error}")
+
+        adjusted_remaining = _apply_plan_edits({"stops": remaining}, cleaned, by_id)
+        new_stops = kept + adjusted_remaining
+        new_stops.sort(key=lambda s: display_to_min(s["time"]))
+        return {"stops": new_stops, "edits": cleaned,
+                "model": self.model, "response_time": round(elapsed, 3),
+                "input_tokens": input_tokens, "output_tokens": output_tokens}

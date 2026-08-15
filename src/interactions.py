@@ -46,6 +46,11 @@ RUNNING_BEHIND_DELAY = 45
 FINISHED_EARLY_BUFFER = 15
 # Fallback nap length when the child's usual nap length isn't known.
 DEFAULT_NAP_LENGTH_MIN = 90
+# How soon after "it's raining"/"change the theme" fires the family is
+# assumed to wrap up the current stop and move on -- long enough to pay up
+# and get moving, short enough the day doesn't just drift through the rain
+# untouched.
+THEME_CHANGE_BUFFER_MIN = 30
 
 
 def _display_to_minutes(text):
@@ -66,15 +71,20 @@ def _minutes_to_display(minutes):
     return datetime(2000, 1, 1, minutes // 60, minutes % 60).strftime("%-I:%M %p")
 
 
-def _bonus_stop(minutes, venues, features, used_names):
+def _bonus_stop(minutes, venues, features, used_names, theme_types=None, reason=None):
     """A stop to fill freed-up time: a real unused venue that's open at that
-    time if one fits, else a hint to use the 'Need something now?' panel."""
+    time if one fits, else a hint to use the 'Need something now?' panel.
+    If `theme_types` is given (weather/theme situations), a theme-matching
+    venue is preferred before the generic activity fallback."""
     pool = filter_by_features(venues or [], features or [])
     dur = stop_duration("bonus")
     open_unused = [v for v in pool if v["name"] not in used_names
                    and venue_open_for(v, minutes, dur)]
-    # Prefer an activity for the extra outing, then fall back to any open match.
-    pick = next((v for v in open_unused if v["category"] == "activity"), None)
+    # Prefer a theme match (if asked), then any activity, then any open match.
+    pick = None
+    if theme_types:
+        pick = next((v for v in open_unused if v.get("type") in theme_types), None)
+    pick = pick or next((v for v in open_unused if v["category"] == "activity"), None)
     pick = pick or (open_unused[0] if open_unused else None)
     if pick:
         used_names.add(pick["name"])
@@ -82,14 +92,14 @@ def _bonus_stop(minutes, venues, features, used_names):
             "time": _minutes_to_display(minutes),
             "kind": "bonus",
             "venue": pick,
-            "reason": "✨ Extra stop added with the time you freed up finishing early.",
+            "reason": reason or "✨ Extra stop added with the time you freed up finishing early.",
         }
     return {
         "time": _minutes_to_display(minutes),
         "kind": "bonus",
         "venue": None,
-        "reason": "Freed-up time — fit in an extra nearby stop "
-                  "(try “Need something now?”).",
+        "reason": reason or ("Freed-up time — fit in an extra nearby stop "
+                             "(try “Need something now?”)."),
     }
 
 
@@ -168,11 +178,34 @@ def _enforce_hours(stops, venues, features):
 def _apply_situation(situation, remaining, now, venues, features, used_names, theme=None):
     """Re-decide the stops still ahead. Returns a fresh list of stop dicts."""
     if situation in ("weather_rain", "change_theme"):
-        # Neither situation frees or consumes time -- just re-pick remaining
-        # activity stops toward the target theme's venue types, same times.
+        # The family is assumed to wrap up the current stop and move on
+        # within THEME_CHANGE_BUFFER_MIN -- if the next remaining stop is
+        # further off than that (or there isn't one), pull a theme-matching
+        # stop into that gap instead of leaving the day untouched until
+        # whatever was already scheduled.
         theme_types = next((t["types"] for t in THEMES if t["label"] == theme), set())
         used = set(used_names)
-        return [_retheme_stop(dict(s), theme_types, venues, features, used) for s in remaining]
+        anchor = now + THEME_CHANGE_BUFFER_MIN
+        if not remaining:
+            return [_bonus_stop(
+                anchor, venues, features, used, theme_types=theme_types,
+                reason=f"✨ A {theme or 'new'}-friendly stop for the rest of the day.")]
+        # Meal and nap stops have their own real scheduling constraints (a
+        # lunch spot, a nap window) -- pulling them earlier just because the
+        # theme changed doesn't make sense, same reason _retheme_stop never
+        # swaps their venue either. Only activity stops are eligible to be
+        # pulled into the freed-up gap.
+        shiftable = [s for s in remaining if s.get("kind") not in ("meal", "nap")]
+        shift = (max(0, _display_to_minutes(shiftable[0]["time"]) - anchor)
+                 if shiftable else 0)
+        shifted = []
+        for stop in remaining:
+            moved = dict(stop)
+            if shift > 0 and stop.get("kind") not in ("meal", "nap"):
+                moved["time"] = _minutes_to_display(_display_to_minutes(stop["time"]) - shift)
+                moved["reason"] = "Moved earlier for the theme change. " + moved.get("reason", "")
+            shifted.append(moved)
+        return [_retheme_stop(s, theme_types, venues, features, used) for s in shifted]
 
     if situation == "skip_next":
         # Drop the very next stop, but fill its slot with a different open
@@ -278,9 +311,12 @@ def replan(plan, situation, current_time, venues=None, features=None,
     now = _clock_to_minutes(current_time)
     display_now = _minutes_to_display(now)
 
-    # Keep everything up to and including the stop happening now; only stops
-    # still ahead of the current time get re-decided.
-    stops = plan.get("stops", [])
+    # "adjusted" only ever means "this round's AI adjuster touched this
+    # stop" -- strip any leftover flag from an earlier round (or the
+    # original plan) before deciding what's kept vs. still ahead, so a
+    # fresh replan never shows a stale "Adjusted" badge on a stop it
+    # never actually touched.
+    stops = [{k: v for k, v in s.items() if k != "adjusted"} for s in plan.get("stops", [])]
     kept = [dict(s) for s in stops if _display_to_minutes(s["time"]) <= now]
     remaining = [s for s in stops if _display_to_minutes(s["time"]) > now]
 

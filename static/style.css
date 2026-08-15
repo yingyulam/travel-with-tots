@@ -567,46 +567,6 @@ textarea:focus {
   color: var(--navy);
 }
 
-.replan-method-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.replan-method-btn {
-  flex: 1 1 220px;
-  cursor: pointer;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--blue);
-  border-radius: 10px;
-  background: #fff;
-  font-family: inherit;
-  transition: all 0.15s ease;
-}
-
-.replan-method-btn strong {
-  color: var(--blue);
-  font-size: 0.95rem;
-}
-
-.replan-method-btn span {
-  color: var(--navy);
-  font-size: 0.82rem;
-}
-
-.replan-method-btn:hover {
-  background: var(--blue);
-}
-
-.replan-method-btn:hover strong,
-.replan-method-btn:hover span {
-  color: #fff;
-}
-
 /* Tap-first action panels */
 .action-panel {
   margin-top: 1.5rem;
@@ -650,6 +610,11 @@ textarea:focus {
   background: #fff;
   color: var(--blue);
   transition: all 0.15s ease;
+}
+
+.replan-note-input {
+  flex: 1 1 220px;
+  border-radius: 999px;
 }
 
 .tap-btn:hover {
