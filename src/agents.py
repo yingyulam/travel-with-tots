@@ -51,7 +51,7 @@ _PLAN_ADJUST_TEMPLATE = None
 
 # How far a stop's time may drift from the rule-based draft's own choice
 # during an adjustment -- a nudge for flow, not a re-decision.
-MAX_ADJUST_NUDGE_MIN = 45
+MAX_ADJUST_NUDGE_MIN = 60
 # Bedtime and nap timing are targets the day can gently orbit, not walls,
 # unless the parent said their schedule is strict.
 SCHEDULE_OVERRUN_MIN = 30
