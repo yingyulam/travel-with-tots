@@ -10,6 +10,7 @@ import os
 from datetime import date
 from functools import wraps
 
+import openai
 import requests
 from flask import (
     Flask,
@@ -65,6 +66,7 @@ from src.interactions import (
     replan,
 )
 from src.itinerary import STOP_DURATION_MIN, THEMES, generate_plans
+from src.llms import run_agent
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
 
@@ -387,6 +389,34 @@ def save_replan_prompt():
 def components():
     """Architecture inventory: what's real, deterministic, or still planned."""
     return render_template("components.html")
+
+
+@app.route("/agent")
+@login_required
+@admin_required
+def agent_page():
+    """The AI Agent's own chat page -- isolated from the site-wide chatbot
+    widget so it can be tested on its own before (if ever) replacing it."""
+    return render_template("ai_agent.html")
+
+
+@app.route("/agent/chat", methods=["POST"])
+@login_required
+@admin_required
+def agent_chat_route():
+    """One turn of the AI Agent (tool-calling, via LangGraph), as JSON."""
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    try:
+        result = run_agent(message, history=data.get("history") or [])
+    except KeyError:
+        return jsonify({"error": "The AI Agent isn't configured yet."}), 500
+    except openai.OpenAIError as e:
+        print(f"AI Agent call failed: {e}")
+        return jsonify({"error": "The AI Agent is unavailable right now. Please try again."}), 502
+    return jsonify(result)
 
 
 @app.route("/rag/status")

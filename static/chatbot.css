@@ -129,6 +129,54 @@
   min-height: 160px;
 }
 
+/* Always-visible chat panel for the standalone AI Agent test page --
+   same inner classes as the floating widget, just not fixed-positioned. */
+.twt-agent-chat {
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  border: 1px solid var(--twt-line);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.ai-agent-key-setup {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--twt-line);
+  border-radius: 10px;
+  background: var(--twt-surface);
+}
+
+.ai-agent-key-setup summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--twt-navy);
+}
+
+.ai-agent-key-setup ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.ai-agent-run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+#agent-run-result {
+  margin: 0.5rem 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: var(--twt-surface);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
 .twt-chatbot-msg {
   max-width: 85%;
   padding: 8px 12px;

@@ -152,6 +152,40 @@ model, timestamp, response time, and token counts to `data/results.json`
 (git-ignored runtime data). Closing the widget keeps the conversation for
 next time; "End chat" clears it on purpose.
 
+## AI Agent
+
+An admin-only, isolated test page (`/agent`, linked from `/components`) for
+a genuine tool-calling agent, built with
+[LangGraph](https://langchain-ai.github.io/langgraph/)'s `create_react_agent`
+over an OpenRouter-backed model (`src/llms.py`). Unlike the chatbot above
+(which only ever answers a question), this agent decides *what to do*: given
+a free-text message, it picks between two tools -- planning a full day trip,
+or finding a nearby kid-friendly place -- or just replies directly if
+neither fits. Each tool is a thin wrapper around code that already powers
+the rest of the site (the rule-based planner + `PlanningAgent`'s AI
+adjustment, and `find_nearby`), not new planning logic.
+
+It's deliberately isolated: the site-wide chat bubble is untouched and still
+only answers FAQ questions. This page exists to test the tool-calling agent
+on its own before deciding whether it should ever replace or extend the main
+chatbot.
+
+**Getting an OpenRouter API key** (also needed for the chatbot and AI
+planner above -- one key covers all of it):
+
+- Go to [openrouter.ai](https://openrouter.ai) and sign up (free).
+- Open [openrouter.ai/keys](https://openrouter.ai/keys) and click **Create
+  Key**. Give it a name and copy the value -- it's only shown once.
+- Paste it into `.env` as `OPENROUTER_API_KEY=<your key>` (copy
+  `.env.example` to `.env` first if you haven't already).
+- The default model (`google/gemma-4-26b-a4b-it:free`) doesn't require
+  adding credit. Switching to a paid model (GPT-4o mini, Claude Sonnet 5)
+  needs credit added under
+  [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits).
+- Never commit `.env` or paste a real key into a prompt, screenshot, or
+  commit message -- `_call_openrouter`/`src/llms.py` only ever read it from
+  `os.environ`, and it's never logged or printed.
+
 ## Project structure
 
 ```
@@ -172,6 +206,7 @@ travel-with-tots/
 │   ├── itinerary.py               # generate_plans: rule-based candidate Plan objects
 │   ├── interactions.py            # replan() + find_nearby() placeholders
 │   ├── agents.py                  # chatbot + PlanningAgent logic, routed through OpenRouter
+│   ├── llms.py                    # AI Agent: LangGraph tool-calling agent over OpenRouter
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan)
 │   └── prompts/
@@ -187,6 +222,7 @@ travel-with-tots/
 │   ├── settings.html              # admin: edit knowledge base + prompts
 │   ├── chunks.html                # admin: view and re-run chunking
 │   ├── results.html               # admin: browse ratings, stats per session
+│   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── _chatbot_widget.html       # floating chat widget, included on every page
 │   ├── _nav.html                  # avatar/login + sidebar, included on every page
 │   ├── _stop_preview.html         # shared stop_line() macro (plan.html + dashboard.html)
@@ -196,6 +232,7 @@ travel-with-tots/
 │   ├── landing.css                # landing-page styling
 │   ├── nav.css                    # avatar/login + sidebar styling
 │   ├── chatbot.css, chatbot.js    # chat widget styling + behaviour (incl. ratings)
+│   ├── agent-chat.js              # AI Agent test page's minimal chat behaviour
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
 │   └── results.js                 # Results page auto-refresh polling

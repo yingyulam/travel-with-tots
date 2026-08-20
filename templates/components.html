@@ -31,7 +31,8 @@
     <div class="plan-option">
       <h3 class="plan-option-title">AI Agent (OpenRouter)</h3>
       <div class="badges"><span class="badge">LLM</span></div>
-      <p>Today: separate, directly-invoked calls per feature (plan adjustment, replan adjustment, chatbot) -- no intent-routing or tool-calling loop. Planned: a true orchestrator that reads a query, identifies intent, and routes to whichever tool fits, AI or not.</p>
+      <p>A LangGraph tool-calling agent with 2 tools so far (plan a trip, find a nearby place). Isolated on its own test page for now -- the site's chat bubble is untouched and still just answers FAQ questions.</p>
+      <a class="cta-secondary" href="{{ url_for('agent_page') }}">Try it</a>
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">Memory</h3>

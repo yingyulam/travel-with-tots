@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: AI Agent{% endblock %}
+{% block heading %}AI Agent{% endblock %}
+{% block tagline %}Chat with the agent to plan a trip or find a nearby place.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the AI Agent component -- separate from the site's chat bubble, which is untouched. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <details class="ai-agent-key-setup">
+    <summary>API key setup</summary>
+    <p>This agent calls OpenRouter, the same provider the chatbot and AI planner already use.</p>
+    <ol>
+      <li>Sign up (free) at <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a>.</li>
+      <li>Open <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>, click <strong>Create Key</strong>, and copy the value -- it's only shown once.</li>
+      <li>Paste it into <code>.env</code> as <code>OPENROUTER_API_KEY=&lt;your key&gt;</code> (copy <code>.env.example</code> to <code>.env</code> first if you haven't already).</li>
+      <li>The default free model needs no added credit; switching to a paid model does, under <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noopener">openrouter.ai/settings/credits</a>.</li>
+    </ol>
+    <p class="field-hint">Never paste a real key into chat, a screenshot, or a commit -- the key is only ever read from <code>.env</code> via <code>os.environ</code>, never logged or printed.</p>
+  </details>
+
+  <div class="ai-agent-run-row">
+    <button type="button" class="cta-secondary" id="agent-run-test">▶ Run a test call</button>
+    <span class="field-hint">Sends a fixed request ("Find a nearby quiet spot") and shows exactly which tool ran, so you can verify the integration without guessing what to type.</span>
+  </div>
+  <div id="agent-run-result" hidden></div>
+
+  <div class="twt-agent-chat">
+    <div class="twt-chatbot-messages" id="agent-messages"></div>
+    <form class="twt-chatbot-form" id="agent-form">
+      <input type="text" id="agent-input" placeholder="Plan a trip or find a nearby place…" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='agent-chat.js') }}"></script>
+{% endblock %}
