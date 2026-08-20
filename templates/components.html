@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Components{% endblock %}
+{% block heading %}Components{% endblock %}
+{% block tagline %}What's real, deterministic, or still planned in this app's architecture.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>🟡 Data Connectors</h2>
+  <div class="plan-grid">
+    <div class="plan-option">
+      <h3 class="plan-option-title">Venues DB</h3>
+      <p class="meta">Curated SQLite table</p>
+      <p>Curated venue data (hours, age range, features) queried to ground every plan and replan.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">User initial trip input</h3>
+      <p class="meta">/plan form</p>
+      <p>Wake-up/bedtime, naps, destination, dining, and preferences a parent fills in before planning.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">User in-trip input</h3>
+      <p class="meta">/trip page</p>
+      <p>Situation buttons and optional notes on the trip page ("it's raining", "running behind", "change the theme"...).</p>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>🔵 Agent</h2>
+  <div class="plan-grid">
+    <div class="plan-option">
+      <h3 class="plan-option-title">AI Agent (OpenRouter)</h3>
+      <div class="badges"><span class="badge">LLM</span></div>
+      <p>Today: separate, directly-invoked calls per feature (plan adjustment, replan adjustment, chatbot) -- no intent-routing or tool-calling loop. Planned: a true orchestrator that reads a query, identifies intent, and routes to whichever tool fits, AI or not.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Memory</h3>
+      <div class="badges"><span class="badge badge-pending">not implemented yet</span></div>
+      <p>Nothing persists across sessions today. nap_notes/extra_notes are per-trip form fields, not learned preferences.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Soul</h3>
+      <div class="badges"><span class="badge badge-pending">not implemented yet</span></div>
+      <p>No unified persona/values layer yet -- today there are separate, editable system prompt files per feature (see Settings).</p>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>🔴 Tools</h2>
+  <div class="plan-grid">
+    <div class="plan-option">
+      <h3 class="plan-option-title">Plan trips (adjustment)</h3>
+      <div class="badges"><span class="badge">AI-backed</span></div>
+      <p>PlanningAgent.adjust_plan() smooths the rule-based day plan -- a genuine judgment call, not something rules alone can decide.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Replan a trip on-the-go (adjustment)</h3>
+      <div class="badges"><span class="badge">AI-backed</span></div>
+      <p>ReplanningAgent.adjust_replan() does the same for a mid-trip replan.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Find nearby stops</h3>
+      <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
+      <p>A plain DB filter by need (restaurant, nursing room, quiet spot...) -- intentionally not AI, since there's no judgment call to make.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Look up saved plans</h3>
+      <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
+      <p>The dashboard and saved-trip pages read straight from the database -- not something the AI agent invokes itself.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Do web search</h3>
+      <div class="badges"><span class="badge badge-pending">not implemented yet</span></div>
+      <p>A planned fallback for when the curated venue DB has no match nearby.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Google Map handoff</h3>
+      <div class="badges"><span class="badge badge-pending">not implemented yet</span></div>
+      <p>Real address/geocoding integration for the accommodation field and travel routing.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

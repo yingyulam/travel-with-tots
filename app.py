@@ -381,6 +381,14 @@ def save_replan_prompt():
     return redirect(url_for("settings"))
 
 
+@app.route("/components")
+@login_required
+@admin_required
+def components():
+    """Architecture inventory: what's real, deterministic, or still planned."""
+    return render_template("components.html")
+
+
 @app.route("/rag/status")
 def rag_status():
     """Poll-able indexing status, used by the chatbot widget and Chunks page."""

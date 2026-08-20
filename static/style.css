@@ -811,6 +811,16 @@ textarea:focus {
   color: #6a3fb0;
 }
 
+.badge-pending {
+  background: #fdf0d5;
+  color: #96690b;
+}
+
+.badge-deterministic {
+  background: #e3f5e8;
+  color: #1e7a3d;
+}
+
 .reason {
   color: #55637a;
   font-size: 0.9rem;
