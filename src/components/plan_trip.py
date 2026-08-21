@@ -10,12 +10,8 @@ instead of each having their own copy.
 import requests
 
 from ..agents import PlanningAgent, PlanningAgentError
-from ..data_loader import load_venues
+from ..data_loader import VENUES
 from ..itinerary import generate_plans
-
-# Venue data never changes at runtime, loaded once, same pattern src/llms.py
-# already uses.
-VENUES = load_venues()
 
 
 def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",

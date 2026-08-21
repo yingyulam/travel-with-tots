@@ -9,12 +9,8 @@ and agents.py (AI adjustment) -- this file only composes them, so app.py's
 import requests
 
 from ..agents import ReplanningAgent, ReplanningAgentError
-from ..data_loader import load_venues
+from ..data_loader import VENUES
 from ..interactions import replan
-
-# Venue data never changes at runtime, loaded once, same pattern the other
-# components already use.
-VENUES = load_venues()
 
 
 def replan_trip(*, plan, situation, current_time, destination="", age_months=0,

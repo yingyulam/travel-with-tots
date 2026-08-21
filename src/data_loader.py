@@ -33,3 +33,8 @@ def load_venues():
     for venue in venues:
         venue["maps_url"] = maps_url(venue["name"])
     return venues
+
+
+# Venue data never changes at runtime, so load it once here and let every
+# caller import this instead of each calling load_venues() independently.
+VENUES = load_venues()

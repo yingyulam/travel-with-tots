@@ -36,7 +36,7 @@ from src.agents import (
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
-from src.data_loader import FEATURE_LABELS, load_venues
+from src.data_loader import FEATURE_LABELS, VENUES
 from src.db import (
     TRIP_FIELDS,
     add_child,
@@ -86,9 +86,6 @@ init_db()
 # Chunk + embed the knowledge base in the background; the chatbot widget
 # polls /rag/status and shows a progress animation until this finishes.
 rag.init_index_async()
-
-# Venue data never changes at runtime, so load it once at startup.
-VENUES = load_venues()
 
 # Transit choices and feature checkboxes, defined once and shared with the
 # template so the form and the plan stay in sync.

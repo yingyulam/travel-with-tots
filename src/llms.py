@@ -15,16 +15,13 @@ from langgraph.prebuilt import create_react_agent
 
 from . import interactions
 from .components.plan_trip import plan_trip
-from .data_loader import load_venues
+from .data_loader import VENUES
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Scoped to just this agent (not agents.py's shared DEFAULT_MODEL, used by the
 # chatbot/planner/replanner) -- picked to dodge google/gemma-4-26b-a4b-it:free's
 # shared-pool rate limiting, still a free model.
 AGENT_MODEL = "openai/gpt-oss-20b:free"
-
-# Venue data never changes at runtime, loaded once, same as app.py.
-VENUES = load_venues()
 
 SYSTEM_PROMPT = (
     "You are Travel with Tots' trip-planning assistant. You can plan a day "
