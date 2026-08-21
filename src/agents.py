@@ -462,6 +462,52 @@ def _validate_plan_edits(edits, draft_stops: list, by_id: dict, ctx: dict):
     return cleaned, None
 
 
+def _call_and_validate_edits(messages: list[dict], model: str, stops: list,
+                              by_id: dict, ctx: dict, error_cls: type[Exception]):
+    """Calls OpenRouter with the edits schema, validates the reply against
+    `stops` (retrying once, with the model's own invalid reply and the
+    specific rule it broke, on failure), and raises `error_cls` if neither
+    attempt produces a valid edit list. Returns (edits, elapsed_seconds,
+    input_tokens, output_tokens). Shared by adjust_plan and adjust_replan,
+    which only differ in which stops the edits are validated against and
+    which error to raise."""
+    reply, usage, elapsed = _call_openrouter(messages, model, PLAN_EDITS_RESPONSE_FORMAT)
+    input_tokens = usage.get("prompt_tokens")
+    output_tokens = usage.get("completion_tokens")
+
+    cleaned, error = None, None
+    try:
+        parsed = _parse_json_reply(reply)
+        edits = parsed.get("edits") if isinstance(parsed, dict) else None
+        cleaned, error = _validate_plan_edits(edits, stops, by_id, ctx)
+    except (ValueError, AttributeError):
+        cleaned, error = None, "That wasn't valid JSON."
+
+    if cleaned is None:
+        retry_messages = messages + [
+            {"role": "assistant", "content": reply},
+            {"role": "user", "content": (
+                f"That response was invalid: {error} Reply again with ONLY "
+                "strict JSON in the same {\"edits\": [...]} shape, or an "
+                "empty \"edits\" list if nothing actually needs to change.")},
+        ]
+        reply2, usage2, elapsed2 = _call_openrouter(retry_messages, model, PLAN_EDITS_RESPONSE_FORMAT)
+        elapsed += elapsed2
+        input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
+        output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
+        try:
+            parsed2 = _parse_json_reply(reply2)
+            edits2 = parsed2.get("edits") if isinstance(parsed2, dict) else None
+            cleaned, error = _validate_plan_edits(edits2, stops, by_id, ctx)
+        except (ValueError, AttributeError):
+            cleaned, error = None, "That wasn't valid JSON."
+
+    if cleaned is None:
+        raise error_cls(f"Couldn't build a valid set of adjustments: {error}")
+
+    return cleaned, elapsed, input_tokens, output_tokens
+
+
 class PlanningAgent:
     """Smooths an already-valid rule-based day plan (src/itinerary.py's
     generate_plans) by proposing a short list of edits -- never a full
@@ -519,39 +565,8 @@ class PlanningAgent:
                    transit_buffer_min=transit_buffer_min(transit))
 
         messages = self._build_adjust_messages(draft_stops, candidates, ctx)
-        reply, usage, elapsed = _call_openrouter(messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
-        input_tokens = usage.get("prompt_tokens")
-        output_tokens = usage.get("completion_tokens")
-
-        cleaned, error = None, None
-        try:
-            parsed = _parse_json_reply(reply)
-            edits = parsed.get("edits") if isinstance(parsed, dict) else None
-            cleaned, error = _validate_plan_edits(edits, draft_stops, by_id, ctx)
-        except (ValueError, AttributeError):
-            cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            retry_messages = messages + [
-                {"role": "assistant", "content": reply},
-                {"role": "user", "content": (
-                    f"That response was invalid: {error} Reply again with ONLY "
-                    "strict JSON in the same {\"edits\": [...]} shape, or an "
-                    "empty \"edits\" list if nothing actually needs to change.")},
-            ]
-            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
-            elapsed += elapsed2
-            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
-            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
-            try:
-                parsed2 = _parse_json_reply(reply2)
-                edits2 = parsed2.get("edits") if isinstance(parsed2, dict) else None
-                cleaned, error = _validate_plan_edits(edits2, draft_stops, by_id, ctx)
-            except (ValueError, AttributeError):
-                cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            raise PlanningAgentError(f"Couldn't build a valid set of adjustments: {error}")
+        cleaned, elapsed, input_tokens, output_tokens = _call_and_validate_edits(
+            messages, self.model, draft_stops, by_id, ctx, PlanningAgentError)
 
         return {"stops": _apply_plan_edits(draft_plan, cleaned, by_id), "edits": cleaned,
                 "model": self.model, "response_time": round(elapsed, 3),
@@ -657,39 +672,8 @@ class ReplanningAgent:
                    transit_buffer_min=transit_buffer_min(transit))
 
         messages = self._build_replan_adjust_messages(situation, kept, remaining, candidates, ctx)
-        reply, usage, elapsed = _call_openrouter(messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
-        input_tokens = usage.get("prompt_tokens")
-        output_tokens = usage.get("completion_tokens")
-
-        cleaned, error = None, None
-        try:
-            parsed = _parse_json_reply(reply)
-            edits = parsed.get("edits") if isinstance(parsed, dict) else None
-            cleaned, error = _validate_plan_edits(edits, remaining, by_id, ctx)
-        except (ValueError, AttributeError):
-            cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            retry_messages = messages + [
-                {"role": "assistant", "content": reply},
-                {"role": "user", "content": (
-                    f"That response was invalid: {error} Reply again with ONLY "
-                    "strict JSON in the same {\"edits\": [...]} shape, or an "
-                    "empty \"edits\" list if nothing actually needs to change.")},
-            ]
-            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, PLAN_EDITS_RESPONSE_FORMAT)
-            elapsed += elapsed2
-            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
-            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
-            try:
-                parsed2 = _parse_json_reply(reply2)
-                edits2 = parsed2.get("edits") if isinstance(parsed2, dict) else None
-                cleaned, error = _validate_plan_edits(edits2, remaining, by_id, ctx)
-            except (ValueError, AttributeError):
-                cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            raise ReplanningAgentError(f"Couldn't build a valid set of adjustments: {error}")
+        cleaned, elapsed, input_tokens, output_tokens = _call_and_validate_edits(
+            messages, self.model, remaining, by_id, ctx, ReplanningAgentError)
 
         adjusted_remaining = _apply_plan_edits({"stops": remaining}, cleaned, by_id)
         new_stops = kept + adjusted_remaining
