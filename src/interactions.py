@@ -98,7 +98,7 @@ def _bonus_stop(minutes, venues, features, used_names, theme_types=None, reason=
         "time": _minutes_to_display(minutes),
         "kind": "bonus",
         "venue": None,
-        "reason": reason or ("Freed-up time — fit in an extra nearby stop "
+        "reason": reason or ("Freed-up time -- fit in an extra nearby stop "
                              "(try “Need something now?”)."),
     }
 
@@ -169,7 +169,7 @@ def _enforce_hours(stops, venues, features):
             used.add(alt["name"])
             swapped = dict(stop)
             swapped["venue"] = alt
-            swapped["reason"] = "Swapped in — the earlier pick was closed by then. " + stop["reason"]
+            swapped["reason"] = "Swapped in -- the earlier pick was closed by then. " + stop["reason"]
             result.append(swapped)
         # else: nothing open fits the new time -> drop the stop
     return result
@@ -219,8 +219,8 @@ def _apply_situation(situation, remaining, now, venues, features, used_names, th
 
     if situation == "finished_early":
         # This stop wrapped up early. Keep going, just sooner: pull the rest of
-        # the day earlier to use the freed time, and — if the freed time opens a
-        # slot — fit a real extra stop into it.
+        # the day earlier to use the freed time, and -- if the freed time opens a
+        # slot -- fit a real extra stop into it.
         if not remaining:
             return [_bonus_stop(now, venues, features, used_names)]
         starts = [_display_to_minutes(s["time"]) for s in remaining]
@@ -233,7 +233,7 @@ def _apply_situation(situation, remaining, now, venues, features, used_names, th
         out[0] = dict(out[0])
         out[0]["reason"] = "Moved up after finishing early. " + out[0]["reason"]
         if shift > 0:
-            # The old last slot is now free — fit an extra stop into it.
+            # The old last slot is now free -- fit an extra stop into it.
             out.append(_bonus_stop(starts[-1], venues, features, used_names))
         return out
 
@@ -278,7 +278,7 @@ def _nap_here(kept, remaining, bedtime_min, nap_length):
 
     current = kept[-1]
     extended_end = _display_to_minutes(current["time"]) + nap_length
-    current["reason"] = (f"😴 Nap happened here — staying about {nap_length} min "
+    current["reason"] = (f"😴 Nap happened here -- staying about {nap_length} min "
                          f"longer while they sleep. " + current.get("reason", "")).strip()
 
     out = []

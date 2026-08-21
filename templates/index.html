@@ -1,46 +1,39 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Travel with Tots</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
-</head>
-<body class="{% if current_parent %}has-sidebar{% endif %}">
-  {% include "_nav.html" %}
+{% extends "base.html" %}
 
-  <main class="hero">
-    <div class="hero-overlay">
-      <h1 class="app-name">Travel with Tots</h1>
-      <p class="tagline">Stress-free itineraries for parents adventuring with children 0–5.</p>
-      <a class="cta" href="{{ url_for('plan') }}">Plan my day</a>
-    </div>
-  </main>
+{% block stylesheets %}
+<link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+{% endblock %}
+
+{% block header %}{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="hero-overlay">
+    <h1 class="app-name">Travel with Tots</h1>
+    <p class="tagline">Stress-free itineraries for parents adventuring with children 0-5.</p>
+    <a class="cta" href="{{ url_for('plan') }}">Plan my day</a>
+  </div>
+</div>
 
 <section class="features" id="learn-more">
-    <div class="feature">
-      <h3>🍼 Built around your baby</h3>
-      <p>Plans built around your child's age, nap and feeding schedule, and travel gear.</p>
-    </div>
-    <div class="feature">
-      <h3>🗺️ Find places nearby</h3>
-      <p>Find kid-friendly restaurants, nursing rooms, and rest stops the moment you need them.</p>
-    </div>
-    <div class="feature">
-      <h3>🔄 Replan on the go</h3>
-      <p>Plans change mid-day? Get an instant update, or ask the AI for a smarter one, without losing your original plan.</p>
-    </div>
+  <div class="feature">
+    <h3>🍼 Built around your baby</h3>
+    <p>Plans built around your child's age, nap and feeding schedule, and travel gear.</p>
+  </div>
+  <div class="feature">
+    <h3>🗺️ Find places nearby</h3>
+    <p>Find kid-friendly restaurants, nursing rooms, and rest stops the moment you need them.</p>
+  </div>
+  <div class="feature">
+    <h3>🔄 Replan on the go</h3>
+    <p>Plans change mid-day? Get an instant update, or ask the AI for a smarter one, without losing your original plan.</p>
+  </div>
 </section>
+{% endblock %}
 
-  <footer class="footer">
-    <p>Travel with Tots: stress-free adventures for little ones.</p>
-    <p>&copy; 2026 Travel with Tots. All rights reserved.</p>
-  </footer>
-
-  {% include "_chatbot_widget.html" %}
-  <script src="{{ url_for('static', filename='rag-status.js') }}"></script>
-  <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
-</body>
-</html>
+{% block footer %}
+<footer class="footer">
+  <p>Travel with Tots: stress-free adventures for little ones.</p>
+  <p>&copy; 2026 Travel with Tots. All rights reserved.</p>
+</footer>
+{% endblock %}

@@ -1,497 +1,483 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Travel with Tots: Your day</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
-</head>
-<body class="{% if current_parent %}has-sidebar{% endif %}">
-  {% include "_nav.html" %}
+{% extends "base.html" %}
 
-  {% set transit_label = trip.transit | map('capitalize') | join(', ') %}
-  <header class="masthead">
-    {% if saved %}
-    <a class="home-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+{% block title %}Travel with Tots: Your day{% endblock %}
+
+{% block header %}
+{% set transit_label = trip.transit | map('capitalize') | join(', ') %}
+<header class="masthead">
+  {% if saved %}
+  <a class="home-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+  {% else %}
+  <a class="home-link" href="{{ url_for('plan') }}">← Back to plans</a>
+  {% endif %}
+  <h1 class="app-name">Your day in {{ trip.destination }}</h1>
+  <p class="tagline">🚕 Getting around by {{ transit_label or 'Not specified' }}</p>
+</header>
+{% endblock %}
+
+{% block content %}
+{% set transit_label = trip.transit | map('capitalize') | join(', ') %}
+<section class="card">
+  <!-- 1. Header: destination/transit (above) + adjustable current time -->
+  <div class="trip-header">
+    <p class="transit-pill">🚕 {{ transit_label or 'Not specified' }}</p>
+    <label class="field current-time-field">
+      <span>Current time</span>
+      <input type="time" id="current-time">
+    </label>
+  </div>
+  <!-- 2. Plan version selector: pinned at the top so the active version is
+       never ambiguous. Shows a single "Original" pill before any replan. -->
+  <div class="plan-picker" id="plan-picker"></div>
+  <p id="replan-status" class="replan-status" hidden></p>
+
+  <!-- 3. Live timeline of the chosen plan -->
+  <div id="timeline-host"></div>
+
+  <!-- 4. Situation buttons -->
+  <div class="action-panel">
+    <p class="panel-title">Something came up?</p>
+    <div class="chips" id="situation-bar">
+      {% for key, label in situation_options %}
+      <button type="button" class="tap-btn" data-situation="{{ key }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="nap-prompt" id="nap-prompt" hidden>
+      <div id="nap-ask">
+        <p>Your child fell asleep, want to stay at this stop longer while they nap?</p>
+        <div class="chips">
+          <button type="button" class="tap-btn" id="nap-yes">Yes</button>
+          <button type="button" class="tap-btn" id="nap-no">No</button>
+        </div>
+      </div>
+      <div id="nap-duration" hidden>
+        <p>How long will you stay at this stop?</p>
+        <div class="chips" id="nap-length-bar">
+          <button type="button" class="tap-btn" data-mins="30">30 min</button>
+          <button type="button" class="tap-btn" data-mins="60">1 hour</button>
+          <button type="button" class="tap-btn" data-mins="90">1.5 hours</button>
+          <button type="button" class="tap-btn" data-mins="120">2 hours</button>
+        </div>
+      </div>
+    </div>
+    <div class="nap-prompt" id="behind-prompt" hidden>
+      <p>How far behind are you running?</p>
+      <div class="chips" id="behind-length-bar">
+        <button type="button" class="tap-btn" data-mins="15">15 min</button>
+        <button type="button" class="tap-btn" data-mins="30">30 min</button>
+        <button type="button" class="tap-btn" data-mins="45">45 min</button>
+        <button type="button" class="tap-btn" data-mins="60">1 hour</button>
+      </div>
+    </div>
+    <div class="nap-prompt" id="theme-prompt" hidden>
+      <p>What kind of day instead?</p>
+      <div class="chips" id="theme-choice-bar">
+        <button type="button" class="tap-btn" data-theme="Outdoorsy">Outdoorsy</button>
+        <button type="button" class="tap-btn" data-theme="Rainy-day">Rainy-day</button>
+        <button type="button" class="tap-btn" data-theme="Culture">Culture</button>
+      </div>
+    </div>
+    <div class="nap-prompt" id="replan-confirm" hidden>
+      <p id="replan-confirm-text"></p>
+      <div class="chips">
+        <input type="text" id="replan-note-text" class="replan-note-input" hidden
+               placeholder="Anything specific? (optional)">
+        <button type="button" class="tap-btn" id="replan-confirm-no">No, keep current plan</button>
+        <button type="button" class="tap-btn" id="replan-confirm-yes">Yes, replan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Need-nearby panel -->
+  <div class="action-panel">
+    <p class="panel-title">Need something now?</p>
+    <div class="chips" id="need-bar">
+      {% for key, label in need_options %}
+      <button type="button" class="tap-btn" data-need="{{ key }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="need-other-row" id="need-other-row" hidden>
+      <input type="text" id="need-other-text" placeholder="Describe what you need…">
+      <button type="button" class="tap-btn" id="need-other-go">Find</button>
+    </div>
+    <div id="need-results"></div>
+  </div>
+
+  {% if not saved %}
+  <div class="action-panel">
+    <p class="panel-title">Keep this day</p>
+    {% if current_parent and trip_form and trip_form.child_ids %}
+    <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form" id="save-trip-form">
+      <textarea name="plan" id="save-plan-field" hidden></textarea>
+      <textarea name="trip_form" hidden>{{ trip_form | tojson }}</textarea>
+      <button type="submit" class="cta-secondary">💾 Save this plan</button>
+    </form>
+    {% elif current_parent %}
+    <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
     {% else %}
-    <a class="home-link" href="{{ url_for('plan') }}">← Back to plans</a>
+    <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
     {% endif %}
-    <h1 class="app-name">Your day in {{ trip.destination }}</h1>
-    <p class="tagline">🚕 Getting around by {{ transit_label or 'Not specified' }}</p>
-  </header>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
 
-  <main class="layout">
-    <section class="card">
-      <!-- 1. Header: destination/transit (above) + adjustable current time -->
-      <div class="trip-header">
-        <p class="transit-pill">🚕 {{ transit_label or 'Not specified' }}</p>
-        <label class="field current-time-field">
-          <span>Current time</span>
-          <input type="time" id="current-time">
-        </label>
-      </div>
-      <!-- 2. Plan version selector: pinned at the top so the active version is
-           never ambiguous. Shows a single "Original" pill before any replan. -->
-      <div class="plan-picker" id="plan-picker"></div>
-      <p id="replan-status" class="replan-status" hidden></p>
+{% block scripts %}
+<script id="trip-data" type="application/json">{{ trip | tojson }}</script>
+<script id="features-data" type="application/json">{{ feature_options | tojson }}</script>
+<script>
+  const tripData = JSON.parse(document.getElementById("trip-data").textContent);
+  const FEATURES = JSON.parse(document.getElementById("features-data").textContent);
+  const PLANS = tripData.plans.slice();   // versions; index 0 is the original
+  let active = 0;
 
-      <!-- 3. Live timeline of the chosen plan -->
-      <div id="timeline-host"></div>
+  const picker = document.getElementById("plan-picker");
+  const host = document.getElementById("timeline-host");
+  const timeField = document.getElementById("current-time");
+  const status = document.getElementById("replan-status");
 
-      <!-- 4. Situation buttons -->
-      <div class="action-panel">
-        <p class="panel-title">Something came up?</p>
-        <div class="chips" id="situation-bar">
-          {% for key, label in situation_options %}
-          <button type="button" class="tap-btn" data-situation="{{ key }}">{{ label }}</button>
-          {% endfor %}
-        </div>
-        <div class="nap-prompt" id="nap-prompt" hidden>
-          <div id="nap-ask">
-            <p>Your child fell asleep, want to stay at this stop longer while they nap?</p>
-            <div class="chips">
-              <button type="button" class="tap-btn" id="nap-yes">Yes</button>
-              <button type="button" class="tap-btn" id="nap-no">No</button>
-            </div>
-          </div>
-          <div id="nap-duration" hidden>
-            <p>How long will you stay at this stop?</p>
-            <div class="chips" id="nap-length-bar">
-              <button type="button" class="tap-btn" data-mins="30">30 min</button>
-              <button type="button" class="tap-btn" data-mins="60">1 hour</button>
-              <button type="button" class="tap-btn" data-mins="90">1.5 hours</button>
-              <button type="button" class="tap-btn" data-mins="120">2 hours</button>
-            </div>
-          </div>
-        </div>
-        <div class="nap-prompt" id="behind-prompt" hidden>
-          <p>How far behind are you running?</p>
-          <div class="chips" id="behind-length-bar">
-            <button type="button" class="tap-btn" data-mins="15">15 min</button>
-            <button type="button" class="tap-btn" data-mins="30">30 min</button>
-            <button type="button" class="tap-btn" data-mins="45">45 min</button>
-            <button type="button" class="tap-btn" data-mins="60">1 hour</button>
-          </div>
-        </div>
-        <div class="nap-prompt" id="theme-prompt" hidden>
-          <p>What kind of day instead?</p>
-          <div class="chips" id="theme-choice-bar">
-            <button type="button" class="tap-btn" data-theme="Outdoorsy">Outdoorsy</button>
-            <button type="button" class="tap-btn" data-theme="Rainy-day">Rainy-day</button>
-            <button type="button" class="tap-btn" data-theme="Culture">Culture</button>
-          </div>
-        </div>
-        <div class="nap-prompt" id="replan-confirm" hidden>
-          <p id="replan-confirm-text"></p>
-          <div class="chips">
-            <input type="text" id="replan-note-text" class="replan-note-input" hidden
-                   placeholder="Anything specific? (optional)">
-            <button type="button" class="tap-btn" id="replan-confirm-no">No, keep current plan</button>
-            <button type="button" class="tap-btn" id="replan-confirm-yes">Yes, replan</button>
-          </div>
-        </div>
-      </div>
+  // Default the current-time field to the local clock (adjustable).
+  function pad(n) { return String(n).padStart(2, "0"); }
+  if (tripData.current_time) {
+    timeField.value = tripData.current_time;
+  } else {
+    const now = new Date();
+    timeField.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
 
-      <!-- 5. Need-nearby panel -->
-      <div class="action-panel">
-        <p class="panel-title">Need something now?</p>
-        <div class="chips" id="need-bar">
-          {% for key, label in need_options %}
-          <button type="button" class="tap-btn" data-need="{{ key }}">{{ label }}</button>
-          {% endfor %}
-        </div>
-        <div class="need-other-row" id="need-other-row" hidden>
-          <input type="text" id="need-other-text" placeholder="Describe what you need…">
-          <button type="button" class="tap-btn" id="need-other-go">Find</button>
-        </div>
-        <div id="need-results"></div>
-      </div>
+  function toMinutes(display) {            // "1:15 PM" -> minutes
+    const m = display.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!m) return null;
+    let h = Number(m[1]) % 12;
+    if (/pm/i.test(m[3])) h += 12;
+    return h * 60 + Number(m[2]);
+  }
+  function nowMinutes() {
+    if (!timeField.value) return null;
+    const [h, mm] = timeField.value.split(":").map(Number);
+    return h * 60 + mm;
+  }
+  function nowDisplay() {
+    const mm = nowMinutes();
+    if (mm === null) return "";
+    const d = new Date(2000, 0, 1, Math.floor(mm / 60), mm % 60);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
 
-      {% if not saved %}
-      <div class="action-panel">
-        <p class="panel-title">Keep this day</p>
-        {% if current_parent and trip_form and trip_form.child_ids %}
-        <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form" id="save-trip-form">
-          <textarea name="plan" id="save-plan-field" hidden></textarea>
-          <textarea name="trip_form" hidden>{{ trip_form | tojson }}</textarea>
-          <button type="submit" class="cta-secondary">💾 Save this plan</button>
-        </form>
-        {% elif current_parent %}
-        <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
-        {% else %}
-        <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
-        {% endif %}
-      </div>
-      {% endif %}
-    </section>
-  </main>
+  function badges(v) {
+    const parts = FEATURES.filter(([key]) => v[key]).map(([, label]) => `<span class="badge">${label}</span>`);
+    if (v.nap_friendly) parts.push(`<span class="badge badge-nap">Nap-friendly</span>`);
+    return parts.join("");
+  }
 
-  <footer class="footer">
-    <p>Travel with Tots: stress-free adventures for little ones.</p>
-  </footer>
+  // The venue data grounding a stop's "reason" -- rule-based venues use
+  // open/close with no age fields; AI-planner venues use open_time/close_time
+  // plus min_age_months/max_age_months. Tolerate both.
+  function stopWhyDetail(v) {
+    const open = v.open || v.open_time;
+    const close = v.close || v.close_time;
+    const hours = (open && close) ? `Open ${open}-${close}` : "Hours unknown";
+    const age = (v.min_age_months != null && v.max_age_months != null)
+      ? ` · Ages ${v.min_age_months}-${v.max_age_months} months` : "";
+    return `<div class="twt-citation-detail-meta">${v.neighbourhood}${age}</div>
+            <p>${hours}</p>
+            <div class="badges">${badges(v)}</div>`;
+  }
 
-  <script id="trip-data" type="application/json">{{ trip | tojson }}</script>
-  <script id="features-data" type="application/json">{{ feature_options | tojson }}</script>
-  <script>
-    const tripData = JSON.parse(document.getElementById("trip-data").textContent);
-    const FEATURES = JSON.parse(document.getElementById("features-data").textContent);
-    const PLANS = tripData.plans.slice();   // versions; index 0 is the original
-    let active = 0;
+  // Which stop is "now": the latest stop that has already started.
+  function nowIndex(stops) {
+    const cur = nowMinutes();
+    if (cur === null) return -1;
+    let idx = -1;
+    stops.forEach((s, i) => { if (toMinutes(s.time) <= cur) idx = i; });
+    return idx;
+  }
 
-    const picker = document.getElementById("plan-picker");
-    const host = document.getElementById("timeline-host");
-    const timeField = document.getElementById("current-time");
-    const status = document.getElementById("replan-status");
-
-    // Default the current-time field to the local clock (adjustable).
-    function pad(n) { return String(n).padStart(2, "0"); }
-    if (tripData.current_time) {
-      timeField.value = tripData.current_time;
+  function renderStop(stop, state) {
+    const v = stop.venue;
+    let body;
+    if (stop.kind === "meal" && v) {
+      // A lunch break to fit in, deliberately lighter than a real stop.
+      body = `<div class="stop-body meal-body">
+           <h3>🍽 Lunch break${stop.duration ? " · ⏱ " + stop.duration : ""}</h3>
+           <p class="meta">${v.name} · ${v.neighbourhood}</p>
+           <p class="reason">${stop.reason}</p>
+           <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
+           <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
+           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
+         </div>`;
+    } else if (v) {
+      body = `<div class="stop-body">
+           <h3>${v.name}${stop.adjusted ? ' <span class="badge">✨ adjusted</span>' : ''}</h3>
+           <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
+           <div class="badges">${badges(v)}</div>
+           <p class="reason">💡 ${stop.reason}</p>
+           <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
+           <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
+           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
+         </div>`;
     } else {
-      const now = new Date();
-      timeField.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      body = `<div class="stop-body empty-body">
+           <h3>${stop.kind === "leave" ? "🚗 Leave by " + stop.time
+                : stop.kind === "bonus" ? "✨ Free time, add a stop"
+                : "No matching venue"}</h3>
+           <p class="reason">${stop.reason}</p>
+         </div>`;
     }
+    const tag = state ? `<span class="state-tag ${state}">${state === "now" ? "Now" : "Done"}</span>` : "";
+    return `<li class="stop ${stop.kind} ${state}">
+              <div class="stop-time">${stop.time}${tag}</div>
+              ${body}
+            </li>`;
+  }
 
-    function toMinutes(display) {            // "1:15 PM" -> minutes
-      const m = display.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      if (!m) return null;
-      let h = Number(m[1]) % 12;
-      if (/pm/i.test(m[3])) h += 12;
-      return h * 60 + Number(m[2]);
-    }
-    function nowMinutes() {
-      if (!timeField.value) return null;
-      const [h, mm] = timeField.value.split(":").map(Number);
-      return h * 60 + mm;
-    }
-    function nowDisplay() {
-      const mm = nowMinutes();
-      if (mm === null) return "";
-      const d = new Date(2000, 0, 1, Math.floor(mm / 60), mm % 60);
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    }
+  function renderTimeline() {
+    const plan = PLANS[active];
+    const nowI = nowIndex(plan.stops);
+    const items = plan.stops.map((s, i) => {
+      const state = i < nowI ? "done" : i === nowI ? "now" : "";
+      return renderStop(s, state);
+    }).join("");
+    host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
+  }
 
-    function badges(v) {
-      const parts = FEATURES.filter(([key]) => v[key]).map(([, label]) => `<span class="badge">${label}</span>`);
-      if (v.nap_friendly) parts.push(`<span class="badge badge-nap">Nap-friendly</span>`);
-      return parts.join("");
-    }
-
-    // The venue data grounding a stop's "reason" -- rule-based venues use
-    // open/close with no age fields; AI-planner venues use open_time/close_time
-    // plus min_age_months/max_age_months. Tolerate both.
-    function stopWhyDetail(v) {
-      const open = v.open || v.open_time;
-      const close = v.close || v.close_time;
-      const hours = (open && close) ? `Open ${open}-${close}` : "Hours unknown";
-      const age = (v.min_age_months != null && v.max_age_months != null)
-        ? ` · Ages ${v.min_age_months}-${v.max_age_months} months` : "";
-      return `<div class="twt-citation-detail-meta">${v.neighbourhood}${age}</div>
-              <p>${hours}</p>
-              <div class="badges">${badges(v)}</div>`;
-    }
-
-    // Which stop is "now": the latest stop that has already started.
-    function nowIndex(stops) {
-      const cur = nowMinutes();
-      if (cur === null) return -1;
-      let idx = -1;
-      stops.forEach((s, i) => { if (toMinutes(s.time) <= cur) idx = i; });
-      return idx;
-    }
-
-    function renderStop(stop, state) {
-      const v = stop.venue;
-      let body;
-      if (stop.kind === "meal" && v) {
-        // A lunch break to fit in, deliberately lighter than a real stop.
-        body = `<div class="stop-body meal-body">
-             <h3>🍽 Lunch break${stop.duration ? " · ⏱ " + stop.duration : ""}</h3>
-             <p class="meta">${v.name} · ${v.neighbourhood}</p>
-             <p class="reason">${stop.reason}</p>
-             <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
-             <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
-             <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-           </div>`;
-      } else if (v) {
-        body = `<div class="stop-body">
-             <h3>${v.name}${stop.adjusted ? ' <span class="badge">✨ adjusted</span>' : ''}</h3>
-             <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
-             <div class="badges">${badges(v)}</div>
-             <p class="reason">💡 ${stop.reason}</p>
-             <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
-             <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
-             <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-           </div>`;
-      } else {
-        body = `<div class="stop-body empty-body">
-             <h3>${stop.kind === "leave" ? "🚗 Leave by " + stop.time
-                  : stop.kind === "bonus" ? "✨ Free time, add a stop"
-                  : "No matching venue"}</h3>
-             <p class="reason">${stop.reason}</p>
-           </div>`;
-      }
-      const tag = state ? `<span class="state-tag ${state}">${state === "now" ? "Now" : "Done"}</span>` : "";
-      return `<li class="stop ${stop.kind} ${state}">
-                <div class="stop-time">${stop.time}${tag}</div>
-                ${body}
-              </li>`;
-    }
-
-    function renderTimeline() {
-      const plan = PLANS[active];
-      const nowI = nowIndex(plan.stops);
-      const items = plan.stops.map((s, i) => {
-        const state = i < nowI ? "done" : i === nowI ? "now" : "";
-        return renderStop(s, state);
-      }).join("");
-      host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
-    }
-
-    // Fixed slots: Original (0, never changes), Updated (1, rule-based
-    // replan with the AI adjuster's edits already applied). Iterating over
-    // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole.
-    const SLOT_LABELS = ["Original", "Updated"];
-    function renderTabs() {
-      picker.innerHTML = SLOT_LABELS
-        .map((label, i) => PLANS[i]
-          ? `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${label}</button>`
-          : "")
-        .join("");
-      picker.querySelectorAll(".plan-tab").forEach((tab) => {
-        tab.addEventListener("click", () => {
-          active = Number(tab.dataset.index);
-          renderTabs();
-          renderTimeline();
-        });
-      });
-    }
-
-    timeField.addEventListener("input", renderTimeline);
-
-    // Delegated so it keeps working after renderTimeline() rebuilds
-    // host.innerHTML wholesale (time change, tab switch, re-plan).
-    host.addEventListener("click", (e) => {
-      const btn = e.target.closest(".stop-why-btn");
-      if (!btn) return;
-      const detail = btn.nextElementSibling;
-      const expanded = btn.getAttribute("aria-expanded") === "true";
-      detail.hidden = expanded;
-      btn.setAttribute("aria-expanded", String(!expanded));
-    });
-
-    // Re-plan the rest of the day (rule-based), then let the AI adjuster
-    // smooth it, in one request -- same draft-then-adjust pattern the
-    // planning page uses. Always installs the result as the single
-    // "Updated" version. minutes is the parent-entered duration (nap
-    // length / how far behind); theme is the parent-picked target for
-    // "change_theme"; note is an optional one-off addition to extra_notes
-    // for weather_rain/change_theme, never stored back into tripData.
-    async function runReplan(situation, minutes, theme, note) {
-      if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-      status.hidden = false;
-      status.textContent = "Updating your plan…";
-      try {
-        const res = await fetch("/replan/adjust", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan: PLANS[active],
-            situation: situation,
-            current_time: timeField.value,
-            destination: tripData.destination,
-            age_months: tripData.age_months,
-            features: tripData.features,
-            transit: tripData.transit,
-            dining: tripData.dining,
-            bedtime: tripData.bedtime,
-            minutes: minutes || null,
-            theme: theme || null,
-            nap_notes: tripData.nap_notes,
-            extra_notes: tripData.extra_notes,
-            replan_note: note || "",
-          }),
-        });
-        const newPlan = await res.json();
-        if (!res.ok) throw new Error(newPlan.error || "Something went wrong.");
-        PLANS[1] = newPlan;
-        active = 1;
+  // Fixed slots: Original (0, never changes), Updated (1, rule-based
+  // replan with the AI adjuster's edits already applied). Iterating over
+  // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole.
+  const SLOT_LABELS = ["Original", "Updated"];
+  function renderTabs() {
+    picker.innerHTML = SLOT_LABELS
+      .map((label, i) => PLANS[i]
+        ? `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${label}</button>`
+        : "")
+      .join("");
+    picker.querySelectorAll(".plan-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        active = Number(tab.dataset.index);
         renderTabs();
         renderTimeline();
-        const time = newPlan.from_time || nowDisplay();
-        status.textContent = newPlan.adjusted
-          ? `Updated ready from ${time}. Use the tabs above to compare with the original.`
-          : `Updated using the quick plan; couldn't fine-tune it right now.`;
-      } catch (e) {
-        status.textContent = e.message || "Couldn't re-plan right now.";
-      }
-    }
-
-    // Prompts that ask for a duration, then confirm, before any re-plan
-    // actually runs.
-    const napPrompt = document.getElementById("nap-prompt");
-    const napAsk = document.getElementById("nap-ask");
-    const napDuration = document.getElementById("nap-duration");
-    const behindPrompt = document.getElementById("behind-prompt");
-    const themePrompt = document.getElementById("theme-prompt");
-    const replanConfirm = document.getElementById("replan-confirm");
-    const replanConfirmText = document.getElementById("replan-confirm-text");
-    const replanNoteText = document.getElementById("replan-note-text");
-    function hidePrompts() {
-      napPrompt.hidden = true;
-      napAsk.hidden = false;      // reset the nap prompt to its first step
-      napDuration.hidden = true;
-      behindPrompt.hidden = true;
-      themePrompt.hidden = true;
-      replanConfirm.hidden = true;
-      replanNoteText.hidden = true;
-      replanNoteText.value = "";
-    }
-
-    // Label lookup for the confirm prompt, built from the chips already on
-    // the page so the situation doesn't need to be passed to Jinja twice.
-    const SITUATION_LABELS_JS = {};
-    document.querySelectorAll("#situation-bar [data-situation]").forEach((btn) => {
-      SITUATION_LABELS_JS[btn.dataset.situation] = btn.textContent.trim();
+      });
     });
+  }
 
-    // Situations vague enough as buttons alone that a free-text note helps.
-    const NOTE_ELIGIBLE_SITUATIONS = new Set(["weather_rain", "change_theme"]);
+  timeField.addEventListener("input", renderTimeline);
 
-    // Nothing re-plans until the parent confirms and picks a method.
-    let pendingSituation = null;
-    let pendingMinutes = null;
-    let pendingTheme = null;
-    function showReplanConfirm(situation, minutes, theme) {
-      pendingSituation = situation;
-      pendingMinutes = minutes;
-      pendingTheme = theme || null;
-      const label = pendingTheme
-        ? `Change the theme to “${pendingTheme}”`
-        : (SITUATION_LABELS_JS[situation] || "Something happened");
-      replanConfirmText.textContent = `${label}. Want to replan?`;
-      replanNoteText.hidden = !NOTE_ELIGIBLE_SITUATIONS.has(situation);
-      replanConfirm.hidden = false;
+  // Delegated so it keeps working after renderTimeline() rebuilds
+  // host.innerHTML wholesale (time change, tab switch, re-plan).
+  host.addEventListener("click", (e) => {
+    const btn = e.target.closest(".stop-why-btn");
+    if (!btn) return;
+    const detail = btn.nextElementSibling;
+    const expanded = btn.getAttribute("aria-expanded") === "true";
+    detail.hidden = expanded;
+    btn.setAttribute("aria-expanded", String(!expanded));
+  });
+
+  // Re-plan the rest of the day (rule-based), then let the AI adjuster
+  // smooth it, in one request -- same draft-then-adjust pattern the
+  // planning page uses. Always installs the result as the single
+  // "Updated" version. minutes is the parent-entered duration (nap
+  // length / how far behind); theme is the parent-picked target for
+  // "change_theme"; note is an optional one-off addition to extra_notes
+  // for weather_rain/change_theme, never stored back into tripData.
+  async function runReplan(situation, minutes, theme, note) {
+    if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+    status.hidden = false;
+    status.textContent = "Updating your plan…";
+    try {
+      const res = await fetch("/replan/adjust", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: PLANS[active],
+          situation: situation,
+          current_time: timeField.value,
+          destination: tripData.destination,
+          age_months: tripData.age_months,
+          features: tripData.features,
+          transit: tripData.transit,
+          dining: tripData.dining,
+          bedtime: tripData.bedtime,
+          minutes: minutes || null,
+          theme: theme || null,
+          nap_notes: tripData.nap_notes,
+          extra_notes: tripData.extra_notes,
+          replan_note: note || "",
+        }),
+      });
+      const newPlan = await res.json();
+      if (!res.ok) throw new Error(newPlan.error || "Something went wrong.");
+      PLANS[1] = newPlan;
+      active = 1;
+      renderTabs();
+      renderTimeline();
+      const time = newPlan.from_time || nowDisplay();
+      status.textContent = newPlan.adjusted
+        ? `Updated ready from ${time}. Use the tabs above to compare with the original.`
+        : `Updated using the quick plan; couldn't fine-tune it right now.`;
+    } catch (e) {
+      status.textContent = e.message || "Couldn't re-plan right now.";
     }
-    document.getElementById("replan-confirm-no").addEventListener("click", hidePrompts);
-    document.getElementById("replan-confirm-yes").addEventListener("click", () => {
-      const note = replanNoteText.value.trim();
+  }
+
+  // Prompts that ask for a duration, then confirm, before any re-plan
+  // actually runs.
+  const napPrompt = document.getElementById("nap-prompt");
+  const napAsk = document.getElementById("nap-ask");
+  const napDuration = document.getElementById("nap-duration");
+  const behindPrompt = document.getElementById("behind-prompt");
+  const themePrompt = document.getElementById("theme-prompt");
+  const replanConfirm = document.getElementById("replan-confirm");
+  const replanConfirmText = document.getElementById("replan-confirm-text");
+  const replanNoteText = document.getElementById("replan-note-text");
+  function hidePrompts() {
+    napPrompt.hidden = true;
+    napAsk.hidden = false;      // reset the nap prompt to its first step
+    napDuration.hidden = true;
+    behindPrompt.hidden = true;
+    themePrompt.hidden = true;
+    replanConfirm.hidden = true;
+    replanNoteText.hidden = true;
+    replanNoteText.value = "";
+  }
+
+  // Label lookup for the confirm prompt, built from the chips already on
+  // the page so the situation doesn't need to be passed to Jinja twice.
+  const SITUATION_LABELS_JS = {};
+  document.querySelectorAll("#situation-bar [data-situation]").forEach((btn) => {
+    SITUATION_LABELS_JS[btn.dataset.situation] = btn.textContent.trim();
+  });
+
+  // Situations vague enough as buttons alone that a free-text note helps.
+  const NOTE_ELIGIBLE_SITUATIONS = new Set(["weather_rain", "change_theme"]);
+
+  // Nothing re-plans until the parent confirms and picks a method.
+  let pendingSituation = null;
+  let pendingMinutes = null;
+  let pendingTheme = null;
+  function showReplanConfirm(situation, minutes, theme) {
+    pendingSituation = situation;
+    pendingMinutes = minutes;
+    pendingTheme = theme || null;
+    const label = pendingTheme
+      ? `Change the theme to “${pendingTheme}”`
+      : (SITUATION_LABELS_JS[situation] || "Something happened");
+    replanConfirmText.textContent = `${label}. Want to replan?`;
+    replanNoteText.hidden = !NOTE_ELIGIBLE_SITUATIONS.has(situation);
+    replanConfirm.hidden = false;
+  }
+  document.getElementById("replan-confirm-no").addEventListener("click", hidePrompts);
+  document.getElementById("replan-confirm-yes").addEventListener("click", () => {
+    const note = replanNoteText.value.trim();
+    hidePrompts();
+    runReplan(pendingSituation, pendingMinutes, pendingTheme, note);
+  });
+
+  // Situation buttons. "Nap happened here" and "Running behind" ask for a
+  // duration first; "Change the theme" asks which theme first; the rest go
+  // straight to the replan confirm prompt.
+  document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const situation = btn.dataset.situation;
+      if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
       hidePrompts();
-      runReplan(pendingSituation, pendingMinutes, pendingTheme, note);
-    });
-
-    // Situation buttons. "Nap happened here" and "Running behind" ask for a
-    // duration first; "Change the theme" asks which theme first; the rest go
-    // straight to the replan confirm prompt.
-    document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const situation = btn.dataset.situation;
-        if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-        hidePrompts();
-        if (situation === "nap_happened" || situation === "running_behind") {
-          (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
-          return;
-        }
-        if (situation === "change_theme") {
-          themePrompt.hidden = false;
-          return;
-        }
-        showReplanConfirm(situation, null);
-      });
-    });
-
-    // Pick a theme -> confirm before re-picking the remaining stops toward it.
-    document.getElementById("theme-choice-bar").querySelectorAll("[data-theme]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        hidePrompts();
-        showReplanConfirm("change_theme", null, btn.dataset.theme);
-      });
-    });
-
-    // Nap prompt: Yes -> ask how long; No -> dismiss.
-    document.getElementById("nap-yes").addEventListener("click", () => {
-      napAsk.hidden = true;
-      napDuration.hidden = false;
-    });
-    document.getElementById("nap-no").addEventListener("click", hidePrompts);
-
-    // Pick a nap stay length -> confirm before extending the current stop.
-    document.getElementById("nap-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const mins = Number(btn.dataset.mins);
-        hidePrompts();
-        showReplanConfirm("nap_happened", mins);
-      });
-    });
-
-    // Pick how far behind -> confirm before sliding the rest of the day later.
-    document.getElementById("behind-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const mins = Number(btn.dataset.mins);
-        hidePrompts();
-        showReplanConfirm("running_behind", mins);
-      });
-    });
-
-    // Need panel -> POST /find_nearby -> show matching venues + request time.
-    const needResults = document.getElementById("need-results");
-    const otherRow = document.getElementById("need-other-row");
-    async function runNeed(need) {
-      needResults.innerHTML = "<p class='need-loading'>Finding…</p>";
-      try {
-        const res = await fetch("/find_nearby", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ need }),
-        });
-        const data = await res.json();
-        const when = nowDisplay();
-        if (!data.venues.length) {
-          needResults.innerHTML = `<p class="need-when">Requested at ${when}</p><p class="empty-body">No match found in the sample data.</p>`;
-          return;
-        }
-        const cards = data.venues.map((v) =>
-          `<div class="need-card">
-             <h4>${v.name}</h4>
-             <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
-             <div class="badges">${badges(v)}</div>
-             <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-           </div>`
-        ).join("");
-        needResults.innerHTML = `<p class="need-when">Requested at ${when}</p>${cards}`;
-      } catch (e) {
-        needResults.innerHTML = "<p class='empty-body'>Couldn't search right now.</p>";
+      if (situation === "nap_happened" || situation === "running_behind") {
+        (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
+        return;
       }
-    }
-    document.getElementById("need-bar").querySelectorAll("[data-need]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.dataset.need === "other") {
-          otherRow.hidden = !otherRow.hidden;
-          if (!otherRow.hidden) document.getElementById("need-other-text").focus();
-          return;
-        }
-        otherRow.hidden = true;
-        runNeed(btn.dataset.need);
-      });
+      if (situation === "change_theme") {
+        themePrompt.hidden = false;
+        return;
+      }
+      showReplanConfirm(situation, null);
     });
-    document.getElementById("need-other-go").addEventListener("click", () => runNeed("other"));
+  });
 
-    renderTabs();
-    renderTimeline();
+  // Pick a theme -> confirm before re-picking the remaining stops toward it.
+  document.getElementById("theme-choice-bar").querySelectorAll("[data-theme]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      hidePrompts();
+      showReplanConfirm("change_theme", null, btn.dataset.theme);
+    });
+  });
 
-    // Save whichever version (Original, Quick update, or AI suggestion) is on screen right now.
-    const saveTripForm = document.getElementById("save-trip-form");
-    if (saveTripForm) {
-      saveTripForm.addEventListener("submit", () => {
-        document.getElementById("save-plan-field").value = JSON.stringify(PLANS[active]);
+  // Nap prompt: Yes -> ask how long; No -> dismiss.
+  document.getElementById("nap-yes").addEventListener("click", () => {
+    napAsk.hidden = true;
+    napDuration.hidden = false;
+  });
+  document.getElementById("nap-no").addEventListener("click", hidePrompts);
+
+  // Pick a nap stay length -> confirm before extending the current stop.
+  document.getElementById("nap-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mins = Number(btn.dataset.mins);
+      hidePrompts();
+      showReplanConfirm("nap_happened", mins);
+    });
+  });
+
+  // Pick how far behind -> confirm before sliding the rest of the day later.
+  document.getElementById("behind-length-bar").querySelectorAll("[data-mins]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mins = Number(btn.dataset.mins);
+      hidePrompts();
+      showReplanConfirm("running_behind", mins);
+    });
+  });
+
+  // Need panel -> POST /find_nearby -> show matching venues + request time.
+  const needResults = document.getElementById("need-results");
+  const otherRow = document.getElementById("need-other-row");
+  async function runNeed(need) {
+    needResults.innerHTML = "<p class='need-loading'>Finding…</p>";
+    try {
+      const res = await fetch("/find_nearby", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ need }),
       });
+      const data = await res.json();
+      const when = nowDisplay();
+      if (!data.venues.length) {
+        needResults.innerHTML = `<p class="need-when">Requested at ${when}</p><p class="empty-body">No match found in the sample data.</p>`;
+        return;
+      }
+      const cards = data.venues.map((v) =>
+        `<div class="need-card">
+           <h4>${v.name}</h4>
+           <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
+           <div class="badges">${badges(v)}</div>
+           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
+         </div>`
+      ).join("");
+      needResults.innerHTML = `<p class="need-when">Requested at ${when}</p>${cards}`;
+    } catch (e) {
+      needResults.innerHTML = "<p class='empty-body'>Couldn't search right now.</p>";
     }
-  </script>
+  }
+  document.getElementById("need-bar").querySelectorAll("[data-need]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.need === "other") {
+        otherRow.hidden = !otherRow.hidden;
+        if (!otherRow.hidden) document.getElementById("need-other-text").focus();
+        return;
+      }
+      otherRow.hidden = true;
+      runNeed(btn.dataset.need);
+    });
+  });
+  document.getElementById("need-other-go").addEventListener("click", () => runNeed("other"));
 
-  {% include "_chatbot_widget.html" %}
-  <script src="{{ url_for('static', filename='rag-status.js') }}"></script>
-  <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
-</body>
-</html>
+  renderTabs();
+  renderTimeline();
+
+  // Save whichever version (Original, Quick update, or AI suggestion) is on screen right now.
+  const saveTripForm = document.getElementById("save-trip-form");
+  if (saveTripForm) {
+    saveTripForm.addEventListener("submit", () => {
+      document.getElementById("save-plan-field").value = JSON.stringify(PLANS[active]);
+    });
+  }
+</script>
+{% endblock %}

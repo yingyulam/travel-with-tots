@@ -118,8 +118,8 @@ def build_index(chunk_size=None):
         client = _get_client()
         try:
             client.delete_collection(COLLECTION_NAME)
-        except Exception:
-            pass
+        except ValueError:
+            pass  # no existing collection to delete -- fine on a first run
         collection = client.get_or_create_collection(
             COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
 

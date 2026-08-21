@@ -231,18 +231,24 @@ travel-with-tots/
 ├── src/                           # Application logic
 │   ├── data_loader.py             # loads venue data, builds Google Maps links
 │   ├── db.py                      # SQLite data layer (schema, connection, safe writes)
+│   ├── dates.py                   # date/age utilities, independent of storage
+│   ├── form_helpers.py            # trip-planning form parsing/validation, no Flask dependency
 │   ├── filters.py                 # filters venues by selected features
 │   ├── models.py                  # Plan and Trip domain objects
 │   ├── itinerary.py               # generate_plans: rule-based candidate Plan objects
-│   ├── interactions.py            # replan() + find_nearby() placeholders
-│   ├── agents.py                  # chatbot + PlanningAgent logic, routed through OpenRouter
+│   ├── interactions.py            # replan() + find_nearby() in-trip logic
+│   ├── agents.py                  # chatbot + AI plan/replan adjuster logic, routed through OpenRouter
 │   ├── llms.py                    # AI Agent: LangGraph tool-calling agent over OpenRouter
 │   ├── components/
+│   │   ├── plan_trip.py           # Plan Trips component: rule-based draft + AI smoothing
+│   │   ├── replan_trip.py         # Replan a Trip component: rule-based replan + AI smoothing
 │   │   └── search_web.py          # Web Search component: Tavily Search API
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
-│   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan)
+│   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan/replan)
 │   └── prompts/
-│       └── website_chatbot.txt    # chatbot system prompt
+│       ├── website_chatbot.txt    # chatbot system prompt
+│       ├── plan_adjust.txt        # AI plan adjuster system prompt
+│       └── replan_adjust.txt      # AI replan adjuster system prompt
 ├── templates/
 │   ├── index.html                 # marketing landing page
 │   ├── plan.html                  # Page 1: planning form + comparison cards
@@ -250,11 +256,14 @@ travel-with-tots/
 │   ├── base.html                  # shared layout for account/admin pages
 │   ├── login.html, signup.html    # auth pages
 │   ├── dashboard.html             # saved children + trips
-│   ├── settings.html              # admin: edit knowledge base + prompts
+│   ├── settings.html              # admin: edit knowledge base + chatbot prompt
 │   ├── chunks.html                # admin: view and re-run chunking
 │   ├── results.html               # admin: browse ratings, stats per session
+│   ├── components.html            # admin: inventory of the app's components
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
+│   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
+│   ├── replan_trip.html           # admin: isolated Replan a Trip test page (/replan-trip)
 │   ├── _chatbot_widget.html       # floating chat widget, included on every page
 │   ├── _nav.html                  # avatar/login + sidebar, included on every page
 │   ├── _stop_preview.html         # shared stop_line() macro (plan.html + dashboard.html)
@@ -266,11 +275,22 @@ travel-with-tots/
 │   ├── chatbot.css, chatbot.js    # chat widget styling + behaviour (incl. ratings)
 │   ├── agent-chat.js              # AI Agent test page's minimal chat behaviour
 │   ├── search-web.js              # Web Search test page's key-save + run behaviour
+│   ├── plan-trip.js               # Plan Trips test page's run behaviour
+│   ├── replan-trip.js             # Replan a Trip test page's run behaviour
+│   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
 │   └── results.js                 # Results page auto-refresh polling
 ├── tests/
 │   ├── test_agents.py             # smoke test for the OpenRouter connection
+│   ├── test_planning_agent.py     # unit tests for the live plan adjuster
+│   ├── test_replanning_agent.py   # unit tests for the live replan adjuster
+│   ├── test_components_plan_trip.py    # unit tests for the Plan Trips component
+│   ├── test_components_replan_trip.py  # unit tests for the Replan a Trip component
+│   ├── test_form_helpers.py       # unit tests for form parsing/child resolution
+│   ├── test_interactions.py       # unit tests for replan()/find_nearby()
+│   ├── test_dates.py              # unit tests for compute_age
+│   ├── test_db.py                 # unit tests for get_candidate_venues
 │   └── test_results.py            # unit tests for results.py's kind-filtering and stats
 ├── requirements.txt
 └── README.md
@@ -304,7 +324,8 @@ transactional.
 | `/delete-trip/<id>`             | POST     | Remove a saved plan from the account                           |
 | `/trip`                        | GET/POST | Page 2: in-trip view for the chosen plan                        |
 | `/trip/<id>`                    | GET      | Reopen a previously saved trip                                  |
-| `/replan`                       | POST     | Re-plan the rest of the day (JSON in/out)                       |
+| `/replan`                       | POST     | Re-plan the rest of the day, rule-based (JSON in/out)            |
+| `/replan/adjust`                | POST     | Re-plan, then let the AI adjuster smooth it (JSON in/out)        |
 | `/find_nearby`                  | POST     | Find 1-2 venues for an immediate need (JSON)                    |
 | `/chatbot`                      | POST     | Ask the chatbot a question (JSON in/out)                        |
 | `/feedback`                     | POST     | Save a thumbs up/down rating (chatbot response or AI plan)      |
@@ -315,6 +336,11 @@ transactional.
 | `/chunks/rerun`                 | POST     | Admin: re-chunk and re-embed at a different size                |
 | `/results`                      | GET      | Admin: browse rated chatbot responses + generated plans, stats per session |
 | `/results/data`                 | GET      | Admin: poll-able per-session stats + results, for auto-refresh  |
+| `/components`                   | GET      | Admin: inventory of components, each with its own test page     |
+| `/agent`, `/agent/chat`         | GET, POST | Admin: isolated AI Agent test page + chat (JSON in/out)         |
+| `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
+| `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
+| `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |
 
 ## Data model
 

@@ -175,7 +175,7 @@ def _leave_stop(accommodation, stops):
         "kind": "leave",
         "venue": None,
         "reason": (f"Leave {accommodation} by {_format(leave)} to reach your "
-                   f"first stop on time. (Placeholder — real travel time coming soon.)"),
+                   f"first stop on time. (Placeholder -- real travel time coming soon.)"),
     }
 
 
@@ -224,7 +224,7 @@ def _reason(venue, kind, theme):
     if venue is None:
         return "No venue matched your chosen features for this slot."
     if kind == "nap":
-        return f"Nap-friendly {venue['type']} — nap on the go so the day keeps flowing."
+        return f"Nap-friendly {venue['type']} -- nap on the go so the day keeps flowing."
     return f"{theme['label']} pick: {venue['type']} in {venue['neighbourhood']}."
 
 
@@ -270,7 +270,7 @@ def _lunch_stop(food_pool, used, stops, naps, preferred_lunch_min=None):
         "kind": "meal",
         "venue": venue,
         "reason": (f"Lunch break at this {spot} in {venue['neighbourhood']} "
-                   f"— plan {LUNCH_DURATION_LABEL}. Fit it in around your stops."),
+                   f"-- plan {LUNCH_DURATION_LABEL}. Fit it in around your stops."),
         "duration": LUNCH_DURATION_LABEL,
     }
 
@@ -279,7 +279,7 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
     """Build one themed plan: an ordered list of timed stops.
 
     ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
-    food stop — the family eats during transit or at an activity).
+    food stop -- the family eats during transit or at an activity).
     """
     def _matches_theme(venue):
         return venue["type"] in theme["types"]

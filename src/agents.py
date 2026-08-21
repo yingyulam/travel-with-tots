@@ -60,7 +60,7 @@ def _print_usage_report(model: str, usage: dict | None, elapsed: float) -> None:
     cost_str = f"${cost:.6f}" if isinstance(cost, (int, float)) else "n/a"
 
     width = 44
-    print(f"┌─ AI usage — {model}")
+    print(f"┌─ AI usage -- {model}")
     print(f"│  input tokens    {prompt_tokens}")
     print(f"│  output tokens   {completion_tokens}")
     print(f"│  total tokens    {total_tokens}")

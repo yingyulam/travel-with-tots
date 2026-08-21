@@ -1,454 +1,423 @@
+{% extends "base.html" %}
 {% from "_stop_preview.html" import stop_line %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Travel with Tots: Plan your day</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
-</head>
-<body class="{% if current_parent %}has-sidebar{% endif %}">
-  {% include "_nav.html" %}
 
-  <header class="masthead">
-    <a class="home-link" href="{{ url_for('home') }}">← Home</a>
-    <h1 class="app-name">Travel with Tots</h1>
-    <p class="tagline">Build a nap-friendly day plan for little ones 0–5.</p>
-  </header>
+{% block title %}Travel with Tots: Plan your day{% endblock %}
+{% block tagline %}Build a nap-friendly day plan for little ones 0-5.{% endblock %}
+{% block main_attrs %} id="plan-main"{% endblock %}
 
-  <main class="layout" id="plan-main">
-    {% with messages = get_flashed_messages() %}
-    {% if messages %}
-    <section class="card flash">
-      {% for message in messages %}
-      <p>{{ message }}</p>
-      {% endfor %}
-    </section>
+{% block content %}
+<!-- Trip details form -->
+<section class="card form-card">
+  <h2>Your trip</h2>
+  <form method="post" action="{{ url_for('plan') }}" id="plan-form">
+    {% if current_parent and current_parent_children %}
+    <fieldset class="group">
+      <legend>Who's on this trip? <em>(pick one or more)</em></legend>
+      <div class="chips">
+        {% for child in current_parent_children %}
+        <label class="chip">
+          <input type="checkbox" name="child_ids" value="{{ child.id }}"
+                 {% if child.id|string in form.child_ids %}checked{% endif %}>
+          <span>{{ child.name }} ({{ child.age_years }} yr {{ child.age_months }} mo)</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Who should we plan around?</legend>
+      <div class="chips">
+        {% for child in current_parent_children %}
+        <label class="chip">
+          <input type="radio" name="plan_child_id" value="{{ child.id }}"
+                 {% if form.plan_child_id == child.id|string %}checked{% endif %}>
+          <span>{{ child.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
     {% endif %}
-    {% endwith %}
 
-    <!-- Trip details form -->
-    <section class="card form-card">
-      <h2>Your trip</h2>
-      <form method="post" action="{{ url_for('plan') }}" id="plan-form">
-        {% if current_parent and current_parent_children %}
-        <fieldset class="group">
-          <legend>Who's on this trip? <em>(pick one or more)</em></legend>
-          <div class="chips">
-            {% for child in current_parent_children %}
-            <label class="chip">
-              <input type="checkbox" name="child_ids" value="{{ child.id }}"
-                     {% if child.id|string in form.child_ids %}checked{% endif %}>
-              <span>{{ child.name }} ({{ child.age_years }} yr {{ child.age_months }} mo)</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
+    <div class="field-row">
+      <label class="field">
+        <span>Wake-up time</span>
+        <input type="time" name="wake_up" value="{{ form.wake_up }}">
+      </label>
+      <label class="field">
+        <span>Bedtime</span>
+        <input type="time" name="bedtime" value="{{ form.bedtime }}">
+      </label>
+    </div>
+    <label class="field field-full">
+      <span><input type="checkbox" name="strict_schedule" {% if form.strict_schedule %}checked{% endif %}> Wake-up and bedtime are strict for us</span>
+      <span class="field-hint">Leave unchecked if there's some flexibility, most days run a little early or late.</span>
+    </label>
 
-        <fieldset class="group">
-          <legend>Who should we plan around?</legend>
-          <div class="chips">
-            {% for child in current_parent_children %}
-            <label class="chip">
-              <input type="radio" name="plan_child_id" value="{{ child.id }}"
-                     {% if form.plan_child_id == child.id|string %}checked{% endif %}>
-              <span>{{ child.name }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-        {% endif %}
-
-        <div class="field-row">
+    <div class="field field-full">
+      <span>Naps <em>(optional, up to {{ max_naps }})</em></span>
+      <div id="nap-rows" data-max-naps="{{ max_naps }}">
+        {% for nap in form.naps %}
+        <div class="nap-row field-row">
           <label class="field">
-            <span>Wake-up time</span>
-            <input type="time" name="wake_up" value="{{ form.wake_up }}">
+            <span>Nap start</span>
+            <input type="time" name="nap_start" value="{{ nap.start }}">
           </label>
           <label class="field">
-            <span>Bedtime</span>
-            <input type="time" name="bedtime" value="{{ form.bedtime }}">
+            <span>Typical duration (minutes)</span>
+            <input type="number" name="nap_duration" min="15" step="15" value="{{ nap.duration_min }}">
           </label>
-        </div>
-        <label class="field field-full">
-          <span><input type="checkbox" name="strict_schedule" {% if form.strict_schedule %}checked{% endif %}> Wake-up and bedtime are strict for us</span>
-          <span class="field-hint">Leave unchecked if there's some flexibility, most days run a little early or late.</span>
-        </label>
-
-        <div class="field field-full">
-          <span>Naps <em>(optional, up to {{ max_naps }})</em></span>
-          <div id="nap-rows" data-max-naps="{{ max_naps }}">
-            {% for nap in form.naps %}
-            <div class="nap-row field-row">
-              <label class="field">
-                <span>Nap start</span>
-                <input type="time" name="nap_start" value="{{ nap.start }}">
-              </label>
-              <label class="field">
-                <span>Typical duration (minutes)</span>
-                <input type="number" name="nap_duration" min="15" step="15" value="{{ nap.duration_min }}">
-              </label>
-              <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
-            </div>
-            {% endfor %}
-          </div>
-          <button type="button" class="preview-more-toggle" id="add-nap-btn">+ Add a nap</button>
-        </div>
-
-        <fieldset class="group">
-          <legend>Can your child nap during transit?</legend>
-          <div class="chips">
-            {% for key, label in transit_nap_options %}
-            <label class="chip">
-              <input type="radio" name="transit_nap" value="{{ key }}"
-                     {% if form.transit_nap == key %}checked{% endif %}>
-              <span>{{ label }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-
-        <label class="field field-full">
-          <span>Tell us more about your kid's nap/sleep habits.</span>
-          <textarea name="nap_notes" rows="3"
-                    placeholder="e.g. sleeps in the car seat but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
-        </label>
-
-        <div class="field-row">
-          {% if not (current_parent and current_parent_children) %}
-          <label class="field">
-            <span>Kid's age</span>
-            <div class="age-input">
-              <span class="age-part">
-                <input type="number" id="age-years" name="age_years"
-                       min="0" max="5" value="{{ form.age_years }}">
-                <small>years</small>
-              </span>
-              <span class="age-part">
-                <input type="number" id="age-months" name="age_months"
-                       min="0" max="11" value="{{ form.age_months }}">
-                <small>months</small>
-              </span>
-            </div>
-          </label>
-          {% endif %}
-          <label class="field">
-            <span>Destination</span>
-            <input type="text" name="destination" value="{{ form.destination }}">
-          </label>
-        </div>
-
-        <!-- Accommodation: plain text for now. Placeholder for a Google Maps
-             Places Autocomplete / geocoding integration later — a real build
-             would attach Autocomplete to #accommodation and feed the resolved
-             address (and lat/lng) into travel-time routing. -->
-        <label class="field field-full">
-          <span>Accommodation <em>(optional)</em></span>
-          <input type="text" id="accommodation" name="accommodation"
-                 value="{{ form.accommodation }}" autocomplete="off"
-                 data-maps-autocomplete="pending"
-                 placeholder="Home address or hotel — we'll plan your first stop and when to leave">
-          <small class="field-hint">📍 Address search (Google Maps) coming soon — free text works for now.</small>
-        </label>
-
-        <fieldset class="group">
-          <legend>How are you getting around? <em>(pick any)</em></legend>
-          <div class="chips">
-            {% for option in transit_options %}
-            <label class="chip">
-              <input type="checkbox" name="transit" value="{{ option }}"
-                     {% if option in form.transit %}checked{% endif %}>
-              <span>{{ option|capitalize }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-
-        <label class="field field-full">
-          <span>How many places would you like to visit? <em>(not counting lunch)</em></span>
-          <input type="number" name="stop_count" min="1" max="6" value="{{ form.stop_count }}">
-          <span class="field-hint">We'll adjust this a little for your child's age if needed.</span>
-        </label>
-
-        <fieldset class="group">
-          <legend>Lunch</legend>
-          <div class="chips">
-            {% for key, label in dining_options %}
-            <label class="chip">
-              <input type="radio" name="dining" value="{{ key }}"
-                     {% if form.dining == key %}checked{% endif %}>
-              <span>{{ label }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-
-        <label class="field field-full">
-          <span>Preferred lunch time <em>(optional)</em></span>
-          <input type="time" name="preferred_lunch_time" value="{{ form.preferred_lunch_time }}">
-        </label>
-
-        <fieldset class="group">
-          <legend>Themes <em>(optional -- defaults to a mix of all three)</em></legend>
-          <div class="chips">
-            {% for theme_label in theme_options %}
-            <label class="chip">
-              <input type="checkbox" name="themes" value="{{ theme_label }}"
-                     {% if theme_label in form.themes %}checked{% endif %}>
-              <span>{{ theme_label }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-
-        <fieldset class="group">
-          <legend>Features that matter</legend>
-          <div class="chips">
-            {% for key, label in feature_options %}
-            <label class="chip">
-              <input type="checkbox" name="features" value="{{ key }}"
-                     {% if key in form.features %}checked{% endif %}>
-              <span>{{ label }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-
-        <label class="field field-full">
-          <span>Anything else about your kid?</span>
-          <textarea name="extra_notes" rows="3"
-                    placeholder="e.g. do not like staying in stroller all the time">{{ form.extra_notes }}</textarea>
-        </label>
-        <input type="hidden" name="revise_count" id="revise-count-field" value="{{ revise_count or 0 }}">
-        <input type="hidden" name="revise_feedback" id="revise-feedback-field" value="{{ form.revise_feedback }}">
-
-        <button type="submit" class="cta" id="plan-submit-btn">Plan my day</button>
-      </form>
-    </section>
-
-    <!-- The generated plan, already AI-adjusted for flow if that step succeeded -->
-    {% if plans is not none %}
-    <section class="card" id="plan-results">
-      <h2>Your plan</h2>
-      {% if plans %}
-      <p class="picker-hint">Tap “Start this day” when you’re ready.</p>
-      <div class="plan-grid" id="plan-grid">
-        {% for plan in plans %}
-        <div class="plan-option" data-theme="{{ plan.label }}" data-source="{{ plan.source }}">
-          <h3 class="plan-option-title">{{ plan.label }}</h3>
-          <p class="plan-blurb">{{ plan.blurb }}</p>
-          <ol class="preview-list">
-            {% for stop in plan.preview() %}{{ stop_line(stop) }}{% endfor %}
-            {% for stop in plan.remaining() %}{{ stop_line(stop, extra=True) }}{% endfor %}
-            {% if plan.remaining() %}
-            <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ plan.remaining()|length }} more…</button></li>
-            {% endif %}
-          </ol>
-          <form method="post" action="{{ url_for('trip') }}">
-            <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
-            <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
-            <button type="submit" class="cta">Start this day</button>
-          </form>
-          {% if current_parent and form.child_ids %}
-          <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
-            <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
-            <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
-            <button type="submit" class="cta-secondary">💾 Save this plan</button>
-          </form>
-          {% elif current_parent %}
-          <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
-          {% else %}
-          <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
-          {% endif %}
-          <div class="plan-revise" id="plan-revise-block">
-            <p class="panel-title">Not quite right?</p>
-            <div class="chips">
-              {% if can_revise_more %}
-              <button type="button" class="cta-secondary" id="plan-reject-btn">Something's off</button>
-              {% endif %}
-              <button type="button" class="cta-secondary" id="plan-decline-btn">Try a new plan</button>
-            </div>
-            {% if can_revise_more %}
-            <div id="plan-reject-box" hidden>
-              <label class="field field-full">
-                <span>What would you change?</span>
-                <textarea id="plan-reject-text" rows="2" placeholder="e.g. the museum stop feels rushed"></textarea>
-              </label>
-              <button type="button" class="cta" id="plan-reject-submit">Update my plan</button>
-            </div>
-            {% else %}
-            <p class="field-hint">You've reached the limit for fine-tuning this plan, once your trip starts, you can always adjust things on the fly.</p>
-            {% endif %}
-            {% if revise_message %}
-            <p class="revise-result {{ 'revise-error' if revise_error else 'revise-success' }}">{{ revise_message }}</p>
-            {% endif %}
-          </div>
+          <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
         </div>
         {% endfor %}
       </div>
-      {% else %}
-      <p class="empty-plan">We couldn't build any plans from those inputs. Try loosening your selected features.</p>
+      <button type="button" class="preview-more-toggle" id="add-nap-btn">+ Add a nap</button>
+    </div>
+
+    <fieldset class="group">
+      <legend>Can your child nap during transit?</legend>
+      <div class="chips">
+        {% for key, label in transit_nap_options %}
+        <label class="chip">
+          <input type="radio" name="transit_nap" value="{{ key }}"
+                 {% if form.transit_nap == key %}checked{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <label class="field field-full">
+      <span>Tell us more about your kid's nap/sleep habits.</span>
+      <textarea name="nap_notes" rows="3"
+                placeholder="e.g. sleeps in the car seat but wakes when moved from car to stroller">{{ form.nap_notes }}</textarea>
+    </label>
+
+    <div class="field-row">
+      {% if not (current_parent and current_parent_children) %}
+      <label class="field">
+        <span>Kid's age</span>
+        <div class="age-input">
+          <span class="age-part">
+            <input type="number" id="age-years" name="age_years"
+                   min="0" max="5" value="{{ form.age_years }}">
+            <small>years</small>
+          </span>
+          <span class="age-part">
+            <input type="number" id="age-months" name="age_months"
+                   min="0" max="11" value="{{ form.age_months }}">
+            <small>months</small>
+          </span>
+        </div>
+      </label>
       {% endif %}
-    </section>
-    {% endif %}
-  </main>
+      <label class="field">
+        <span>Destination</span>
+        <input type="text" name="destination" value="{{ form.destination }}">
+      </label>
+    </div>
 
-  <footer class="footer">
-    <p>Travel with Tots: stress-free adventures for little ones.</p>
-  </footer>
+    <!-- Accommodation: plain text for now. Placeholder for a Google Maps
+         Places Autocomplete / geocoding integration later -- a real build
+         would attach Autocomplete to #accommodation and feed the resolved
+         address (and lat/lng) into travel-time routing. -->
+    <label class="field field-full">
+      <span>Accommodation <em>(optional)</em></span>
+      <input type="text" id="accommodation" name="accommodation"
+             value="{{ form.accommodation }}" autocomplete="off"
+             data-maps-autocomplete="pending"
+             placeholder="Home address or hotel -- we'll plan your first stop and when to leave">
+      <small class="field-hint">📍 Address search (Google Maps) coming soon -- free text works for now.</small>
+    </label>
 
-  <script>
-    // Preserve the generated plans (rule-based + any AI cards) across a trip
-    // -> back-to-plans round trip, without regenerating anything. A fresh
-    // "Plan my day"/"Plan/ai" result always overwrites this snapshot; a plain
-    // GET /plan (e.g. from the trip page's "Back to plans" link) restores it
-    // instead of showing an empty form. sessionStorage-based rather than
-    // relying on the browser's back/forward cache, which isn't reliable here.
-    const HAS_SERVER_PLANS = {{ (plans is not none) | tojson }};
-    const SNAPSHOT_KEY = "twt_plan_snapshot";
-    const planMain = document.getElementById("plan-main");
-    const planForm = document.getElementById("plan-form");
-
-    // Point the next submit at a specific in-page anchor (or none), so the
-    // browser lands back near where the parent was instead of at the top.
-    function setFormAnchor(anchor) {
-      const base = planForm.action.split("#")[0];
-      planForm.action = anchor ? `${base}#${anchor}` : base;
-    }
-
-    function saveSnapshot() {
-      sessionStorage.setItem(SNAPSHOT_KEY, planMain.innerHTML);
-    }
-
-    if (HAS_SERVER_PLANS) {
-      saveSnapshot();
-    } else {
-      const savedSnapshot = sessionStorage.getItem(SNAPSHOT_KEY);
-      if (savedSnapshot) planMain.innerHTML = savedSnapshot;
-    }
-
-    // Cap age at 5 years 0 months: at 5 years, months are locked to 0.
-    const years = document.getElementById("age-years");
-    const months = document.getElementById("age-months");
-    function syncAgeCap() {
-      const atMax = Number(years.value) >= 5;
-      if (atMax) {
-        years.value = 5;
-        months.value = 0;
-      }
-      months.disabled = atMax;
-    }
-    if (years && months) {
-      years.addEventListener("input", syncAgeCap);
-      syncAgeCap();
-    }
-
-    // Dynamic "Add a nap" rows, capped at data-max-naps. Existing (server-
-    // rendered) rows get their Remove button wired up here too, so a reload
-    // with previously-submitted naps still lets you remove them.
-    const napRows = document.getElementById("nap-rows");
-    const addNapBtn = document.getElementById("add-nap-btn");
-    const MAX_NAPS = Number(napRows.dataset.maxNaps);
-
-    function updateAddNapVisibility() {
-      addNapBtn.hidden = napRows.children.length >= MAX_NAPS;
-    }
-
-    function wireRemoveButton(row) {
-      row.querySelector(".remove-nap-btn").addEventListener("click", () => {
-        row.remove();
-        updateAddNapVisibility();
-      });
-    }
-
-    function addNapRow() {
-      if (napRows.children.length >= MAX_NAPS) return;
-      const row = document.createElement("div");
-      row.className = "nap-row field-row";
-      row.innerHTML = `
-        <label class="field">
-          <span>Nap start</span>
-          <input type="time" name="nap_start">
+    <fieldset class="group">
+      <legend>How are you getting around? <em>(pick any)</em></legend>
+      <div class="chips">
+        {% for option in transit_options %}
+        <label class="chip">
+          <input type="checkbox" name="transit" value="{{ option }}"
+                 {% if option in form.transit %}checked{% endif %}>
+          <span>{{ option|capitalize }}</span>
         </label>
-        <label class="field">
-          <span>Typical duration (minutes)</span>
-          <input type="number" name="nap_duration" min="15" step="15">
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <label class="field field-full">
+      <span>How many places would you like to visit? <em>(not counting lunch)</em></span>
+      <input type="number" name="stop_count" min="1" max="6" value="{{ form.stop_count }}">
+      <span class="field-hint">We'll adjust this a little for your child's age if needed.</span>
+    </label>
+
+    <fieldset class="group">
+      <legend>Lunch</legend>
+      <div class="chips">
+        {% for key, label in dining_options %}
+        <label class="chip">
+          <input type="radio" name="dining" value="{{ key }}"
+                 {% if form.dining == key %}checked{% endif %}>
+          <span>{{ label }}</span>
         </label>
-        <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
-      `;
-      wireRemoveButton(row);
-      napRows.appendChild(row);
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <label class="field field-full">
+      <span>Preferred lunch time <em>(optional)</em></span>
+      <input type="time" name="preferred_lunch_time" value="{{ form.preferred_lunch_time }}">
+    </label>
+
+    <fieldset class="group">
+      <legend>Themes <em>(optional -- defaults to a mix of all three)</em></legend>
+      <div class="chips">
+        {% for theme_label in theme_options %}
+        <label class="chip">
+          <input type="checkbox" name="themes" value="{{ theme_label }}"
+                 {% if theme_label in form.themes %}checked{% endif %}>
+          <span>{{ theme_label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Features that matter</legend>
+      <div class="chips">
+        {% for key, label in feature_options %}
+        <label class="chip">
+          <input type="checkbox" name="features" value="{{ key }}"
+                 {% if key in form.features %}checked{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <label class="field field-full">
+      <span>Anything else about your kid?</span>
+      <textarea name="extra_notes" rows="3"
+                placeholder="e.g. do not like staying in stroller all the time">{{ form.extra_notes }}</textarea>
+    </label>
+    <input type="hidden" name="revise_count" id="revise-count-field" value="{{ revise_count or 0 }}">
+    <input type="hidden" name="revise_feedback" id="revise-feedback-field" value="{{ form.revise_feedback }}">
+
+    <button type="submit" class="cta" id="plan-submit-btn">Plan my day</button>
+  </form>
+</section>
+
+<!-- The generated plan, already AI-adjusted for flow if that step succeeded -->
+{% if plans is not none %}
+<section class="card" id="plan-results">
+  <h2>Your plan</h2>
+  {% if plans %}
+  <p class="picker-hint">Tap “Start this day” when you’re ready.</p>
+  <div class="plan-grid" id="plan-grid">
+    {% for plan in plans %}
+    <div class="plan-option" data-theme="{{ plan.label }}" data-source="{{ plan.source }}">
+      <h3 class="plan-option-title">{{ plan.label }}</h3>
+      <p class="plan-blurb">{{ plan.blurb }}</p>
+      <ol class="preview-list">
+        {% for stop in plan.preview() %}{{ stop_line(stop) }}{% endfor %}
+        {% for stop in plan.remaining() %}{{ stop_line(stop, extra=True) }}{% endfor %}
+        {% if plan.remaining() %}
+        <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ plan.remaining()|length }} more…</button></li>
+        {% endif %}
+      </ol>
+      <form method="post" action="{{ url_for('trip') }}">
+        <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
+        <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
+        <button type="submit" class="cta">Start this day</button>
+      </form>
+      {% if current_parent and form.child_ids %}
+      <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
+        <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
+        <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
+        <button type="submit" class="cta-secondary">💾 Save this plan</button>
+      </form>
+      {% elif current_parent %}
+      <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
+      {% else %}
+      <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
+      {% endif %}
+      <div class="plan-revise" id="plan-revise-block">
+        <p class="panel-title">Not quite right?</p>
+        <div class="chips">
+          {% if can_revise_more %}
+          <button type="button" class="cta-secondary" id="plan-reject-btn">Something's off</button>
+          {% endif %}
+          <button type="button" class="cta-secondary" id="plan-decline-btn">Try a new plan</button>
+        </div>
+        {% if can_revise_more %}
+        <div id="plan-reject-box" hidden>
+          <label class="field field-full">
+            <span>What would you change?</span>
+            <textarea id="plan-reject-text" rows="2" placeholder="e.g. the museum stop feels rushed"></textarea>
+          </label>
+          <button type="button" class="cta" id="plan-reject-submit">Update my plan</button>
+        </div>
+        {% else %}
+        <p class="field-hint">You've reached the limit for fine-tuning this plan, once your trip starts, you can always adjust things on the fly.</p>
+        {% endif %}
+        {% if revise_message %}
+        <p class="revise-result {{ 'revise-error' if revise_error else 'revise-success' }}">{{ revise_message }}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-plan">We couldn't build any plans from those inputs. Try loosening your selected features.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Preserve the generated plans (rule-based + any AI cards) across a trip
+  // -> back-to-plans round trip, without regenerating anything. A fresh
+  // "Plan my day"/"Plan/ai" result always overwrites this snapshot; a plain
+  // GET /plan (e.g. from the trip page's "Back to plans" link) restores it
+  // instead of showing an empty form. sessionStorage-based rather than
+  // relying on the browser's back/forward cache, which isn't reliable here.
+  const HAS_SERVER_PLANS = {{ (plans is not none) | tojson }};
+  const SNAPSHOT_KEY = "twt_plan_snapshot";
+  const planMain = document.getElementById("plan-main");
+  const planForm = document.getElementById("plan-form");
+
+  // Point the next submit at a specific in-page anchor (or none), so the
+  // browser lands back near where the parent was instead of at the top.
+  function setFormAnchor(anchor) {
+    const base = planForm.action.split("#")[0];
+    planForm.action = anchor ? `${base}#${anchor}` : base;
+  }
+
+  function saveSnapshot() {
+    sessionStorage.setItem(SNAPSHOT_KEY, planMain.innerHTML);
+  }
+
+  if (HAS_SERVER_PLANS) {
+    saveSnapshot();
+  } else {
+    const savedSnapshot = sessionStorage.getItem(SNAPSHOT_KEY);
+    if (savedSnapshot) planMain.innerHTML = savedSnapshot;
+  }
+
+  // Cap age at 5 years 0 months: at 5 years, months are locked to 0.
+  const years = document.getElementById("age-years");
+  const months = document.getElementById("age-months");
+  function syncAgeCap() {
+    const atMax = Number(years.value) >= 5;
+    if (atMax) {
+      years.value = 5;
+      months.value = 0;
+    }
+    months.disabled = atMax;
+  }
+  if (years && months) {
+    years.addEventListener("input", syncAgeCap);
+    syncAgeCap();
+  }
+
+  // Dynamic "Add a nap" rows, capped at data-max-naps. Existing (server-
+  // rendered) rows get their Remove button wired up here too, so a reload
+  // with previously-submitted naps still lets you remove them.
+  const napRows = document.getElementById("nap-rows");
+  const addNapBtn = document.getElementById("add-nap-btn");
+  const MAX_NAPS = Number(napRows.dataset.maxNaps);
+
+  function updateAddNapVisibility() {
+    addNapBtn.hidden = napRows.children.length >= MAX_NAPS;
+  }
+
+  function wireRemoveButton(row) {
+    row.querySelector(".remove-nap-btn").addEventListener("click", () => {
+      row.remove();
       updateAddNapVisibility();
+    });
+  }
+
+  function addNapRow() {
+    if (napRows.children.length >= MAX_NAPS) return;
+    const row = document.createElement("div");
+    row.className = "nap-row field-row";
+    row.innerHTML = `
+      <label class="field">
+        <span>Nap start</span>
+        <input type="time" name="nap_start">
+      </label>
+      <label class="field">
+        <span>Typical duration (minutes)</span>
+        <input type="number" name="nap_duration" min="15" step="15">
+      </label>
+      <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
+    `;
+    wireRemoveButton(row);
+    napRows.appendChild(row);
+    updateAddNapVisibility();
+  }
+
+  Array.from(napRows.children).forEach(wireRemoveButton);
+  addNapBtn.addEventListener("click", addNapRow);
+  updateAddNapVisibility();
+
+  // Delegated on planMain (not per-button) so every handler below keeps
+  // working whether the content was just server-rendered or restored
+  // wholesale from a snapshot.
+  planMain.addEventListener("click", (e) => {
+    const moreBtn = e.target.closest(".preview-more-toggle");
+    if (moreBtn) {
+      const list = moreBtn.closest(".preview-list");
+      list.querySelectorAll(".preview-extra").forEach((li) => { li.hidden = false; });
+      moreBtn.closest(".preview-more").remove();
+      saveSnapshot();
+      return;
     }
 
-    Array.from(napRows.children).forEach(wireRemoveButton);
-    addNapBtn.addEventListener("click", addNapRow);
-    updateAddNapVisibility();
+    // "Something's off" -> reveal the feedback box.
+    const rejectBtn = e.target.closest("#plan-reject-btn");
+    if (rejectBtn) {
+      rejectBtn.hidden = true;
+      document.getElementById("plan-reject-box").hidden = false;
+      return;
+    }
 
-    // Delegated on planMain (not per-button) so every handler below keeps
-    // working whether the content was just server-rendered or restored
-    // wholesale from a snapshot.
-    planMain.addEventListener("click", (e) => {
-      const moreBtn = e.target.closest(".preview-more-toggle");
-      if (moreBtn) {
-        const list = moreBtn.closest(".preview-list");
-        list.querySelectorAll(".preview-extra").forEach((li) => { li.hidden = false; });
-        moreBtn.closest(".preview-more").remove();
-        saveSnapshot();
-        return;
-      }
+    // Submit that feedback: keep it in its own hidden field (never the
+    // visible extra_notes box), bump the revise count, show a loading
+    // state right where the button was, and resubmit so the server
+    // re-adjusts with it in mind.
+    const submitBtn = e.target.closest("#plan-reject-submit");
+    if (submitBtn) {
+      const feedback = document.getElementById("plan-reject-text").value.trim();
+      if (!feedback) return;
+      const feedbackField = document.getElementById("revise-feedback-field");
+      feedbackField.value = feedbackField.value
+        ? feedbackField.value + "\n" + feedback : feedback;
+      const countField = document.getElementById("revise-count-field");
+      countField.value = String(Number(countField.value || 0) + 1);
+      document.getElementById("plan-reject-box").innerHTML =
+        '<p class="revise-progress">Updating your plan…</p>';
+      setFormAnchor("plan-revise-block");
+      planForm.submit();
+      return;
+    }
 
-      // "Something's off" -> reveal the feedback box.
-      const rejectBtn = e.target.closest("#plan-reject-btn");
-      if (rejectBtn) {
-        rejectBtn.hidden = true;
-        document.getElementById("plan-reject-box").hidden = false;
-        return;
-      }
+    // A fresh "Plan my day" click starts a new attempt, not a revision.
+    if (e.target.closest("#plan-submit-btn")) {
+      document.getElementById("revise-count-field").value = "0";
+      document.getElementById("revise-feedback-field").value = "";
+      setFormAnchor("");
+      return;
+    }
 
-      // Submit that feedback: keep it in its own hidden field (never the
-      // visible extra_notes box), bump the revise count, show a loading
-      // state right where the button was, and resubmit so the server
-      // re-adjusts with it in mind.
-      const submitBtn = e.target.closest("#plan-reject-submit");
-      if (submitBtn) {
-        const feedback = document.getElementById("plan-reject-text").value.trim();
-        if (!feedback) return;
-        const feedbackField = document.getElementById("revise-feedback-field");
-        feedbackField.value = feedbackField.value
-          ? feedbackField.value + "\n" + feedback : feedback;
-        const countField = document.getElementById("revise-count-field");
-        countField.value = String(Number(countField.value || 0) + 1);
-        document.getElementById("plan-reject-box").innerHTML =
-          '<p class="revise-progress">Updating your plan…</p>';
-        setFormAnchor("plan-revise-block");
-        planForm.submit();
-        return;
-      }
-
-      // A fresh "Plan my day" click starts a new attempt, not a revision.
-      if (e.target.closest("#plan-submit-btn")) {
-        document.getElementById("revise-count-field").value = "0";
-        document.getElementById("revise-feedback-field").value = "";
-        setFormAnchor("");
-        return;
-      }
-
-      // "Try a new plan" -- no feedback, no AI call, just make this plan go
-      // away and send the parent back to the form to submit again.
-      if (e.target.closest("#plan-decline-btn")) {
-        document.getElementById("revise-count-field").value = "0";
-        document.getElementById("revise-feedback-field").value = "";
-        document.getElementById("plan-results").remove();
-        saveSnapshot();
-        document.getElementById("plan-form").scrollIntoView({ behavior: "smooth" });
-      }
-    });
-  </script>
-
-  {% include "_chatbot_widget.html" %}
-  <script src="{{ url_for('static', filename='rag-status.js') }}"></script>
-  <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
-</body>
-</html>
+    // "Try a new plan" -- no feedback, no AI call, just make this plan go
+    // away and send the parent back to the form to submit again.
+    if (e.target.closest("#plan-decline-btn")) {
+      document.getElementById("revise-count-field").value = "0";
+      document.getElementById("revise-feedback-field").value = "";
+      document.getElementById("plan-results").remove();
+      saveSnapshot();
+      document.getElementById("plan-form").scrollIntoView({ behavior: "smooth" });
+    }
+  });
+</script>
+{% endblock %}
