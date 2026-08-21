@@ -100,6 +100,10 @@
       <input type="text" id="need-other-text" placeholder="Describe what you need…">
       <button type="button" class="tap-btn" id="need-other-go">Find</button>
     </div>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="use-my-location">📍 Use my location</button>
+      <span id="location-status" class="field-hint">Sharing your location narrows results to where you actually are.</span>
+    </div>
     <div id="need-results"></div>
   </div>
 
@@ -427,31 +431,62 @@
   });
 
   // Need panel -> POST /find_nearby -> show matching venues + request time.
+  // Location is optional: shared coordinates narrow results to where the
+  // family actually is, and declining the prompt keeps the original
+  // location-blind behaviour rather than blocking the panel.
   const needResults = document.getElementById("need-results");
   const otherRow = document.getElementById("need-other-row");
+  const useLocationBtn = document.getElementById("use-my-location");
+  const locationStatus = document.getElementById("location-status");
+  let coords = null;
+
+  useLocationBtn.addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      locationStatus.textContent = "This browser can't share a location.";
+      return;
+    }
+    useLocationBtn.disabled = true;
+    locationStatus.textContent = "Asking your browser for your location…";
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        locationStatus.textContent = "Using your location for nearby results.";
+        useLocationBtn.disabled = false;
+      },
+      () => {
+        locationStatus.textContent = "Couldn't get your location, showing general matches instead.";
+        useLocationBtn.disabled = false;
+      },
+    );
+  });
+
   async function runNeed(need) {
     needResults.innerHTML = "<p class='need-loading'>Finding…</p>";
     try {
       const res = await fetch("/find_nearby", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ need }),
+        body: JSON.stringify({ need, ...(coords || {}) }),
       });
       const data = await res.json();
       const when = nowDisplay();
       if (!data.venues.length) {
-        needResults.innerHTML = `<p class="need-when">Requested at ${when}</p><p class="empty-body">No match found in the sample data.</p>`;
+        needResults.innerHTML = `<p class="need-when">Requested at ${when}</p><p class="empty-body">No match found nearby.</p>`;
         return;
       }
-      const cards = data.venues.map((v) =>
-        `<div class="need-card">
+      const where = data.location && data.location.formatted_address
+        ? ` near ${data.location.formatted_address}` : "";
+      const cards = data.venues.map((v) => {
+        const meta = [v.type, v.neighbourhood].filter(Boolean).join(" · ");
+        const linkLabel = data.source === "search" ? "🔗 Open result" : "📍 Open in Google Maps";
+        return `<div class="need-card">
            <h4>${v.name}</h4>
-           <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
+           <p class="meta">${meta}</p>
            <div class="badges">${badges(v)}</div>
-           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-         </div>`
-      ).join("");
-      needResults.innerHTML = `<p class="need-when">Requested at ${when}</p>${cards}`;
+           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">${linkLabel}</a>
+         </div>`;
+      }).join("");
+      needResults.innerHTML = `<p class="need-when">Requested at ${when}${where}</p>${cards}`;
     } catch (e) {
       needResults.innerHTML = "<p class='empty-body'>Couldn't search right now.</p>";
     }

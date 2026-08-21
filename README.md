@@ -18,6 +18,8 @@ side by side for comparison.
 - **Parent accounts**: save children's profiles, past trips, and places.
 - **Admin tools**: edit the chatbot's knowledge base/prompts, inspect
   chunking, review AI ratings and stats.
+- **Find a place nearby**: share your location and get kid-friendly venues
+  matching an immediate need, from the curated venues or a live web search.
 - **Site-help chatbot** everywhere, grounded with retrieval-augmented
   generation (RAG) over the site's own knowledge base.
 - **Thumbs up/down feedback**, with aggregate stats, on both chatbot replies
@@ -193,8 +195,8 @@ Another admin-only, isolated component test page (`/search-web`, linked from
 [Tavily Search API](https://tavily.com) and display the top 5 results
 (title, URL, snippet). `src/components/search_web.py` is self-contained, one
 file for the whole component, matching the "isolate and test each piece on
-its own" pattern the Components page exists for. Not wired into
-`find_nearby()`'s fallback path yet -- just its own page for now.
+its own" pattern the Components page exists for. Also used as Find Nearby's
+fallback (see below) when the curated venue table has nothing to offer.
 
 Tavily, not Brave: Brave killed its free Search API tier in February 2026 --
 the "identity verification" card is now an active billing instrument,
@@ -215,6 +217,49 @@ tier has no such trap.
 - Same rule as above: never commit `.env` or share the key -- it's only
   ever read from `os.environ`, never logged, printed, or sent back to the
   browser once saved.
+
+## Find Nearby
+
+"Find a kid-friendly place near us, right now", available both on its own
+admin test page (`/find-nearby`, linked from `/components`) and behind the
+live in-trip page's **Need something now?** panel.
+
+Two components, one job each:
+
+- `src/components/geocode.py` turns a location into a place name. The
+  browser supplies coordinates through its own free `navigator.geolocation`
+  (no key, no Google script in the page), and the server turns those into a
+  city and neighbourhood via the Google Geocoding API. A parent who declines
+  the permission prompt can type a location instead, resolved the same way.
+- `src/components/find_nearby.py` does the matching. It narrows the curated
+  venue table to the resolved city, puts same-neighbourhood venues first
+  (neighbourhood is the only proximity proxy the venue data has -- there's no
+  lat/lng anywhere), and then calls the app's existing
+  `interactions.find_nearby()` for the actual need matching rather than
+  reimplementing it. When curated has nothing, it falls back to a live
+  Tavily web search, tagging the result `source: "search"` so the UI can say
+  where the answer came from.
+
+Curated venues are Vancouver-only today, so a location elsewhere legitimately
+returns zero curated matches and falls through to search. Location is always
+optional: with none shared, the panel keeps its original behaviour of
+matching the need across all venues.
+
+**Getting a Google Maps API key:**
+
+- Open the [Google Cloud console](https://console.cloud.google.com/google/maps-apis/api-list)
+  and create or pick a project.
+- Enable the **Geocoding API**. That single API is all this component uses.
+- Under **Credentials**, create an API key, then restrict it: *API
+  restrictions* to the Geocoding API only, and *Application restrictions* to
+  IP addresses.
+- Paste it into the Find Nearby page and click **Save Key** (writes `.env`
+  via `set_key`, usable immediately, no restart), or set
+  `GOOGLE_MAPS_API_KEY=<your key>` in `.env` by hand.
+- Google gives a recurring monthly credit that covers well beyond this app's
+  usage, but the Geocoding API does require billing enabled on the project.
+- The key is server-side only: it is never sent to the browser, logged, or
+  printed, and `.env` is git-ignored.
 
 ## Project structure
 
@@ -242,6 +287,8 @@ travel-with-tots/
 │   ├── components/
 │   │   ├── plan_trip.py           # Plan Trips component: rule-based draft + AI smoothing
 │   │   ├── replan_trip.py         # Replan a Trip component: rule-based replan + AI smoothing
+│   │   ├── find_nearby.py         # Find Nearby component: location-narrowed venues, search fallback
+│   │   ├── geocode.py             # Geocode component: coordinates/address to city + neighbourhood
 │   │   └── search_web.py          # Web Search component: Tavily Search API
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan/replan)
@@ -264,6 +311,7 @@ travel-with-tots/
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
 │   ├── replan_trip.html           # admin: isolated Replan a Trip test page (/replan-trip)
+│   ├── find_nearby.html           # admin: isolated Find Nearby test page (/find-nearby)
 │   ├── _chatbot_widget.html       # floating chat widget, included on every page
 │   ├── _nav.html                  # avatar/login + sidebar, included on every page
 │   ├── _stop_preview.html         # shared stop_line() macro (plan.html + dashboard.html)
@@ -277,6 +325,7 @@ travel-with-tots/
 │   ├── search-web.js              # Web Search test page's key-save + run behaviour
 │   ├── plan-trip.js               # Plan Trips test page's run behaviour
 │   ├── replan-trip.js             # Replan a Trip test page's run behaviour
+│   ├── find-nearby.js             # Find Nearby test page's geolocation + run behaviour
 │   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
@@ -287,6 +336,7 @@ travel-with-tots/
 │   ├── test_replanning_agent.py   # unit tests for the live replan adjuster
 │   ├── test_components_plan_trip.py    # unit tests for the Plan Trips component
 │   ├── test_components_replan_trip.py  # unit tests for the Replan a Trip component
+│   ├── test_components_find_nearby.py  # unit tests for Find Nearby + Geocode
 │   ├── test_form_helpers.py       # unit tests for form parsing/child resolution
 │   ├── test_interactions.py       # unit tests for replan()/find_nearby()
 │   ├── test_dates.py              # unit tests for compute_age
@@ -341,6 +391,7 @@ transactional.
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |
+| `/find-nearby`, `/find-nearby/run`, `/find-nearby/key` | GET, POST | Admin: isolated Find Nearby test page, resolve a location + find places, save the Maps key |
 
 ## Data model
 

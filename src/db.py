@@ -463,6 +463,17 @@ def _candidate_where_clause(city, age_months, features):
     return " AND ".join(clauses), params
 
 
+def get_venues_in_city(city):
+    """Every curated venue in `city` (substring match, same as
+    get_candidate_venues). Deliberately unfiltered beyond the city: callers
+    decide what "matching" means -- see components/find_nearby.py, which
+    applies interactions.NEED_FILTERS so need semantics live in one place."""
+    with closing(connect()) as conn:
+        return conn.execute(
+            "SELECT * FROM venues WHERE source = 'curated' AND city LIKE ? "
+            "ORDER BY name", (f"%{city}%",)).fetchall()
+
+
 def _narrow_by_neighbourhood(rows, near_neighbourhood, transit):
     """Narrow to a single neighbourhood's rows when that still leaves enough
     for a real choice (MIN_CLUSTER_SIZE) -- to the specific neighbourhood

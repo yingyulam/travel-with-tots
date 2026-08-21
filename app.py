@@ -33,6 +33,8 @@ from src.agents import (
     ask_website_chatbot,
     reload_website_chatbot_prompt,
 )
+from src.components.find_nearby import find_nearby as find_nearby_component
+from src.components.geocode import GeocodeError, geocode, reverse_geocode
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
@@ -338,6 +340,67 @@ def search_web_key_route():
         return jsonify({"error": "key is required"}), 400
     set_key(ENV_PATH, "TAVILY_API_KEY", key)
     os.environ["TAVILY_API_KEY"] = key
+    return jsonify({"status": "saved"})
+
+
+def _resolve_location(data):
+    """The place a find-nearby request is centred on: reverse-geocoded
+    browser coordinates, a typed address, or (when neither was sent) nothing
+    at all, so a parent who declines location sharing still gets results."""
+    if data.get("lat") is not None and data.get("lng") is not None:
+        return reverse_geocode(data["lat"], data["lng"])
+    address = (data.get("address") or "").strip()
+    if address:
+        return geocode(address)
+    return {"city": "", "neighbourhood": "", "formatted_address": "",
+            "lat": None, "lng": None}
+
+
+@app.route("/find-nearby")
+@login_required
+@admin_required
+def find_nearby_page():
+    """The Find Nearby component's own page -- a location + a need in, places out."""
+    return render_template(
+        "find_nearby.html", need_options=NEED_OPTIONS,
+        key_set=bool(os.environ.get("GOOGLE_MAPS_API_KEY")))
+
+
+@app.route("/find-nearby/run", methods=["POST"])
+@login_required
+@admin_required
+def find_nearby_run_route():
+    """Resolve a location, then find places matching a need, as JSON."""
+    data = request.get_json(silent=True) or {}
+    need = (data.get("need") or "").strip()
+    if not need:
+        return jsonify({"error": "need is required"}), 400
+    try:
+        location = _resolve_location(data)
+    except KeyError:
+        return jsonify({"error": "Location lookup isn't configured yet -- save a Google Maps API key first."}), 500
+    except GeocodeError as e:
+        print(f"Geocoding call failed: {e}")
+        return jsonify({"error": "Couldn't resolve that location right now. Please try again."}), 502
+
+    result = find_nearby_component(
+        need=need, city=location["city"], neighbourhood=location["neighbourhood"],
+        place_name=location["formatted_address"])
+    result["location"] = location
+    return jsonify(result)
+
+
+@app.route("/find-nearby/key", methods=["POST"])
+@login_required
+@admin_required
+def find_nearby_key_route():
+    """Save a Google Maps API key into .env and use it immediately, no restart."""
+    data = request.get_json(silent=True) or {}
+    key = (data.get("key") or "").strip()
+    if not key:
+        return jsonify({"error": "key is required"}), 400
+    set_key(ENV_PATH, "GOOGLE_MAPS_API_KEY", key)
+    os.environ["GOOGLE_MAPS_API_KEY"] = key
     return jsonify({"status": "saved"})
 
 
@@ -760,10 +823,28 @@ def replan_adjust_route():
 
 @app.route("/find_nearby", methods=["POST"])
 def find_nearby_route():
-    """Return 1-2 venues matching an immediate need as JSON."""
+    """Venues matching an immediate need as JSON, narrowed to the parent's
+    location when the browser shared it. Location is optional on purpose: a
+    parent who declines the permission prompt still gets the original
+    location-blind results rather than an error."""
     data = request.get_json(silent=True) or {}
-    venues = find_nearby(data.get("need", ""), VENUES)
-    return jsonify({"need": data.get("need", ""), "venues": venues})
+    need = data.get("need", "")
+    try:
+        location = _resolve_location(data)
+    except (GeocodeError, KeyError) as e:
+        print(f"Find-nearby location lookup skipped: {e}")
+        location = None
+
+    if location and location["city"]:
+        result = find_nearby_component(
+            need=need, city=location["city"],
+            neighbourhood=location["neighbourhood"],
+            place_name=location["formatted_address"])
+        return jsonify({"need": need, "venues": result["places"],
+                        "source": result["source"], "location": location})
+
+    return jsonify({"need": need, "venues": find_nearby(need, VENUES),
+                    "source": "curated", "location": None})
 
 
 @app.route("/chatbot", methods=["POST"])
