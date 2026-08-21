@@ -181,6 +181,19 @@ body {
   margin-top: 0.35rem;
 }
 
+/* Replan Trip component: original vs. after-replan, side by side. */
+.replan-trip-columns {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.replan-trip-column {
+  flex: 1;
+  min-width: 260px;
+}
+
 /* Form */
 .field-row {
   display: flex;

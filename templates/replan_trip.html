@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Replan a Trip{% endblock %}
+{% block heading %}Replan a Trip{% endblock %}
+{% block tagline %}Build a sample day, then re-plan it for a situation.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the Replan a trip component. Not the full in-trip page -- see <a href="{{ url_for('trip') }}">/trip</a> for that. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <p class="panel-title">Step 1: build a sample day</p>
+  <button type="button" class="cta-secondary" id="replan-trip-build">▶ Build a sample day</button>
+
+  <p class="panel-title">Step 2: something came up</p>
+  <div class="field-row">
+    <label class="field">
+      <span>Current time</span>
+      <input type="time" id="replan-trip-current-time" value="11:00">
+    </label>
+    <label class="field">
+      <span>Situation</span>
+      <select id="replan-trip-situation">
+        {% for key, label in situation_options %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Minutes <em>(nap length / delay, optional)</em></span>
+      <input type="number" id="replan-trip-minutes" min="0">
+    </label>
+    <label class="field">
+      <span>Theme <em>(for "Change the theme", optional)</em></span>
+      <select id="replan-trip-theme">
+        <option value="">--</option>
+        {% for theme in theme_options %}
+        <option value="{{ theme }}">{{ theme }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <button type="button" class="cta" id="replan-trip-run" disabled>▶ Run</button>
+
+  <p id="replan-trip-heading" class="meta">No sample day built yet.</p>
+  <div class="replan-trip-columns">
+    <div class="replan-trip-column">
+      <p class="panel-title">Original</p>
+      <ol class="preview-list" id="replan-trip-original-list"></ol>
+    </div>
+    <div class="replan-trip-column">
+      <p class="panel-title">After replan</p>
+      <ol class="preview-list" id="replan-trip-changed-list"></ol>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='stop-render.js') }}"></script>
+<script src="{{ url_for('static', filename='replan-trip.js') }}"></script>
+{% endblock %}

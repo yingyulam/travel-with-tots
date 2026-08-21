@@ -46,5 +46,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='stop-render.js') }}"></script>
 <script src="{{ url_for('static', filename='plan-trip.js') }}"></script>
 {% endblock %}

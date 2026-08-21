@@ -42,6 +42,7 @@ from src.agents import (
     reload_website_chatbot_prompt,
 )
 from src.components.plan_trip import plan_trip
+from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
 from src.data_loader import FEATURE_LABELS, load_venues
 from src.db import (
@@ -495,6 +496,35 @@ def plan_trip_run_route():
     return jsonify(result)
 
 
+@app.route("/replan-trip")
+@login_required
+@admin_required
+def replan_trip_page():
+    """The Replan a trip component's own page -- build a sample day, then
+    re-plan it for a situation. Reuses /plan-trip/run for the first step."""
+    return render_template("replan_trip.html", situation_options=SITUATION_OPTIONS,
+                           theme_options=THEME_OPTIONS)
+
+
+@app.route("/replan-trip/run", methods=["POST"])
+@login_required
+@admin_required
+def replan_trip_run_route():
+    """Run the Replan a trip component on a held sample plan, as JSON."""
+    data = request.get_json(silent=True) or {}
+    plan = data.get("plan")
+    situation = data.get("situation")
+    current_time = data.get("current_time")
+    if not plan or not situation or not current_time:
+        return jsonify({"error": "plan, situation, and current_time are required"}), 400
+    result = replan_trip(
+        plan=plan, situation=situation, current_time=current_time,
+        destination="Vancouver", age_months=24,
+        minutes=data.get("minutes"), theme=data.get("theme"),
+    )
+    return jsonify(result)
+
+
 @app.route("/rag/status")
 def rag_status():
     """Poll-able indexing status, used by the chatbot widget and Chunks page."""
@@ -939,9 +969,6 @@ def replan_adjust_route():
     if not plan or not situation or not current_time:
         return jsonify({"error": "plan, situation, and current_time are required"}), 400
 
-    draft = replan(plan, situation, current_time, VENUES, data.get("features") or [],
-                    bedtime=data.get("bedtime"), minutes=data.get("minutes"),
-                    theme=data.get("theme"))
     # A note typed for this one replan (e.g. "we're leaving now, find
     # something indoor nearby") is merged in just for the AI call -- never
     # stored back into the trip's own extra_notes.
@@ -949,23 +976,16 @@ def replan_adjust_route():
     replan_note = data.get("replan_note", "")
     if replan_note:
         extra_notes = f"{extra_notes}\n{replan_note}" if extra_notes else replan_note
-    adjusted = True
-    try:
-        adjustment = ReplanningAgent().adjust_replan(
-            draft, current_time=current_time,
-            destination=data.get("destination", ""),
-            age_months=int(data.get("age_months") or 0),
-            features=data.get("features") or [], transit=data.get("transit") or [],
-            dining=data.get("dining"), bedtime=data.get("bedtime"),
-            nap_notes=data.get("nap_notes", ""), extra_notes=extra_notes,
-            situation=situation,
-        )
-        draft["stops"] = adjustment["stops"]
-    except (ReplanningAgentError, requests.exceptions.RequestException, KeyError) as e:
-        print(f"Replan adjustment skipped, showing the unadjusted draft: {e}")
-        adjusted = False
-    draft["adjusted"] = adjusted
-    return jsonify(draft)
+
+    result = replan_trip(
+        plan=plan, situation=situation, current_time=current_time,
+        destination=data.get("destination", ""), age_months=int(data.get("age_months") or 0),
+        features=data.get("features") or [], transit=data.get("transit") or [],
+        dining=data.get("dining"), bedtime=data.get("bedtime"),
+        minutes=data.get("minutes"), theme=data.get("theme"),
+        nap_notes=data.get("nap_notes", ""), extra_notes=extra_notes,
+    )
+    return jsonify(result)
 
 
 @app.route("/find_nearby", methods=["POST"])
