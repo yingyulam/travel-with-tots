@@ -37,13 +37,13 @@ from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
 from src.data_loader import FEATURE_LABELS, VENUES
+from src.dates import compute_age
 from src.db import (
     TRIP_FIELDS,
     add_child,
     add_parent,
     add_trip,
     add_venue,
-    compute_age,
     delete_child,
     delete_trip,
     get_children,

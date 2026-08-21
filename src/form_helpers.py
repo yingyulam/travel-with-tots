@@ -1,7 +1,8 @@
 """Trip-planning form parsing and validation -- pure functions operating on
 the raw form dict app.py's routes already parse, no Flask dependency."""
 
-from .db import compute_age, get_children
+from .dates import compute_age
+from .db import get_children
 from .itinerary import STOP_DURATION_MIN
 
 # Age is capped at this many years, 0 months.

@@ -13,7 +13,6 @@ are intentionally deferred to a later stage.
 import json
 import sqlite3
 from contextlib import closing
-from datetime import date
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
@@ -381,15 +380,6 @@ def add_venue(name, *, source, venue_type=None, neighbourhood=None,
          int(has_nursing_room), int(stroller_accessible), source, parent_id))
 
 
-def compute_age(date_of_birth, on=None):
-    """Age as (years, months) from an ISO 'YYYY-MM-DD' date of birth, on a given
-    date (default today). Age is derived here, never stored."""
-    dob = date.fromisoformat(date_of_birth)
-    on = on or date.today()
-    months = (on.year - dob.year) * 12 + (on.month - dob.month) - (on.day < dob.day)
-    return months // 12, months % 12
-
-
 def get_parent_by_email(email):
     with closing(connect()) as conn:
         return conn.execute(
@@ -450,41 +440,63 @@ def get_candidate_venues(city, age_months, features=None, transit=None,
     neighbourhoods stay in play. If `dining` is "dine_out", at least one
     venue where a meal is possible is guaranteed a slot, so there's always a
     real lunch option."""
+    where, params = _candidate_where_clause(city, age_months, features)
+
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            f"SELECT * FROM venues WHERE {where} ORDER BY name", params).fetchall()
+        rows = _narrow_by_neighbourhood(rows, near_neighbourhood, transit)
+        rows = rows[:limit]
+        rows = _ensure_dining_option(conn, rows, where, params, dining, limit)
+        return rows
+
+
+def _candidate_where_clause(city, age_months, features):
+    """WHERE clause and params for a curated-venue lookup: city substring
+    match, age range coverage, and any requested feature tags."""
     wanted = [f for f in (features or []) if f in CANDIDATE_FEATURE_COLUMNS]
     clauses = ["source = 'curated'", "city LIKE ?",
                "min_age_months <= ?", "max_age_months >= ?"]
     params = [f"%{city}%", age_months, age_months]
     for feature in wanted:
         clauses.append(f"{feature} = 1")
-    where = " AND ".join(clauses)
+    return " AND ".join(clauses), params
 
-    with closing(connect()) as conn:
-        rows = conn.execute(
-            f"SELECT * FROM venues WHERE {where} ORDER BY name", params).fetchall()
 
-        if near_neighbourhood is not None:
-            narrowed = [row for row in rows if row["neighbourhood"] == near_neighbourhood]
-            if len(narrowed) >= MIN_CLUSTER_SIZE:
-                rows = narrowed
-        elif "car" not in (transit or []) and rows:
-            by_neighbourhood = {}
-            for row in rows:
-                by_neighbourhood.setdefault(row["neighbourhood"], []).append(row)
-            top_neighbourhood = max(by_neighbourhood, key=lambda n: len(by_neighbourhood[n]))
-            clustered = by_neighbourhood[top_neighbourhood]
-            if len(clustered) >= MIN_CLUSTER_SIZE:
-                rows = clustered
+def _narrow_by_neighbourhood(rows, near_neighbourhood, transit):
+    """Narrow to a single neighbourhood's rows when that still leaves enough
+    for a real choice (MIN_CLUSTER_SIZE) -- to the specific neighbourhood
+    given (replanning from a known current stop), or otherwise to whichever
+    matched neighbourhood has the most venues, but only without a car (car
+    access removes the need to keep stops close together). Falls back to
+    every matched row whenever narrowing wouldn't leave enough."""
+    if near_neighbourhood is not None:
+        narrowed = [row for row in rows if row["neighbourhood"] == near_neighbourhood]
+        return narrowed if len(narrowed) >= MIN_CLUSTER_SIZE else rows
 
-        rows = rows[:limit]
+    if "car" not in (transit or []) and rows:
+        by_neighbourhood = {}
+        for row in rows:
+            by_neighbourhood.setdefault(row["neighbourhood"], []).append(row)
+        top_neighbourhood = max(by_neighbourhood, key=lambda n: len(by_neighbourhood[n]))
+        clustered = by_neighbourhood[top_neighbourhood]
+        return clustered if len(clustered) >= MIN_CLUSTER_SIZE else rows
 
-        if dining == "dine_out" and not any(row["can_eat"] for row in rows):
-            lunch_row = conn.execute(
-                f"SELECT * FROM venues WHERE {where} AND can_eat = 1 "
-                "ORDER BY name LIMIT 1", params).fetchone()
-            if lunch_row:
-                rows = rows[:limit - 1] + [lunch_row]
+    return rows
 
+
+def _ensure_dining_option(conn, rows, where, params, dining, limit):
+    """If dining is "dine_out" and none of `rows` can host a meal, swap in
+    one more query's best can_eat match so there's always a real lunch
+    option -- unqualified, `rows` is returned unchanged."""
+    if dining != "dine_out" or any(row["can_eat"] for row in rows):
         return rows
+    lunch_row = conn.execute(
+        f"SELECT * FROM venues WHERE {where} AND can_eat = 1 "
+        "ORDER BY name LIMIT 1", params).fetchone()
+    if not lunch_row:
+        return rows
+    return rows[:limit - 1] + [lunch_row]
 
 
 def get_logged_venues_for_parent(parent_id):
