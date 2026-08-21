@@ -9,15 +9,11 @@ from dotenv import load_dotenv
 
 from . import db, rag
 from .data_loader import maps_url
-from .interactions import (
-    DEFAULT_NAP_LENGTH_MIN, FINISHED_EARLY_BUFFER, RUNNING_BEHIND_DELAY,
-    SITUATION_LABELS, THEME_CHANGE_BUFFER_MIN,
-)
+from .interactions import SITUATION_LABELS
 from .itinerary import (
-    DEFAULT_LUNCH_TARGET_MIN, LUNCH_DURATION_LABEL, LUNCH_SEARCH_RADIUS_MIN,
-    MAX_MEAL_STOPS, combine_themes, display_to_min, hhmm_to_min,
-    min_to_display, realistic_stop_count, resolve_themes, stop_duration,
-    transit_buffer_min, venue_open_for,
+    DEFAULT_LUNCH_TARGET_MIN, LUNCH_SEARCH_RADIUS_MIN, display_to_min,
+    hhmm_to_min, min_to_display, stop_duration, transit_buffer_min,
+    venue_open_for,
 )
 
 load_dotenv()
@@ -41,13 +37,9 @@ MAX_MALFORMED_BODY_RETRIES = 1
 
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
-PLANNER_PROMPT_PATH = os.path.join(PROMPTS_DIR, "planner.txt")
-REPLAN_DAY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "replan_day.txt")
 PLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "plan_adjust.txt")
 REPLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "replan_adjust.txt")
 _WEBSITE_CHATBOT_TEMPLATE = None
-_PLANNER_TEMPLATE = None
-_REPLAN_DAY_TEMPLATE = None
 _PLAN_ADJUST_TEMPLATE = None
 _REPLAN_ADJUST_TEMPLATE = None
 
@@ -217,17 +209,6 @@ class PlanningAgentError(Exception):
     to ground it on."""
 
 
-def _load_planner_template() -> str:
-    with open(PLANNER_PROMPT_PATH) as f:
-        return f.read()
-
-
-def reload_planner_prompt() -> None:
-    """Force the next PlanningAgent call to re-read the prompt template from disk."""
-    global _PLANNER_TEMPLATE
-    _PLANNER_TEMPLATE = None
-
-
 def _load_plan_adjust_template() -> str:
     with open(PLAN_ADJUST_PROMPT_PATH) as f:
         return f.read()
@@ -267,40 +248,6 @@ def _parse_json_reply(text: str):
     return json.loads(text)
 
 
-# OpenRouter structured-output schema for the {"stops": [...]} shape both
-# PlanningAgent and ReplanningAgent expect back -- shared since the shape is
-# identical, only the semantic checks in _clean_stops/_validate differ.
-STOPS_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "day_stops",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "stops": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "venue_id": {"type": "integer"},
-                            "time": {"type": "string"},
-                            "reason": {"type": "string"},
-                            "is_nap": {"type": "boolean"},
-                            "is_meal": {"type": "boolean"},
-                        },
-                        "required": ["venue_id", "time", "reason", "is_nap", "is_meal"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["stops"],
-            "additionalProperties": False,
-        },
-    },
-}
-
-
 # OpenRouter structured-output schema for the {"edits": [...]} shape
 # PlanningAgent.adjust_plan() expects back -- a short list of changes
 # against an already-valid draft, not a full stops array.
@@ -332,82 +279,6 @@ PLAN_EDITS_RESPONSE_FORMAT = {
         },
     },
 }
-
-
-def _clean_stops(stops: list, valid_ids: set):
-    """Shared structural checks for a "stops" JSON array: every stop cites a
-    real, non-repeated venue_id, has a non-empty time/reason, and is never
-    both is_nap and is_meal. Returns (cleaned, None), or (None, error)
-    describing the first problem found. Shared by PlanningAgent and
-    ReplanningAgent, which only diverge in what they check beyond this
-    (stop-count ceiling vs. anchor-time floor, meal-cap baseline, stop-
-    duration lookup for spacing)."""
-    cleaned = []
-    seen_ids = set()
-    for stop in stops:
-        if not isinstance(stop, dict):
-            return None, "Every stop must be a JSON object."
-        venue_id = stop.get("venue_id")
-        if venue_id not in valid_ids:
-            return None, f"venue_id {venue_id!r} is not in the candidate list."
-        if venue_id in seen_ids:
-            return None, f"venue_id {venue_id!r} is used more than once."
-        if not stop.get("time") or not stop.get("reason"):
-            return None, "Every stop needs a non-empty \"time\" and \"reason\"."
-        is_nap, is_meal = bool(stop.get("is_nap")), bool(stop.get("is_meal"))
-        if is_nap and is_meal:
-            return None, (
-                f"The stop at {stop['time']} has both \"is_nap\" and "
-                "\"is_meal\" true -- a stop is never both.")
-        seen_ids.add(venue_id)
-        cleaned.append({
-            "time": stop["time"],
-            "venue_id": venue_id,
-            "reason": stop["reason"],
-            "is_nap": is_nap,
-            "is_meal": is_meal,
-        })
-    return cleaned, None
-
-
-def _check_transit_spacing(cleaned: list, transit_buffer_min: int, duration_fn):
-    """Shared consecutive-stop spacing check: every stop must start no
-    earlier than the previous stop's end plus the transit buffer. Assumes
-    `cleaned` is already sorted by time. `duration_fn(stop)` returns that
-    stop's occupied minutes -- callers supply their own since PlanningAgent
-    looks up a matched nap's real duration while ReplanningAgent uses a
-    flat activity/meal duration; this only shares the loop, not that
-    lookup, so each agent's existing behavior is unchanged. Returns an
-    error string, or None if every stop is spaced correctly."""
-    for prev, nxt in zip(cleaned, cleaned[1:]):
-        prev_end = display_to_min(prev["time"]) + duration_fn(prev)
-        next_start = display_to_min(nxt["time"])
-        if next_start < prev_end + transit_buffer_min:
-            return (
-                f"{nxt['time']} (venue_id {nxt['venue_id']}) starts before "
-                f"the previous stop ({prev['time']}, venue_id "
-                f"{prev['venue_id']}, ends {min_to_display(prev_end)}) plus "
-                f"the {transit_buffer_min}-minute travel buffer -- push it to at least "
-                f"{min_to_display(prev_end + transit_buffer_min)}, or drop a stop.")
-    return None
-
-
-def _finalize_stops(cleaned: list, by_id: dict) -> list:
-    """Turn validated {venue_id, time, reason, is_nap, is_meal} dicts into the
-    {time, kind, venue, reason} shape the rest of the app expects. Shared by
-    PlanningAgent and ReplanningAgent."""
-    stops = []
-    for stop in cleaned:
-        venue = dict(by_id[stop["venue_id"]])
-        venue["maps_url"] = maps_url(venue["name"], venue["city"] or "Vancouver")
-        kind = "meal" if stop["is_meal"] else "nap" if stop["is_nap"] else "activity"
-        stops.append({
-            "time": stop["time"],
-            "kind": kind,
-            "venue": venue,
-            "reason": stop["reason"],
-        })
-    return stops
 
 
 def _format_draft_stops_for_prompt(stops: list) -> str:
@@ -592,181 +463,12 @@ def _validate_plan_edits(edits, draft_stops: list, by_id: dict, ctx: dict):
 
 
 class PlanningAgent:
-    """Generates a day plan grounded only in real venues from the SQL venues
-    table, drawing from one or more src.itinerary.THEMES entries (combined
-    via combine_themes), matching the rule-based planner's themes so the two
-    are directly comparable. Stop count follows the same PACE_STOPS mapping
-    the rule-based planner uses, capped by however many real candidate
-    venues actually exist."""
+    """Smooths an already-valid rule-based day plan (src/itinerary.py's
+    generate_plans) by proposing a short list of edits -- never a full
+    regeneration. See adjust_plan()."""
 
     def __init__(self, model: str = DEFAULT_MODEL):
         self.model = model if model in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
-
-    def _build_messages(self, theme, candidates, ctx):
-        global _PLANNER_TEMPLATE
-        if _PLANNER_TEMPLATE is None:
-            _PLANNER_TEMPLATE = _load_planner_template()
-        nap_times = "; ".join(
-            f"{n['start']} for about {n['duration_min']} min"
-            for n in (ctx.get("naps") or [])
-        ) or "none"
-        prompt = (
-            _PLANNER_TEMPLATE
-            .replace("{theme_label}", theme["label"])
-            .replace("{theme_blurb}", theme["blurb"])
-            .replace("{candidate_venues}", _format_venue_candidates(candidates))
-            .replace("{destination}", ctx["destination"] or "")
-            .replace("{age_months}", str(ctx["age_months"]))
-            .replace("{wake_up}", ctx["wake_up"] or "")
-            .replace("{bedtime}", ctx["bedtime"] or "")
-            .replace("{nap_times}", nap_times)
-            .replace("{stop_count}", str(ctx["stop_count"]))
-            .replace("{extra_notes}", ctx["extra_notes"] or "none")
-            .replace("{dining}", ctx["dining"] or "dine_out")
-            .replace("{accommodation}", ctx["accommodation"] or "not specified")
-            .replace("{nap_notes}", ctx["nap_notes"] or "none")
-            .replace("{transit}", ", ".join(ctx["transit"]) if ctx.get("transit") else "none")
-            .replace("{transit_nap}", ctx["transit_nap"] or "sometimes")
-            .replace("{preferred_lunch_time}", ctx["preferred_lunch_time"] or "none")
-            .replace("{activity_duration_min}", str(ctx["activity_duration_min"]))
-            .replace("{meal_duration_min}", str(ctx["meal_duration_min"]))
-            .replace("{transit_buffer_min}", str(ctx["transit_buffer_min"]))
-            .replace("{lunch_duration_label}", LUNCH_DURATION_LABEL)
-        )
-        return [{"role": "system", "content": prompt}]
-
-    @staticmethod
-    def _stop_duration(stop, ctx):
-        """Minutes this stop occupies, mirroring itinerary.py's per-kind stop
-        durations: the meal duration for a meal stop, the specific matched
-        nap's own duration for a nap stop (nearest by start time), or the
-        flat activity duration otherwise."""
-        if stop["is_meal"]:
-            return ctx["meal_duration_min"]
-        if stop["is_nap"]:
-            naps = ctx.get("naps") or []
-            if naps:
-                start = display_to_min(stop["time"])
-                nearest = min(naps, key=lambda n: abs(hhmm_to_min(n["start"]) - start))
-                return nearest["duration_min"]
-        return ctx["activity_duration_min"]
-
-    def _validate(self, parsed, valid_ids, ctx):
-        """Returns (stops, None) if the response is well-formed and realistic,
-        or (None, error) describing the first problem found. The whole
-        response is rejected (and retried) if even one stop is invalid,
-        rather than silently dropping it -- so a plan never ships with fewer
-        stops than requested just because one citation didn't check out.
-
-        The requested stop count (clamped to what's realistic for the
-        child's age via realistic_stop_count, the same rule the rule-based
-        planner uses) is a ceiling on activity/nap stops only, not a
-        mandate: anywhere from 1 up to min(that ceiling, available
-        candidates) is valid, whether the candidate list is thin or the
-        model simply chose a shorter, more realistically-paced day --
-        neither is an error. A dedicated meal stop (is_meal) is additional
-        and never counts against that ceiling, mirroring the rule-based
-        planner. Consecutive stops must also leave enough time for the
-        previous stop's duration plus the transit buffer -- this is
-        enforced here, not just requested in the prompt, since nothing else
-        catches a model that ignores its own stated spacing rule."""
-        stops = parsed.get("stops") if isinstance(parsed, dict) else None
-        if not isinstance(stops, list) or not stops:
-            return None, "\"stops\" must be a non-empty JSON array."
-
-        cleaned, error = _clean_stops(stops, valid_ids)
-        if cleaned is None:
-            return None, error
-
-        meal_stops = [s for s in cleaned if s["is_meal"]]
-        max_meals = MAX_MEAL_STOPS if ctx["dining"] == "dine_out" else 0
-        if len(meal_stops) > max_meals:
-            return None, (
-                f"Found {len(meal_stops)} \"is_meal\" stop(s); dining "
-                f"{ctx['dining']!r} allows at most {max_meals}.")
-
-        non_meal_count = len(cleaned) - len(meal_stops)
-        cap = min(realistic_stop_count(ctx["stop_count"], ctx["age_months"]), len(valid_ids))
-        if not (1 <= non_meal_count <= cap):
-            return None, (
-                f"{non_meal_count} non-meal stop(s) (the meal stop doesn't "
-                f"count); requested {ctx['stop_count']} stop(s) allows 1 to {cap}.")
-
-        cleaned.sort(key=lambda s: display_to_min(s["time"]))
-        error = _check_transit_spacing(
-            cleaned, ctx["transit_buffer_min"],
-            lambda s: self._stop_duration(s, ctx))
-        if error:
-            return None, error
-
-        return cleaned, None
-
-    def generate_plan_for_themes(self, theme_labels, *, destination, age_months,
-                                  naps=None, stop_count,
-                                  wake_up, bedtime, features, transit=None,
-                                  dining=None, accommodation="", nap_notes="",
-                                  extra_notes="", transit_nap="",
-                                  preferred_lunch_time=""):
-        """One plan combining the given theme(s), on demand, so a parent only
-        spends a model call when they actually ask for it. `theme_labels` is
-        whichever theme checkboxes were selected (falls back to all three,
-        "Mixed", if empty or none matched). Returns {"label", "blurb",
-        "stops", "model", "response_time", "input_tokens", "output_tokens"}."""
-        theme = combine_themes(resolve_themes(theme_labels))
-
-        candidates = db.get_candidate_venues(
-            destination, age_months, features, transit=transit, dining=dining)
-        by_id = {v["id"]: v for v in candidates}
-        if not by_id:
-            raise PlanningAgentError(
-                "No venues are available for this destination and age yet.")
-
-        ctx = dict(destination=destination, age_months=age_months, naps=naps,
-                   stop_count=stop_count, wake_up=wake_up, bedtime=bedtime, dining=dining,
-                   accommodation=accommodation, nap_notes=nap_notes,
-                   extra_notes=extra_notes, transit=transit, transit_nap=transit_nap,
-                   preferred_lunch_time=preferred_lunch_time,
-                   activity_duration_min=stop_duration("activity"),
-                   meal_duration_min=stop_duration("meal"),
-                   transit_buffer_min=transit_buffer_min(transit))
-        messages = self._build_messages(theme, candidates, ctx)
-        reply, usage, elapsed = _call_openrouter(messages, self.model, STOPS_RESPONSE_FORMAT)
-        input_tokens = usage.get("prompt_tokens")
-        output_tokens = usage.get("completion_tokens")
-
-        cleaned, error = None, None
-        try:
-            cleaned, error = self._validate(_parse_json_reply(reply), set(by_id), ctx)
-        except (ValueError, AttributeError):
-            cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            # One corrective retry: show the model its own bad reply and the
-            # specific rule it broke, so the single retry has a real shot.
-            retry_messages = messages + [
-                {"role": "assistant", "content": reply},
-                {"role": "user", "content": (
-                    f"That response was invalid: {error} Reply again with ONLY "
-                    "strict JSON in the same {\"stops\": [...]} shape, citing "
-                    "distinct venue_id values from the candidate list above -- "
-                    "never invent or repeat one.")},
-            ]
-            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, STOPS_RESPONSE_FORMAT)
-            elapsed += elapsed2
-            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
-            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
-            try:
-                cleaned, error = self._validate(_parse_json_reply(reply2), set(by_id), ctx)
-            except (ValueError, AttributeError):
-                cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            raise PlanningAgentError(f"Couldn't build a valid {theme['label']} plan.")
-
-        return {"label": theme["label"], "blurb": theme["blurb"],
-                "stops": _finalize_stops(cleaned, by_id),
-                "model": self.model, "response_time": round(elapsed, 3),
-                "input_tokens": input_tokens, "output_tokens": output_tokens}
 
     def _build_adjust_messages(self, draft_stops, candidates, ctx):
         global _PLAN_ADJUST_TEMPLATE
@@ -856,17 +558,6 @@ class PlanningAgent:
                 "input_tokens": input_tokens, "output_tokens": output_tokens}
 
 
-def _load_replan_day_template() -> str:
-    with open(REPLAN_DAY_PROMPT_PATH) as f:
-        return f.read()
-
-
-def reload_replan_day_prompt() -> None:
-    """Force the next ReplanningAgent call to re-read the prompt template from disk."""
-    global _REPLAN_DAY_TEMPLATE
-    _REPLAN_DAY_TEMPLATE = None
-
-
 def _load_replan_adjust_template() -> str:
     with open(REPLAN_ADJUST_PROMPT_PATH) as f:
         return f.read()
@@ -891,216 +582,18 @@ def _format_stops_for_prompt(stops: list) -> str:
     return "\n".join(lines)
 
 
-def _format_theme_hint(theme: str | None) -> str:
-    """A soft, non-mandatory theme-biasing line for "weather_rain"/
-    "change_theme" -- same spirit as planner.txt's theme bias, not a hard
-    filter. Empty string (no hint at all) for every other situation."""
-    if not theme:
-        return ""
-    matched = resolve_themes([theme])
-    if len(matched) != 1:
-        return ""
-    t = matched[0]
-    return (f"Theme for the rest of the day: {t['label']} -- {t['blurb']} "
-            "Bias remaining-stop venue choices toward this theme where a "
-            "good candidate exists in the list below; don't force a poor "
-            "fit or drop a stop just to match it.\n")
-
-
 class ReplanningAgentError(Exception):
     """Raised when the model's replanned response can't be validated, even
     after one retry, or when there are no candidate venues to ground it on."""
 
 
 class ReplanningAgent:
-    """AI-backed alternative to interactions.replan(): re-decides only the
-    stops still ahead of current_time, given a situation, grounded in venues
-    freshly queried near the last kept stop. Never mutates current_plan --
-    always returns a brand-new plan dict for the caller to store separately."""
+    """Smooths an already-valid rule-based replan draft (interactions.replan)
+    by proposing a short list of edits to the stops still ahead -- never a
+    full regeneration. See adjust_replan()."""
 
     def __init__(self, model: str = DEFAULT_MODEL):
         self.model = model if model in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
-
-    def _build_messages(self, situation, kept, remaining, candidates, ctx):
-        global _REPLAN_DAY_TEMPLATE
-        if _REPLAN_DAY_TEMPLATE is None:
-            _REPLAN_DAY_TEMPLATE = _load_replan_day_template()
-        prompt = (
-            _REPLAN_DAY_TEMPLATE
-            .replace("{situation}", situation)
-            .replace("{situation_label}", SITUATION_LABELS.get(situation, situation))
-            .replace("{theme_hint}", _format_theme_hint(ctx.get("theme")))
-            .replace("{destination}", ctx["destination"] or "")
-            .replace("{age_months}", str(ctx["age_months"]))
-            .replace("{current_time}", ctx["current_time"] or "")
-            .replace("{anchor_time}", min_to_display(ctx["anchor_min"]))
-            .replace("{bedtime}", ctx["bedtime"] or "")
-            .replace("{dining}", ctx["dining"] or "none")
-            .replace("{already_meal_count}", str(ctx["already_meals"]))
-            .replace("{nap_notes}", ctx.get("nap_notes") or "none")
-            .replace("{extra_notes}", ctx.get("extra_notes") or "none")
-            .replace("{kept_stops}", _format_stops_for_prompt(kept))
-            .replace("{remaining_stops}", _format_stops_for_prompt(remaining))
-            .replace("{candidate_venues}", _format_venue_candidates(candidates))
-            .replace("{activity_duration_min}", str(ctx["activity_duration_min"]))
-            .replace("{meal_duration_min}", str(ctx["meal_duration_min"]))
-            .replace("{transit_buffer_min}", str(ctx["transit_buffer_min"]))
-        )
-        return [{"role": "system", "content": prompt}]
-
-    def _validate(self, parsed, valid_ids, ctx):
-        """Returns (stops, None) if well-formed and realistic, or (None,
-        error). Shares PlanningAgent._validate's structural checks (real,
-        non-duplicate venue_id, non-empty time/reason, is_nap/is_meal
-        mutual exclusivity) via _clean_stops, and its transit-buffer spacing
-        loop via _check_transit_spacing, plus one check specific to
-        replanning (nothing may start before the situation's anchor time)
-        and a meal cap adjusted for meals already in `kept`. Deliberately
-        does NOT enforce a stop-count ceiling (meaningless for "however many
-        stops remain") or bedtime/hours (prompt-only, same as PlanningAgent
-        today). An empty "stops" array is valid -- a shorter remaining day
-        is not an error."""
-        stops = parsed.get("stops") if isinstance(parsed, dict) else None
-        if not isinstance(stops, list):
-            return None, "\"stops\" must be a JSON array."
-        if not stops:
-            return [], None
-
-        cleaned, error = _clean_stops(stops, valid_ids)
-        if cleaned is None:
-            return None, error
-
-        new_meals = sum(1 for s in cleaned if s["is_meal"])
-        max_meals = MAX_MEAL_STOPS if ctx["dining"] == "dine_out" else 0
-        if ctx["already_meals"] + new_meals > max_meals:
-            return None, (
-                f"Found {new_meals} new \"is_meal\" stop(s) on top of "
-                f"{ctx['already_meals']} already today; dining "
-                f"{ctx['dining']!r} allows at most {max_meals} total.")
-
-        cleaned.sort(key=lambda s: display_to_min(s["time"]))
-        if display_to_min(cleaned[0]["time"]) < ctx["anchor_min"]:
-            return None, (
-                f"{cleaned[0]['time']} (venue_id {cleaned[0]['venue_id']}) "
-                f"starts before {min_to_display(ctx['anchor_min'])}, the "
-                "earliest this situation allows.")
-
-        error = _check_transit_spacing(
-            cleaned, ctx["transit_buffer_min"],
-            lambda s: ctx["meal_duration_min"] if s["is_meal"] else ctx["activity_duration_min"])
-        if error:
-            return None, error
-
-        return cleaned, None
-
-    def replan_day(self, situation, current_plan, *, current_time, destination,
-                    age_months, features=None, transit=None, dining=None,
-                    bedtime=None, minutes=None, theme=None,
-                    nap_notes="", extra_notes=""):
-        """Returns a NEW plan dict: {"label", "blurb", "from_time", "stops",
-        "source", "model", "response_time", "input_tokens", "output_tokens"}.
-        `current_plan` is never modified -- callers must store the result as
-        an additional version, never in place of it. `theme` is the
-        parent-picked target theme for "change_theme" (ignored otherwise --
-        "weather_rain" always targets "Rainy-day"). `nap_notes`/`extra_notes`
-        are the same free-text fields PlanningAgent uses, so a replan can
-        also account for sleep habits or preferences the parent already
-        described, not just the structured situation/theme."""
-        # "adjusted" only ever means "this round's AI adjuster touched this
-        # stop" -- strip any leftover flag from an earlier round before
-        # deciding what's kept vs. still ahead.
-        stops = [{k: v for k, v in s.items() if k != "adjusted"}
-                 for s in current_plan.get("stops", [])]
-        now = hhmm_to_min(current_time)
-        kept = [dict(s) for s in stops if display_to_min(s["time"]) <= now]
-        remaining = [s for s in stops if display_to_min(s["time"]) > now]
-
-        near_neighbourhood = None
-        for s in reversed(kept):
-            if s.get("venue"):
-                near_neighbourhood = s["venue"]["neighbourhood"]
-                break
-
-        candidates = db.get_candidate_venues(
-            destination, age_months, features, transit=transit, dining=dining,
-            near_neighbourhood=near_neighbourhood)
-        used_names = {s["venue"]["name"] for s in kept if s.get("venue")}
-        candidates = [v for v in candidates if v["name"] not in used_names]
-        by_id = {v["id"]: v for v in candidates}
-        if not by_id:
-            raise ReplanningAgentError(
-                "No venues are available near the current stop yet.")
-
-        anchor_min = now
-        if situation == "nap_happened":
-            anchor_min = now + (int(minutes) if minutes else DEFAULT_NAP_LENGTH_MIN)
-        elif situation == "running_behind":
-            anchor_min = now + (int(minutes) if minutes else RUNNING_BEHIND_DELAY)
-        elif situation == "finished_early":
-            anchor_min = now + FINISHED_EARLY_BUFFER
-        elif situation in ("weather_rain", "change_theme"):
-            anchor_min = now + THEME_CHANGE_BUFFER_MIN
-        # skip_next: the freed time starts right now, no extra buffer.
-
-        effective_theme = "Rainy-day" if situation == "weather_rain" else theme
-
-        already_meals = sum(1 for s in kept if s.get("kind") == "meal")
-        ctx = dict(destination=destination, age_months=age_months,
-                   current_time=current_time, bedtime=bedtime, dining=dining,
-                   anchor_min=anchor_min, already_meals=already_meals,
-                   theme=effective_theme, nap_notes=nap_notes, extra_notes=extra_notes,
-                   activity_duration_min=stop_duration("activity"),
-                   meal_duration_min=stop_duration("meal"),
-                   transit_buffer_min=transit_buffer_min(transit))
-
-        messages = self._build_messages(situation, kept, remaining, candidates, ctx)
-        reply, usage, elapsed = _call_openrouter(messages, self.model, STOPS_RESPONSE_FORMAT)
-        input_tokens = usage.get("prompt_tokens")
-        output_tokens = usage.get("completion_tokens")
-
-        cleaned, error = None, None
-        try:
-            cleaned, error = self._validate(_parse_json_reply(reply), set(by_id), ctx)
-        except (ValueError, AttributeError):
-            cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            retry_messages = messages + [
-                {"role": "assistant", "content": reply},
-                {"role": "user", "content": (
-                    f"That response was invalid: {error} Reply again with ONLY "
-                    "strict JSON in the same {\"stops\": [...]} shape, citing "
-                    "distinct venue_id values from the candidate list above -- "
-                    "never invent or repeat one.")},
-            ]
-            reply2, usage2, elapsed2 = _call_openrouter(retry_messages, self.model, STOPS_RESPONSE_FORMAT)
-            elapsed += elapsed2
-            input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
-            output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
-            try:
-                cleaned, error = self._validate(_parse_json_reply(reply2), set(by_id), ctx)
-            except (ValueError, AttributeError):
-                cleaned, error = None, "That wasn't valid JSON."
-
-        if cleaned is None:
-            raise ReplanningAgentError("Couldn't build a valid replanned day.")
-
-        display_now = min_to_display(now)
-        label = current_plan.get("label", "Plan")
-        new_stops = kept + _finalize_stops(cleaned, by_id)
-        new_stops.sort(key=lambda s: display_to_min(s["time"]))
-        return {
-            "label": f"{label} · AI replan from {display_now}",
-            "blurb": (f"AI-replanned after “{SITUATION_LABELS.get(situation, situation)}” "
-                      f"at {display_now}. Earlier stops kept as-is."),
-            "from_time": display_now,
-            "stops": new_stops,
-            "source": "ai",
-            "model": self.model,
-            "response_time": round(elapsed, 3),
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-        }
 
     def _build_replan_adjust_messages(self, situation, kept, remaining, candidates, ctx):
         global _REPLAN_ADJUST_TEMPLATE

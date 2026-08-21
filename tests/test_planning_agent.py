@@ -3,7 +3,6 @@ from unittest import mock
 
 from src.agents import (
     PLAN_EDITS_RESPONSE_FORMAT,
-    STOPS_RESPONSE_FORMAT,
     PlanningAgent,
     PlanningAgentError,
     _apply_plan_edits,
@@ -36,50 +35,6 @@ def _draft_venue(name, **overrides):
 
 def _draft_stop(time, kind, venue, reason="kept"):
     return {"time": time, "kind": kind, "venue": venue, "reason": reason}
-
-
-class PlanningAgentStructuredOutputTest(unittest.TestCase):
-    def setUp(self):
-        self.agent = PlanningAgent()
-        self.candidates = [_venue(1, "Aquarium"), _venue(2, "Museum")]
-
-    def _good_reply(self):
-        return ('{"stops": [{"venue_id": 1, "time": "9:00 AM", "reason": "fits", '
-                '"is_nap": false, "is_meal": false}]}')
-
-    def test_calls_openrouter_with_the_shared_stops_schema(self):
-        captured = {}
-
-        def fake_call(messages, model, response_format=None):
-            captured["response_format"] = response_format
-            return self._good_reply(), {"prompt_tokens": 10, "completion_tokens": 5}, 1.0
-
-        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
-            self.agent.generate_plan_for_themes(
-                [], destination="Vancouver", age_months=30, stop_count=3,
-                wake_up="07:00", bedtime="19:30", features=[])
-
-        self.assertEqual(captured["response_format"], STOPS_RESPONSE_FORMAT)
-
-    def test_retry_call_also_uses_the_schema(self):
-        calls = []
-
-        def fake_call(messages, model, response_format=None):
-            calls.append(response_format)
-            if len(calls) == 1:
-                return ('{"stops": [{"venue_id": 999, "time": "9:00 AM", "reason": "r", '
-                        '"is_nap": false, "is_meal": false}]}', {}, 1.0)
-            return self._good_reply(), {}, 1.0
-
-        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
-            self.agent.generate_plan_for_themes(
-                [], destination="Vancouver", age_months=30, stop_count=3,
-                wake_up="07:00", bedtime="19:30", features=[])
-
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(all(c == STOPS_RESPONSE_FORMAT for c in calls))
 
 
 class ApplyPlanEditsTest(unittest.TestCase):

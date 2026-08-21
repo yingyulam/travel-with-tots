@@ -242,8 +242,7 @@ travel-with-tots/
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan)
 │   └── prompts/
-│       ├── website_chatbot.txt    # chatbot system prompt
-│       └── planner.txt            # AI itinerary planner system prompt
+│       └── website_chatbot.txt    # chatbot system prompt
 ├── templates/
 │   ├── index.html                 # marketing landing page
 │   ├── plan.html                  # Page 1: planning form + comparison cards
@@ -301,7 +300,6 @@ transactional.
 | `/add-child`, `/edit-child/<id>`, `/delete-child/<id>` | POST | Manage saved children |
 | `/log-place`                   | POST     | Save a user-submitted venue                                   |
 | `/plan`                        | GET/POST | Page 1: trip form and candidate plan cards                    |
-| `/plan/ai`                     | POST     | Page 1: AI-assisted plan for one theme (JSON out)              |
 | `/save-trip`                   | POST     | Save a generated plan to the account                           |
 | `/delete-trip/<id>`             | POST     | Remove a saved plan from the account                           |
 | `/trip`                        | GET/POST | Page 2: in-trip view for the chosen plan                        |
@@ -311,8 +309,8 @@ transactional.
 | `/chatbot`                      | POST     | Ask the chatbot a question (JSON in/out)                        |
 | `/feedback`                     | POST     | Save a thumbs up/down rating (chatbot response or AI plan)      |
 | `/rag/status`                   | GET      | Poll-able chatbot indexing status                               |
-| `/settings`                     | GET      | Admin: view/edit knowledge base + prompts                       |
-| `/settings/knowledge-base`, `/settings/prompt`, `/settings/planner-prompt` | POST | Admin: save the knowledge base, chatbot prompt, or planner prompt |
+| `/settings`                     | GET      | Admin: view/edit knowledge base + chatbot prompt                |
+| `/settings/knowledge-base`, `/settings/prompt` | POST | Admin: save the knowledge base or chatbot prompt |
 | `/chunks`                       | GET      | Admin: list every chatbot knowledge-base chunk                  |
 | `/chunks/rerun`                 | POST     | Admin: re-chunk and re-embed at a different size                |
 | `/results`                      | GET      | Admin: browse rated chatbot responses + generated plans, stats per session |

@@ -29,16 +29,8 @@ from src import rag
 from src.agents import (
     ALLOWED_CHAT_MODELS,
     DEFAULT_MODEL,
-    PLANNER_PROMPT_PATH,
-    REPLAN_DAY_PROMPT_PATH,
     WEBSITE_CHATBOT_PROMPT_PATH,
-    PlanningAgent,
-    PlanningAgentError,
-    ReplanningAgent,
-    ReplanningAgentError,
     ask_website_chatbot,
-    reload_planner_prompt,
-    reload_replan_day_prompt,
     reload_website_chatbot_prompt,
 )
 from src.components.plan_trip import plan_trip
@@ -327,13 +319,8 @@ def settings():
     knowledge_base = rag.KNOWLEDGE_BASE_PATH.read_text()
     with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
         prompt = f.read()
-    with open(PLANNER_PROMPT_PATH) as f:
-        planner_prompt = f.read()
-    with open(REPLAN_DAY_PROMPT_PATH) as f:
-        replan_prompt = f.read()
     return render_template(
-        "settings.html", knowledge_base=knowledge_base, prompt=prompt,
-        planner_prompt=planner_prompt, replan_prompt=replan_prompt)
+        "settings.html", knowledge_base=knowledge_base, prompt=prompt)
 
 
 @app.route("/settings/knowledge-base", methods=["POST"])
@@ -358,32 +345,6 @@ def save_prompt():
         f.write(content)
     reload_website_chatbot_prompt()
     flash("Chatbot prompt saved.")
-    return redirect(url_for("settings"))
-
-
-@app.route("/settings/planner-prompt", methods=["POST"])
-@login_required
-@admin_required
-def save_planner_prompt():
-    """Save the AI itinerary planner's system prompt."""
-    content = request.form.get("content", "").replace("\r\n", "\n")
-    with open(PLANNER_PROMPT_PATH, "w") as f:
-        f.write(content)
-    reload_planner_prompt()
-    flash("Planner prompt saved.")
-    return redirect(url_for("settings"))
-
-
-@app.route("/settings/replan-prompt", methods=["POST"])
-@login_required
-@admin_required
-def save_replan_prompt():
-    """Save the AI replanning agent's system prompt."""
-    content = request.form.get("content", "").replace("\r\n", "\n")
-    with open(REPLAN_DAY_PROMPT_PATH, "w") as f:
-        f.write(content)
-    reload_replan_day_prompt()
-    flash("Replan prompt saved.")
     return redirect(url_for("settings"))
 
 
@@ -770,49 +731,6 @@ def plan():
     )
 
 
-@app.route("/plan/ai", methods=["POST"])
-def plan_ai():
-    """One AI-assisted plan combining the selected theme(s), as JSON. On
-    demand so a parent only spends a model call when they actually ask for it."""
-    form = _read_form(request.form)
-    _resolve_plan_child(form, _current_parent())
-
-    model = request.form.get("ai_model")
-    if model not in ALLOWED_CHAT_MODELS:
-        model = DEFAULT_MODEL
-    age_months = int(form["age_years"]) * 12 + int(form["age_months"])
-
-    try:
-        result = PlanningAgent(model=model).generate_plan_for_themes(
-            form["themes"],
-            destination=form["destination"], age_months=age_months,
-            naps=form["naps"],
-            stop_count=int(form["stop_count"]), wake_up=form["wake_up"], bedtime=form["bedtime"],
-            features=form["features"], transit=form["transit"],
-            dining=form["dining"], accommodation=form["accommodation"],
-            nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],
-            transit_nap=form["transit_nap"],
-            preferred_lunch_time=form["preferred_lunch_time"])
-    except KeyError:
-        return jsonify({"error": "The AI planner isn't configured yet."}), 500
-    except requests.exceptions.RequestException:
-        return jsonify({"error": "The AI planner is unavailable right now. Please try again."}), 502
-    except PlanningAgentError as e:
-        return jsonify({"error": str(e)}), 502
-
-    plan_obj = Plan(label=result["label"], blurb=result["blurb"],
-                    stops=result["stops"], source="ai")
-    return jsonify({
-        "plan": plan_obj.to_dict(),
-        "context": form,
-        "trip_form": form,
-        "model": result["model"],
-        "response_time": result["response_time"],
-        "input_tokens": result.get("input_tokens"),
-        "output_tokens": result.get("output_tokens"),
-    })
-
-
 def _build_trip(destination, transit, features, bedtime, age_months, dining, plan_data,
                  nap_notes="", extra_notes=""):
     """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
@@ -913,47 +831,6 @@ def replan_route():
                           VENUES, data.get("features") or [],
                           bedtime=data.get("bedtime"), minutes=data.get("minutes"),
                           theme=data.get("theme")))
-
-
-@app.route("/replan/ai", methods=["POST"])
-def replan_ai_route():
-    """AI-assisted alternative to /replan, on demand. Returns a NEW plan as
-    JSON -- callers must store it separately, never in place of the plan
-    that was sent in."""
-    data = request.get_json(silent=True) or {}
-    plan = data.get("plan")
-    situation = data.get("situation")
-    current_time = data.get("current_time")
-    if not plan or not situation or not current_time:
-        return jsonify({"error": "plan, situation, and current_time are required"}), 400
-
-    model = data.get("model")
-    if model not in ALLOWED_CHAT_MODELS:
-        model = DEFAULT_MODEL
-
-    try:
-        result = ReplanningAgent(model=model).replan_day(
-            situation, plan,
-            current_time=current_time,
-            destination=data.get("destination", ""),
-            age_months=int(data.get("age_months") or 0),
-            features=data.get("features") or [],
-            transit=data.get("transit") or [],
-            dining=data.get("dining"),
-            bedtime=data.get("bedtime"),
-            minutes=data.get("minutes"),
-            theme=data.get("theme"),
-            nap_notes=data.get("nap_notes", ""),
-            extra_notes=data.get("extra_notes", ""),
-        )
-    except KeyError:
-        return jsonify({"error": "The AI replanner isn't configured yet."}), 500
-    except requests.exceptions.RequestException:
-        return jsonify({"error": "The AI replanner is unavailable right now. Please try again."}), 502
-    except ReplanningAgentError as e:
-        return jsonify({"error": str(e)}), 502
-
-    return jsonify(result)
 
 
 @app.route("/replan/adjust", methods=["POST"])
