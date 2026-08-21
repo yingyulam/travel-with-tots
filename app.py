@@ -12,6 +12,7 @@ from functools import wraps
 
 import openai
 import requests
+from dotenv import set_key
 from flask import (
     Flask,
     flash,
@@ -40,6 +41,7 @@ from src.agents import (
     reload_replan_day_prompt,
     reload_website_chatbot_prompt,
 )
+from src.components.search_web import WebSearchError, search_web
 from src.data_loader import FEATURE_LABELS, load_venues
 from src.db import (
     TRIP_FIELDS,
@@ -417,6 +419,50 @@ def agent_chat_route():
         print(f"AI Agent call failed: {e}")
         return jsonify({"error": "The AI Agent is unavailable right now. Please try again."}), 502
     return jsonify(result)
+
+
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+
+
+@app.route("/search-web")
+@login_required
+@admin_required
+def search_web_page():
+    """The Web Search component's own page -- query in, results out."""
+    return render_template("search_web.html", key_set=bool(os.environ.get("TAVILY_API_KEY")))
+
+
+@app.route("/search-web/run", methods=["POST"])
+@login_required
+@admin_required
+def search_web_run_route():
+    """Run a Tavily Search query, as JSON."""
+    data = request.get_json(silent=True) or {}
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+    try:
+        results = search_web(query)
+    except KeyError:
+        return jsonify({"error": "Web Search isn't configured yet -- save a Tavily API key first."}), 500
+    except (WebSearchError, requests.exceptions.RequestException) as e:
+        print(f"Web Search call failed: {e}")
+        return jsonify({"error": "Web Search is unavailable right now. Please try again."}), 502
+    return jsonify({"results": results})
+
+
+@app.route("/search-web/key", methods=["POST"])
+@login_required
+@admin_required
+def search_web_key_route():
+    """Save a Tavily API key into .env and use it immediately, no restart."""
+    data = request.get_json(silent=True) or {}
+    key = (data.get("key") or "").strip()
+    if not key:
+        return jsonify({"error": "key is required"}), 400
+    set_key(ENV_PATH, "TAVILY_API_KEY", key)
+    os.environ["TAVILY_API_KEY"] = key
+    return jsonify({"status": "saved"})
 
 
 @app.route("/rag/status")

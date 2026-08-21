@@ -98,6 +98,89 @@ body {
   margin-bottom: 1.25rem;
 }
 
+/* "How to get your key" block, shared by any component page that needs an
+   API key (AI Agent, Web Search, ...). */
+.component-key-setup {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.component-key-setup summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.component-key-setup ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+/* Web Search component: same single-column, stacked-rows pattern as the
+   AI Agent page (collapsible key setup -> action row -> action row -> results). */
+.search-web-action-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.search-web-action-row .field {
+  flex: 1;
+  min-width: 220px;
+}
+
+.search-web-key-input {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  font-size: 1.05rem;
+}
+
+.search-web-key-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.search-web-result-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.search-web-result-card h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.15rem;
+}
+
+.search-web-result-card a {
+  color: var(--navy);
+  text-decoration: none;
+}
+
+.search-web-result-card a:hover {
+  text-decoration: underline;
+}
+
+.search-web-result-url {
+  color: var(--blue);
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.search-web-result-snippet {
+  color: #55637a;
+  font-size: 0.9rem;
+  margin-top: 0.35rem;
+}
+
 /* Form */
 .field-row {
   display: flex;

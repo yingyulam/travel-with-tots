@@ -186,6 +186,36 @@ planner above -- one key covers all of it):
   commit message -- `_call_openrouter`/`src/llms.py` only ever read it from
   `os.environ`, and it's never logged or printed.
 
+## Web Search
+
+Another admin-only, isolated component test page (`/search-web`, linked from
+`/components`): a query box and a **Run** button that call the
+[Tavily Search API](https://tavily.com) and display the top 5 results
+(title, URL, snippet). `src/components/search_web.py` is self-contained, one
+file for the whole component, matching the "isolate and test each piece on
+its own" pattern the Components page exists for. Not wired into
+`find_nearby()`'s fallback path yet -- just its own page for now.
+
+Tavily, not Brave: Brave killed its free Search API tier in February 2026 --
+the "identity verification" card is now an active billing instrument,
+charged automatically past $5 of usage/month with no cap. Tavily's free
+tier has no such trap.
+
+**Getting a Tavily API key:**
+
+- Go to [tavily.com](https://tavily.com) and sign up -- no credit card
+  required.
+- Open your [dashboard](https://app.tavily.com/home) and copy your API key.
+- Paste it directly into the Web Search page and click **Save Key** -- this
+  writes it into `.env` for you (via `python-dotenv`'s `set_key`) and it's
+  usable immediately, no restart needed. You can also edit `.env` by hand as
+  `TAVILY_API_KEY=<your key>`, same as any other key in this project.
+- The free plan includes 1,000 search credits per month, resetting monthly.
+  Requests simply stop once exhausted, they never bill you.
+- Same rule as above: never commit `.env` or share the key -- it's only
+  ever read from `os.environ`, never logged, printed, or sent back to the
+  browser once saved.
+
 ## Project structure
 
 ```
@@ -207,6 +237,8 @@ travel-with-tots/
 │   ├── interactions.py            # replan() + find_nearby() placeholders
 │   ├── agents.py                  # chatbot + PlanningAgent logic, routed through OpenRouter
 │   ├── llms.py                    # AI Agent: LangGraph tool-calling agent over OpenRouter
+│   ├── components/
+│   │   └── search_web.py          # Web Search component: Tavily Search API
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan)
 │   └── prompts/
@@ -223,6 +255,7 @@ travel-with-tots/
 │   ├── chunks.html                # admin: view and re-run chunking
 │   ├── results.html               # admin: browse ratings, stats per session
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
+│   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── _chatbot_widget.html       # floating chat widget, included on every page
 │   ├── _nav.html                  # avatar/login + sidebar, included on every page
 │   ├── _stop_preview.html         # shared stop_line() macro (plan.html + dashboard.html)
@@ -233,6 +266,7 @@ travel-with-tots/
 │   ├── nav.css                    # avatar/login + sidebar styling
 │   ├── chatbot.css, chatbot.js    # chat widget styling + behaviour (incl. ratings)
 │   ├── agent-chat.js              # AI Agent test page's minimal chat behaviour
+│   ├── search-web.js              # Web Search test page's key-save + run behaviour
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
 │   └── results.js                 # Results page auto-refresh polling

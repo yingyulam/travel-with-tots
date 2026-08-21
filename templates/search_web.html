@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Web Search{% endblock %}
+{% block heading %}Web Search{% endblock %}
+{% block tagline %}Search the web using the Tavily Search API.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the Web Search component. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <details class="component-key-setup">
+    <summary>API key setup</summary>
+    <p>This component calls the Tavily Search API.</p>
+    <ol>
+      <li>Sign up (free) at <a href="https://tavily.com" target="_blank" rel="noopener">tavily.com</a> -- no credit card required.</li>
+      <li>Open your <a href="https://app.tavily.com/home" target="_blank" rel="noopener">dashboard</a> and copy your API key.</li>
+      <li>Paste it below and click <strong>Save Key</strong>.</li>
+    </ol>
+    <p class="field-hint">The free plan includes 1,000 search credits per month, resetting monthly; requests simply stop once exhausted rather than billing you. The key is only ever read from <code>.env</code> via <code>os.environ</code>, never logged or printed.</p>
+  </details>
+
+  <label class="field field-full">
+    <span>Tavily API key</span>
+    <input type="password" id="tavily-key-input" class="search-web-key-input" placeholder="Paste your key" autocomplete="off">
+  </label>
+  <div class="search-web-key-actions">
+    <button type="button" class="cta-secondary" id="tavily-key-show">Show</button>
+    <button type="button" class="cta-secondary" id="tavily-key-save">Save Key</button>
+    <span id="tavily-key-status" class="field-hint">{{ "Key set ✓" if key_set else "Key not set" }}</span>
+  </div>
+
+  <div class="search-web-action-row">
+    <label class="field">
+      <span>Query</span>
+      <input type="text" id="search-web-query" placeholder="e.g. netflix">
+    </label>
+    <button type="button" class="cta" id="search-web-run">▶ Run</button>
+  </div>
+
+  <p id="search-web-heading" class="meta">No search run yet.</p>
+  <div id="search-web-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='search-web.js') }}"></script>
+{% endblock %}

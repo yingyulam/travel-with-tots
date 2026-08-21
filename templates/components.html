@@ -71,9 +71,10 @@
       <p>The dashboard and saved-trip pages read straight from the database -- not something the AI agent invokes itself.</p>
     </div>
     <div class="plan-option">
-      <h3 class="plan-option-title">Do web search</h3>
-      <div class="badges"><span class="badge badge-pending">not implemented yet</span></div>
-      <p>A planned fallback for when the curated venue DB has no match nearby.</p>
+      <h3 class="plan-option-title">Web Search</h3>
+      <div class="badges"><span class="badge">API-backed</span></div>
+      <p>Live results from the Tavily Search API (src/components/search_web.py). Not yet wired in as a fallback for the venue DB, just its own standalone test page for now.</p>
+      <a class="cta-secondary" href="{{ url_for('search_web_page') }}">Try it</a>
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">Google Map handoff</h3>

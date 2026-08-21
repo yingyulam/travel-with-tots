@@ -141,25 +141,6 @@
   margin-top: 1rem;
 }
 
-.ai-agent-key-setup {
-  margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--twt-line);
-  border-radius: 10px;
-  background: var(--twt-surface);
-}
-
-.ai-agent-key-setup summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--twt-navy);
-}
-
-.ai-agent-key-setup ol {
-  margin: 0.5rem 0;
-  padding-left: 1.25rem;
-}
-
 .ai-agent-run-row {
   display: flex;
   align-items: center;
