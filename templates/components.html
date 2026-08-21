@@ -53,7 +53,8 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Plan trips (adjustment)</h3>
       <div class="badges"><span class="badge">AI-backed</span></div>
-      <p>PlanningAgent.adjust_plan() smooths the rule-based day plan -- a genuine judgment call, not something rules alone can decide.</p>
+      <p>src/components/plan_trip.py: a rule-based draft, then PlanningAgent.adjust_plan() smooths it -- a genuine judgment call, not something rules alone can decide. Used by both /plan and the AI Agent's tool.</p>
+      <a class="cta-secondary" href="{{ url_for('plan_trip_page') }}">Try it</a>
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">Replan a trip on-the-go (adjustment)</h3>

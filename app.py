@@ -41,6 +41,7 @@ from src.agents import (
     reload_replan_day_prompt,
     reload_website_chatbot_prompt,
 )
+from src.components.plan_trip import plan_trip
 from src.components.search_web import WebSearchError, search_web
 from src.data_loader import FEATURE_LABELS, load_venues
 from src.db import (
@@ -465,6 +466,35 @@ def search_web_key_route():
     return jsonify({"status": "saved"})
 
 
+@app.route("/plan-trip")
+@login_required
+@admin_required
+def plan_trip_page():
+    """The Plan Trips component's own page -- trip details in, a plan out."""
+    return render_template("plan_trip.html")
+
+
+@app.route("/plan-trip/run", methods=["POST"])
+@login_required
+@admin_required
+def plan_trip_run_route():
+    """Run the Plan Trips component (rule-based draft + AI smoothing), as JSON."""
+    data = request.get_json(silent=True) or {}
+    destination = (data.get("destination") or "").strip()
+    if not destination:
+        return jsonify({"error": "destination is required"}), 400
+    result = plan_trip(
+        destination=destination,
+        age_months=_clamp_int(data.get("age_months"), 0, MAX_AGE_YEARS * 12 + MAX_MONTHS, 24),
+        wake_up=data.get("wake_up") or DEFAULTS["wake_up"],
+        bedtime=data.get("bedtime") or DEFAULTS["bedtime"],
+        stop_count=_clamp_int(data.get("stop_count"), STOP_COUNT_FORM_MIN,
+                              STOP_COUNT_FORM_MAX, int(DEFAULTS["stop_count"])),
+        dining=data.get("dining") or DEFAULTS["dining"],
+    )
+    return jsonify(result)
+
+
 @app.route("/rag/status")
 def rag_status():
     """Poll-able indexing status, used by the chatbot widget and Chunks page."""
@@ -659,7 +689,6 @@ def plan():
     revise_message, revise_error = None, False
 
     if request.method == "POST":
-        plans = generate_plans(VENUES, form)
         # The visible "extra_notes" box only ever holds what the parent typed
         # there; feedback from "Something's off" travels separately in
         # revise_feedback and is merged in here, just for the AI call.
@@ -667,33 +696,25 @@ def plan():
         if form["revise_feedback"]:
             notes_for_ai = (f"{notes_for_ai}\n{form['revise_feedback']}"
                             if notes_for_ai else form["revise_feedback"])
-        # Always try to smooth the rule-based draft's flow and apply any
-        # free-text notes -- an enhancement, not a requirement, so a failed
-        # AI call just leaves the already-valid draft on screen unchanged.
-        try:
-            age_months = int(form["age_years"]) * 12 + int(form["age_months"])
-            adjustment = PlanningAgent().adjust_plan(
-                plans[0].to_dict(),
-                destination=form["destination"], age_months=age_months,
-                wake_up=form["wake_up"], bedtime=form["bedtime"],
-                stop_count=int(form["stop_count"]),
-                dining=form["dining"], naps=form["naps"],
-                preferred_lunch_time=form["preferred_lunch_time"],
-                nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
-                transit=form["transit"], accommodation=form["accommodation"],
-                features=form["features"], strict_schedule=form["strict_schedule"],
-            )
-            plans[0] = Plan(label=plans[0].label, blurb=plans[0].blurb,
-                             stops=adjustment["stops"], source=plans[0].source)
+        age_months = int(form["age_years"]) * 12 + int(form["age_months"])
+        result = plan_trip(
+            destination=form["destination"], age_months=age_months,
+            wake_up=form["wake_up"], bedtime=form["bedtime"],
+            stop_count=int(form["stop_count"]), dining=form["dining"],
+            naps=form["naps"], preferred_lunch_time=form["preferred_lunch_time"],
+            nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
+            transit=form["transit"], accommodation=form["accommodation"],
+            features=form["features"], strict_schedule=form["strict_schedule"],
+        )
+        plans = [Plan.from_dict(result)]
+        if result["adjusted"]:
             if is_revise:
                 revise_message = "Your plan has been updated."
-        except (PlanningAgentError, requests.exceptions.RequestException, KeyError) as e:
-            print(f"Plan adjustment skipped, showing the unadjusted draft: {e}")
-            if is_revise:
-                revise_message = "Couldn't fine-tune your plan right now. Showing the plan you had."
-                revise_error = True
-            else:
-                flash("Showing the standard plan, couldn't fine-tune it right now.")
+        elif is_revise:
+            revise_message = "Couldn't fine-tune your plan right now. Showing the plan you had."
+            revise_error = True
+        else:
+            flash("Showing the standard plan, couldn't fine-tune it right now.")
         # The whole form is carried to the in-trip page when a plan is chosen,
         # so a plan can still be saved from there without re-asking for it.
         trip_context = form

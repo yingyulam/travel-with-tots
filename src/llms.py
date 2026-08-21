@@ -1,8 +1,9 @@
 """AI Agent: a LangGraph tool-calling agent over OpenRouter.
 
 Isolated from the site-wide FAQ chatbot (src/agents.py's ask_website_chatbot)
-while it's still being tested -- see the "AI Agent" card on /components. Only
-imports from agents.py/interactions.py/itinerary.py; nothing there changes.
+while it's still being tested -- see the "AI Agent" card on /components. Its
+tools are thin wrappers around other components (plan_trip) and existing
+logic (interactions.find_nearby); nothing there changes.
 """
 
 import os
@@ -12,8 +13,8 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
-from . import interactions, itinerary
-from .agents import PlanningAgent, PlanningAgentError
+from . import interactions
+from .components.plan_trip import plan_trip
 from .data_loader import load_venues
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -50,23 +51,9 @@ def plan_trip_tool(destination: str, age_months: int, wake_up: str = "07:00",
     destination is a city name. age_months is the child's age in months.
     stop_count is how many places to visit, 2-5 is typical. dining is
     "dine_out" or "on_the_go"."""
-    inputs = {
-        "wake_up": wake_up, "bedtime": bedtime, "naps": [],
-        "age_years": str(age_months // 12), "age_months": str(age_months % 12),
-        "destination": destination, "stop_count": stop_count,
-        "features": [], "themes": [], "dining": dining,
-        "accommodation": "", "preferred_lunch_time": "",
-    }
-    plan = itinerary.generate_plans(VENUES, inputs)[0]
-    try:
-        adjustment = PlanningAgent().adjust_plan(
-            plan.to_dict(), destination=destination, age_months=age_months,
-            wake_up=wake_up, bedtime=bedtime, stop_count=stop_count,
-            dining=dining)
-        plan.stops = adjustment["stops"]
-    except (PlanningAgentError, KeyError):
-        pass  # fall back to the unadjusted draft, same as /plan's own fallback
-    return plan.to_dict()
+    return plan_trip(destination=destination, age_months=age_months,
+                      wake_up=wake_up, bedtime=bedtime, stop_count=stop_count,
+                      dining=dining)
 
 
 def _build_agent():

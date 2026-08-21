@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Plan Trips{% endblock %}
+{% block heading %}Plan Trips{% endblock %}
+{% block tagline %}Build a day plan: a rule-based draft, then AI-smoothed.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the Plan Trips component. Not the full planning form -- see <a href="{{ url_for('plan') }}">/plan</a> for that. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <div class="field-row">
+    <label class="field">
+      <span>Destination</span>
+      <input type="text" id="plan-trip-destination" value="Vancouver">
+    </label>
+    <label class="field">
+      <span>Child's age (months)</span>
+      <input type="number" id="plan-trip-age-months" value="24" min="0" max="71">
+    </label>
+  </div>
+  <div class="field-row">
+    <label class="field">
+      <span>Wake-up</span>
+      <input type="time" id="plan-trip-wake-up" value="07:00">
+    </label>
+    <label class="field">
+      <span>Bedtime</span>
+      <input type="time" id="plan-trip-bedtime" value="20:00">
+    </label>
+    <label class="field">
+      <span>Stops</span>
+      <input type="number" id="plan-trip-stop-count" value="3" min="1" max="6">
+    </label>
+    <label class="field">
+      <span>Dining</span>
+      <select id="plan-trip-dining">
+        <option value="dine_out">Dine out</option>
+        <option value="on_the_go">Eat on the go</option>
+      </select>
+    </label>
+  </div>
+  <button type="button" class="cta" id="plan-trip-run">▶ Run</button>
+
+  <p id="plan-trip-heading" class="meta">No plan run yet.</p>
+  <ol class="preview-list" id="plan-trip-stop-list"></ol>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='plan-trip.js') }}"></script>
+{% endblock %}
