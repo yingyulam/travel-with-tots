@@ -7,33 +7,12 @@
 <section class="card">
   <p class="meta">Isolated test page for the Find Nearby component. <a href="{{ url_for('components') }}">← Back to Components</a></p>
 
-  <details class="component-key-setup">
-    <summary>API key setup</summary>
-    <p>Your browser supplies the coordinates for free (no key needed). The key is only used server-side, to turn those coordinates into a city and neighbourhood.</p>
-    <ol>
-      <li>Open the <a href="https://console.cloud.google.com/google/maps-apis/api-list" target="_blank" rel="noopener">Google Cloud console</a> and create (or pick) a project.</li>
-      <li>Enable the <strong>Geocoding API</strong>. That single API is all this component uses.</li>
-      <li>Under <strong>Credentials</strong>, create an API key, then restrict it: <em>API restrictions</em> to the Geocoding API only, and <em>Application restrictions</em> to IP addresses.</li>
-      <li>Paste it below and click <strong>Save Key</strong>.</li>
-    </ol>
-    <p class="field-hint">Google gives a recurring monthly credit that covers well beyond this app's usage, but the Geocoding API does require billing to be enabled on the project. Restrict the key as above so a leak can't be used elsewhere. The key is only ever read from <code>.env</code> via <code>os.environ</code>, never logged, printed, or sent to the browser.</p>
-  </details>
-
-  <label class="field field-full">
-    <span>Google Maps API key</span>
-    <input type="password" id="maps-key-input" class="search-web-key-input" placeholder="Paste your key" autocomplete="off">
-  </label>
-  <div class="search-web-key-actions">
-    <button type="button" class="cta-secondary" id="maps-key-show">Show</button>
-    <button type="button" class="cta-secondary" id="maps-key-save">Save Key</button>
-    <span id="maps-key-status" class="field-hint">{{ "Key set ✓" if key_set else "Key not set" }}</span>
-  </div>
-
-  <div class="action-panel">
+  <div class="action-panel" id="location-panel" data-key-set="{{ 'yes' if key_set else 'no' }}">
     <p class="panel-title">Where are you?</p>
     <div class="chips">
       <button type="button" class="cta-secondary" id="use-my-location">📍 Use my location</button>
     </div>
+    <p class="field-hint">No API key needed: your browser supplies the coordinates, and the venues carry their own.</p>
     <div class="search-web-action-row">
       <label class="field">
         <span>Or set a location by hand</span>
@@ -41,6 +20,7 @@
       </label>
       <button type="button" class="cta-secondary" id="set-location">Set location</button>
     </div>
+    <p class="field-hint" id="manual-location-hint"></p>
     <p id="location-status" class="meta">No location set yet.</p>
   </div>
 
@@ -53,6 +33,28 @@
     </div>
     <p class="field-hint">Curated venues are Vancouver-only for now, so a location elsewhere falls back to a live web search.</p>
   </div>
+
+  <details class="component-key-setup">
+    <summary>Optional: search by address (Google Maps API key)</summary>
+    <p>Sharing your location needs no key at all. A key is only needed for the "set a location by hand" box above, because turning typed text into coordinates is what geocoding does, and there is nothing to compute it from.</p>
+    <ol>
+      <li>Open the <a href="https://console.cloud.google.com/google/maps-apis/api-list" target="_blank" rel="noopener">Google Cloud console</a> and create (or pick) a project.</li>
+      <li>Enable the <strong>Geocoding API</strong>. That single API is all this component uses.</li>
+      <li>Under <strong>Credentials</strong>, create an API key, then restrict it: <em>API restrictions</em> to the Geocoding API only, and <em>Application restrictions</em> to IP addresses.</li>
+      <li>Paste it below and click <strong>Save Key</strong>.</li>
+    </ol>
+    <p class="field-hint">Google gives a recurring monthly credit that covers well beyond this app's usage, but the Geocoding API does require billing to be enabled on the project. Restrict the key as above so a leak can't be used elsewhere. The key is only ever read from <code>.env</code> via <code>os.environ</code>, never logged, printed, or sent to the browser.</p>
+
+    <label class="field field-full">
+      <span>Google Maps API key</span>
+      <input type="password" id="maps-key-input" class="search-web-key-input" placeholder="Paste your key" autocomplete="off">
+    </label>
+    <div class="search-web-key-actions">
+      <button type="button" class="cta-secondary" id="maps-key-show">Show</button>
+      <button type="button" class="cta-secondary" id="maps-key-save">Save Key</button>
+      <span id="maps-key-status" class="field-hint">{{ "Key set ✓" if key_set else "Key not set" }}</span>
+    </div>
+  </details>
 
   <p id="find-nearby-heading" class="meta">No search run yet.</p>
   <div id="find-nearby-result-list"></div>

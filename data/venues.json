@@ -11,7 +11,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "11:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Nourish Kitchen",
@@ -25,7 +27,9 @@
     "nap_friendly": true,
     "can_eat": true,
     "open": "08:00",
-    "close": "16:00"
+    "close": "16:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Tacofino Gastown",
@@ -39,7 +43,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "11:00",
-    "close": "23:00"
+    "close": "23:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Medina Cafe",
@@ -53,7 +59,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "08:00",
-    "close": "15:00"
+    "close": "15:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Kokomo Foods",
@@ -67,7 +75,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "11:00",
-    "close": "21:00"
+    "close": "21:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Science World",
@@ -81,7 +91,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.2720848,
+    "lng": -123.1043893
   },
   {
     "name": "Vancouver Aquarium",
@@ -95,7 +107,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "09:30",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.3005177,
+    "lng": -123.1312214
   },
   {
     "name": "Stanley Park Seawall",
@@ -109,7 +123,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.2946222,
+    "lng": -123.1499831
   },
   {
     "name": "Queen Elizabeth Park",
@@ -123,7 +139,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.240978,
+    "lng": -123.112028
   },
   {
     "name": "Oakridge Park Mall",
@@ -137,7 +155,9 @@
     "nap_friendly": true,
     "can_eat": true,
     "open": "10:00",
-    "close": "19:00"
+    "close": "19:00",
+    "lat": 49.2317347,
+    "lng": -123.1181168
   },
   {
     "name": "VanDusen Botanical Garden",
@@ -151,7 +171,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "10:00",
-    "close": "16:00"
+    "close": "16:00",
+    "lat": 49.239181,
+    "lng": -123.131293
   },
   {
     "name": "Museum of Vancouver",
@@ -165,7 +187,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.2763483,
+    "lng": -123.1446238
   },
   {
     "name": "Grouse Mountain",
@@ -179,7 +203,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "09:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.3794719,
+    "lng": -123.0767805
   },
   {
     "name": "Kitsilano Beach Park",
@@ -193,7 +219,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.273431,
+    "lng": -123.153901
   },
   {
     "name": "HR MacMillan Space Centre",
@@ -207,7 +235,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Vancouver Maritime Museum",
@@ -221,7 +251,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.277482,
+    "lng": -123.1477655
   },
   {
     "name": "Granville Island Kids Market",
@@ -235,7 +267,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "10:00",
-    "close": "18:00"
+    "close": "18:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Granville Island Public Market",
@@ -249,7 +283,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "09:00",
-    "close": "19:00"
+    "close": "19:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Bloedel Conservatory",
@@ -263,7 +299,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.2420609,
+    "lng": -123.1137676
   },
   {
     "name": "Capilano Suspension Bridge Park",
@@ -277,7 +315,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "09:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.342704,
+    "lng": -123.1160482
   },
   {
     "name": "Lynn Canyon Park",
@@ -291,7 +331,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "07:00",
-    "close": "20:00"
+    "close": "20:00",
+    "lat": 49.3437387,
+    "lng": -123.0197741
   },
   {
     "name": "Playland at the PNE",
@@ -305,7 +347,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "11:00",
-    "close": "18:00"
+    "close": "18:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Trout Lake (John Hendry Park)",
@@ -319,7 +363,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.255808,
+    "lng": -123.062242
   },
   {
     "name": "David Lam Park",
@@ -333,7 +379,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.272569,
+    "lng": -123.124145
   },
   {
     "name": "English Bay Beach",
@@ -347,7 +395,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.287118,
+    "lng": -123.143317
   },
   {
     "name": "White Spot English Bay",
@@ -361,7 +411,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "08:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Sophie's Cosmic Cafe",
@@ -375,7 +427,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "08:00",
-    "close": "21:00"
+    "close": "21:00",
+    "lat": 49.2683917722019,
+    "lng": -123.152465182004
   },
   {
     "name": "Cartems Donuterie",
@@ -389,7 +443,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "08:00",
-    "close": "18:00"
+    "close": "18:00",
+    "lat": 49.265641776426,
+    "lng": -123.10037627194
   },
   {
     "name": "Vancouver Art Gallery",
@@ -403,7 +459,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.2828495,
+    "lng": -123.1206248
   },
   {
     "name": "Pacific Centre",
@@ -417,7 +475,9 @@
     "nap_friendly": true,
     "can_eat": true,
     "open": "10:00",
-    "close": "19:00"
+    "close": "19:00",
+    "lat": 49.2822466,
+    "lng": -123.119484
   },
   {
     "name": "Second Beach",
@@ -431,7 +491,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "21:00"
+    "close": "21:00",
+    "lat": 49.2956047,
+    "lng": -123.150765
   },
   {
     "name": "Jericho Beach Park",
@@ -445,7 +507,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "06:00",
-    "close": "22:00"
+    "close": "22:00",
+    "lat": 49.271513,
+    "lng": -123.197415
   },
   {
     "name": "UBC Botanical Garden",
@@ -459,7 +523,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "10:00",
-    "close": "16:00"
+    "close": "16:00",
+    "lat": 49.2538228,
+    "lng": -123.2473278
   },
   {
     "name": "Vancouver Lookout",
@@ -473,7 +539,9 @@
     "nap_friendly": false,
     "can_eat": false,
     "open": "09:00",
-    "close": "21:00"
+    "close": "21:00",
+    "lat": 49.2846114,
+    "lng": -123.112316
   },
   {
     "name": "Cactus Club Cafe English Bay",
@@ -487,7 +555,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "11:00",
-    "close": "23:00"
+    "close": "23:00",
+    "lat": 49.2862192525897,
+    "lng": -123.143827946106
   },
   {
     "name": "Tomahawk Restaurant",
@@ -501,7 +571,9 @@
     "nap_friendly": false,
     "can_eat": true,
     "open": "08:00",
-    "close": "21:00"
+    "close": "21:00",
+    "lat": null,
+    "lng": null
   },
   {
     "name": "Dr. Sun Yat-Sen Classical Chinese Garden",
@@ -515,7 +587,9 @@
     "nap_friendly": true,
     "can_eat": false,
     "open": "10:00",
-    "close": "17:00"
+    "close": "17:00",
+    "lat": 49.2797944,
+    "lng": -123.104133
   },
   {
     "name": "Marine Gateway",
@@ -529,6 +603,8 @@
     "nap_friendly": true,
     "can_eat": true,
     "open": "10:00",
-    "close": "21:00"
+    "close": "21:00",
+    "lat": 49.209901,
+    "lng": -123.1161706
   }
 ]

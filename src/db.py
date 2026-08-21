@@ -90,7 +90,9 @@ CREATE TABLE IF NOT EXISTS venues (
     open_time           TEXT,
     close_time          TEXT,
     min_age_months      INTEGER NOT NULL DEFAULT 0,
-    max_age_months      INTEGER NOT NULL DEFAULT 60
+    max_age_months      INTEGER NOT NULL DEFAULT 60,
+    lat                 REAL,                   -- NULL until a source supplies it
+    lng                 REAL
 );
 """
 
@@ -100,6 +102,12 @@ CANDIDATE_FEATURE_COLUMNS = {
     "kid_friendly", "has_family_room", "has_nursing_room",
     "stroller_accessible", "nap_friendly", "can_eat",
 }
+
+# Venue sources trustworthy enough to plan a family's day around: everything
+# that reached the table through review, whether hand-curated or ingested from
+# a municipal open-data set. Excludes 'user_submitted', which is whatever a
+# parent typed in and hasn't been verified yet.
+VERIFIED_SOURCES = ("curated", "municipal_open_data")
 
 # Keeps the AI planner's prompt cheap: enough venues for a real choice,
 # never so many the prompt balloons.
@@ -134,6 +142,7 @@ def init_db():
         _migrate_trips_ownership(conn)
         _seed_venues(conn)
         _backfill_venue_details(conn)
+        _backfill_venue_coordinates(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
 
@@ -178,6 +187,10 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN close_time TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN min_age_months INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE venues ADD COLUMN max_age_months INTEGER NOT NULL DEFAULT 60")
+    if "lat" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE venues ADD COLUMN lat REAL")
+            conn.execute("ALTER TABLE venues ADD COLUMN lng REAL")
 
 
 def _migrate_trips_ownership(conn):
@@ -249,7 +262,8 @@ def _seed_venues(conn):
         (v["name"], v["type"], v["neighbourhood"], int(v["kid_friendly"]),
          int(v["has_family_room"]), int(v["has_nursing_room"]),
          int(v["stroller_accessible"]), "curated", "Vancouver", v["category"],
-         int(v["nap_friendly"]), int(v["can_eat"]), v["open"], v["close"])
+         int(v["nap_friendly"]), int(v["can_eat"]), v["open"], v["close"],
+         v.get("lat"), v.get("lng"))
         for v in venues if v["name"] not in existing
     ]
     if not rows:
@@ -258,8 +272,9 @@ def _seed_venues(conn):
         conn.executemany(
             "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
             "has_family_room, has_nursing_room, stroller_accessible, source, "
-            "city, category, nap_friendly, can_eat, open_time, close_time) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+            "city, category, nap_friendly, can_eat, open_time, close_time, "
+            "lat, lng) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def _backfill_venue_details(conn):
@@ -283,6 +298,29 @@ def _backfill_venue_details(conn):
                 "can_eat = ?, open_time = ?, close_time = ? WHERE id = ?",
                 ("Vancouver", v["category"], int(v["nap_friendly"]),
                  int(v["can_eat"]), v["open"], v["close"], row["id"]))
+
+
+def _backfill_venue_coordinates(conn):
+    """Copy lat/lng from the seed file onto rows that don't have them yet.
+
+    Needed as its own step because _seed_venues only ever INSERTs (it skips any
+    name already in the table), so coordinates added to venues.json never reach
+    an existing database through it. Guarded on `lat IS NULL` rather than
+    reusing _backfill_venue_details' `city IS NULL`, which is already false on
+    every live row. Idempotent, and skips seed entries whose coordinates are
+    still null so a later geocoding pass can fill them in."""
+    pending = conn.execute(
+        "SELECT id, name FROM venues WHERE lat IS NULL").fetchall()
+    if not pending:
+        return
+    by_name = {v["name"]: v for v in json.loads(VENUES_SEED.read_text(encoding="utf-8"))}
+    with conn:
+        for row in pending:
+            v = by_name.get(row["name"])
+            if not v or v.get("lat") is None or v.get("lng") is None:
+                continue
+            conn.execute("UPDATE venues SET lat = ?, lng = ? WHERE id = ?",
+                         (v["lat"], v["lng"], row["id"]))
 
 
 def _seed_sample_data(conn):
@@ -425,13 +463,16 @@ def get_trip_for_parent(parent_id, trip_id):
 
 def get_candidate_venues(city, age_months, features=None, transit=None,
                           dining=None, near_neighbourhood=None, limit=CANDIDATE_LIMIT):
-    """Curated venues in `city` (substring match) whose age range covers
+    """Verified venues in `city` (substring match) whose age range covers
     `age_months`, narrowed by feature tags. Used to ground the AI planning
     agent -- it must never reference a venue outside this list.
 
-    There's no real geodata anywhere in this app (no lat/lng, no routing
-    API), so location is a coarse proxy instead of a real radius/travel-time
-    filter. If `near_neighbourhood` is given (e.g. replanning from a known
+    Venues carry lat/lng where a source supplied it, but only some do and
+    there is still no routing API, so this planner-facing query deliberately
+    keeps using neighbourhood as a coarse proxy rather than a real
+    radius/travel-time filter. (components/find_nearby.py does use real
+    distance, since a partial answer is fine when ranking a short list.)
+    If `near_neighbourhood` is given (e.g. replanning from a known
     current stop), candidates are narrowed to that specific neighbourhood, as
     long as it has enough venues to still offer a real choice. Otherwise
     `transit` decides: without a car, candidates are narrowed to the single
@@ -451,27 +492,37 @@ def get_candidate_venues(city, age_months, features=None, transit=None,
         return rows
 
 
+def _verified_source_clause():
+    """SQL fragment and params restricting a query to VERIFIED_SOURCES.
+    Parameterized rather than interpolated, so adding a source can never
+    become a SQL-injection seam."""
+    placeholders = ", ".join("?" for _ in VERIFIED_SOURCES)
+    return f"source IN ({placeholders})", list(VERIFIED_SOURCES)
+
+
 def _candidate_where_clause(city, age_months, features):
-    """WHERE clause and params for a curated-venue lookup: city substring
+    """WHERE clause and params for a verified-venue lookup: city substring
     match, age range coverage, and any requested feature tags."""
     wanted = [f for f in (features or []) if f in CANDIDATE_FEATURE_COLUMNS]
-    clauses = ["source = 'curated'", "city LIKE ?",
+    source_clause, source_params = _verified_source_clause()
+    clauses = [source_clause, "city LIKE ?",
                "min_age_months <= ?", "max_age_months >= ?"]
-    params = [f"%{city}%", age_months, age_months]
+    params = source_params + [f"%{city}%", age_months, age_months]
     for feature in wanted:
         clauses.append(f"{feature} = 1")
     return " AND ".join(clauses), params
 
 
 def get_venues_in_city(city):
-    """Every curated venue in `city` (substring match, same as
+    """Every verified venue in `city` (substring match, same as
     get_candidate_venues). Deliberately unfiltered beyond the city: callers
     decide what "matching" means -- see components/find_nearby.py, which
     applies interactions.NEED_FILTERS so need semantics live in one place."""
+    source_clause, source_params = _verified_source_clause()
     with closing(connect()) as conn:
         return conn.execute(
-            "SELECT * FROM venues WHERE source = 'curated' AND city LIKE ? "
-            "ORDER BY name", (f"%{city}%",)).fetchall()
+            f"SELECT * FROM venues WHERE {source_clause} AND city LIKE ? "
+            "ORDER BY name", source_params + [f"%{city}%"]).fetchall()
 
 
 def _narrow_by_neighbourhood(rows, near_neighbourhood, transit):

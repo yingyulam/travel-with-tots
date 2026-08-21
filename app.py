@@ -370,22 +370,33 @@ def find_nearby_page():
 @login_required
 @admin_required
 def find_nearby_run_route():
-    """Resolve a location, then find places matching a need, as JSON."""
+    """Resolve a location, then find places matching a need, as JSON.
+
+    Shared coordinates are enough on their own: geocoding only adds the place
+    name, so a missing key degrades to distance-ranked results rather than an
+    error. A typed address genuinely needs the geocoder, since there are no
+    coordinates to fall back on."""
     data = request.get_json(silent=True) or {}
     need = (data.get("need") or "").strip()
     if not need:
         return jsonify({"error": "need is required"}), 400
+    has_coords = data.get("lat") is not None and data.get("lng") is not None
     try:
         location = _resolve_location(data)
-    except KeyError:
-        return jsonify({"error": "Location lookup isn't configured yet -- save a Google Maps API key first."}), 500
-    except GeocodeError as e:
-        print(f"Geocoding call failed: {e}")
-        return jsonify({"error": "Couldn't resolve that location right now. Please try again."}), 502
+    except (GeocodeError, KeyError) as e:
+        if not has_coords:
+            print(f"Geocoding call failed: {e}")
+            return jsonify({"error": "Couldn't look up that location. Share your "
+                                     "location instead, or save a Google Maps API key "
+                                     "to search by address."}), 502
+        print(f"Place lookup skipped, using raw coordinates: {e}")
+        location = {"city": "", "neighbourhood": "", "formatted_address": "",
+                    "lat": data["lat"], "lng": data["lng"]}
 
     result = find_nearby_component(
         need=need, city=location["city"], neighbourhood=location["neighbourhood"],
-        place_name=location["formatted_address"])
+        place_name=location["formatted_address"],
+        lat=location["lat"], lng=location["lng"])
     result["location"] = location
     return jsonify(result)
 
@@ -832,14 +843,18 @@ def find_nearby_route():
     try:
         location = _resolve_location(data)
     except (GeocodeError, KeyError) as e:
-        print(f"Find-nearby location lookup skipped: {e}")
-        location = None
+        # Naming the place is a nicety; the coordinates are the useful part,
+        # so a missing or failing geocoder must not throw them away.
+        print(f"Find-nearby place lookup skipped, using raw coordinates: {e}")
+        location = {"city": "", "neighbourhood": "", "formatted_address": "",
+                    "lat": data.get("lat"), "lng": data.get("lng")}
 
-    if location and location["city"]:
+    if location["city"] or location["lat"] is not None:
         result = find_nearby_component(
             need=need, city=location["city"],
             neighbourhood=location["neighbourhood"],
-            place_name=location["formatted_address"])
+            place_name=location["formatted_address"],
+            lat=location["lat"], lng=location["lng"])
         return jsonify({"need": need, "venues": result["places"],
                         "source": result["source"], "location": location})
 

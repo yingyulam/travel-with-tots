@@ -226,26 +226,39 @@ live in-trip page's **Need something now?** panel.
 
 Two components, one job each:
 
-- `src/components/geocode.py` turns a location into a place name. The
-  browser supplies coordinates through its own free `navigator.geolocation`
-  (no key, no Google script in the page), and the server turns those into a
-  city and neighbourhood via the Google Geocoding API. A parent who declines
-  the permission prompt can type a location instead, resolved the same way.
-- `src/components/find_nearby.py` does the matching. It narrows the curated
-  venue table to the resolved city, puts same-neighbourhood venues first
-  (neighbourhood is the only proximity proxy the venue data has -- there's no
-  lat/lng anywhere), and then calls the app's existing
-  `interactions.find_nearby()` for the actual need matching rather than
-  reimplementing it. When curated has nothing, it falls back to a live
-  Tavily web search, tagging the result `source: "search"` so the UI can say
-  where the answer came from.
+- `src/components/geocode.py` turns a location into a place name, via the
+  Google Geocoding API. Since venues now carry coordinates, this is optional
+  for the "use my location" path: the browser's own free
+  `navigator.geolocation` gives coordinates (no key, no Google script in the
+  page) and distances are computed against the venues directly, so geocoding
+  only adds a human-readable place name. It is genuinely required for a typed
+  address, which has no coordinates to work from.
+- `src/components/find_nearby.py` does the matching. It narrows the venue
+  table to the resolved city (or searches every city when only coordinates
+  are known), ranks by real straight-line distance
+  (`src/geo.py`) and reports each result's `distance_km`, then calls the
+  app's existing `interactions.find_nearby()` for the actual need matching
+  rather than reimplementing it. When curated has nothing, it falls back to a
+  live Tavily web search, tagging the result `source: "search"` so the UI can
+  say where the answer came from.
+
+Not every venue has coordinates (see Venue coordinates below), so venues
+without them fall back to same-neighbourhood-first ordering and report no
+distance. That fallback is permanent, not transitional: user-submitted venues
+never get coordinates from a source.
 
 Curated venues are Vancouver-only today, so a location elsewhere legitimately
 returns zero curated matches and falls through to search. Location is always
 optional: with none shared, the panel keeps its original behaviour of
 matching the need across all venues.
 
-**Getting a Google Maps API key:**
+**Optional: a Google Maps API key for address search.**
+
+No key is needed to share your location: the browser supplies coordinates and
+the venues carry their own, so distance ranking works out of the box. A key is
+only needed for the "set a location by hand" box, since turning typed text
+into coordinates is exactly what geocoding does and there is nothing else to
+compute it from. Without a key that one input is disabled and says so.
 
 - Open the [Google Cloud console](https://console.cloud.google.com/google/maps-apis/api-list)
   and create or pick a project.
@@ -260,6 +273,40 @@ matching the need across all venues.
   usage, but the Geocoding API does require billing enabled on the project.
 - The key is server-side only: it is never sent to the browser, logged, or
   printed, and `.env` is git-ignored.
+
+## Venue coordinates
+
+Venues carry `lat`/`lng`, populated from open data rather than a paid
+geocoder. `scripts/geocode_venues.py` fills them in and is re-runnable:
+
+```bash
+python3 scripts/geocode_venues.py            # dry run, prints a report
+python3 scripts/geocode_venues.py --write    # also updates data/venues.json
+```
+
+It asks the source that is actually authoritative for each kind of venue, all
+keyless: the City of Vancouver **parks** dataset for parks and beaches, the
+**business licences** dataset for restaurants and cafes, and Nominatim
+(OpenStreetMap) for landmarks, museums, and anything outside city limits.
+
+It is deliberately conservative, because a wrong coordinate is worse than a
+missing one: a missing one falls back to neighbourhood matching, while a wrong
+one silently mis-ranks "what's near me". So it matches on near-exact names
+only, requires a restaurant's licence to sit in the venue's own neighbourhood
+(this is what picks the right branch of a chain), sanity-checks every result
+against a Metro Vancouver bounding box, and leaves anything uncertain null and
+listed in its report rather than guessing.
+
+That currently resolves 27 of 38 venues. The rest are mostly independent
+restaurants absent from open data, plus venues outside the City of Vancouver's
+datasets (Tomahawk Restaurant is in North Vancouver). Add those by hand if you
+want them, or leave them: the code degrades to neighbourhood matching for any
+venue without coordinates.
+
+New coordinates reach an existing database through
+`db._backfill_venue_coordinates`, which runs on startup. It is a separate step
+because `_seed_venues` only ever inserts and skips names already present, so
+edits to `venues.json` would otherwise never reach a populated `app.db`.
 
 ## Project structure
 
@@ -277,6 +324,7 @@ travel-with-tots/
 │   ├── data_loader.py             # loads venue data, builds Google Maps links
 │   ├── db.py                      # SQLite data layer (schema, connection, safe writes)
 │   ├── dates.py                   # date/age utilities, independent of storage
+│   ├── geo.py                     # straight-line distance between coordinates
 │   ├── form_helpers.py            # trip-planning form parsing/validation, no Flask dependency
 │   ├── filters.py                 # filters venues by selected features
 │   ├── models.py                  # Plan and Trip domain objects
@@ -330,6 +378,8 @@ travel-with-tots/
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
 │   └── results.js                 # Results page auto-refresh polling
+├── scripts/
+│   └── geocode_venues.py          # one-time: fill venue lat/lng from open data
 ├── tests/
 │   ├── test_agents.py             # smoke test for the OpenRouter connection
 │   ├── test_planning_agent.py     # unit tests for the live plan adjuster
@@ -340,6 +390,7 @@ travel-with-tots/
 │   ├── test_form_helpers.py       # unit tests for form parsing/child resolution
 │   ├── test_interactions.py       # unit tests for replan()/find_nearby()
 │   ├── test_dates.py              # unit tests for compute_age
+│   ├── test_geo.py                # unit tests for haversine distance
 │   ├── test_db.py                 # unit tests for get_candidate_venues
 │   └── test_results.py            # unit tests for results.py's kind-filtering and stats
 ├── requirements.txt
@@ -420,10 +471,12 @@ The pieces are intentionally modular:
 
 - **Richer data**: replace `data/venues.json` (and `data_loader.py`) with a
   database or a real venues API.
-- **Real routing**: no geodata (lat/lng) or routing API exists yet, so travel
-  time between stops is a soft, LLM-judgment heuristic in the AI planner and
-  a flat buffer in the rule-based one. Both are structured so a real routing
-  API can slot in later without changing their shape.
+- **Real routing**: venues carry lat/lng now, but no routing API does, so
+  travel time between stops is still a soft, LLM-judgment heuristic in the AI
+  planner and a flat per-mode buffer in the rule-based one
+  (`itinerary.TRANSIT_BUFFER_MIN`). Both are structured so a real routing API
+  can slot in later without changing their shape, and the coordinates are the
+  groundwork for it.
 - **Real re-planning & help**: swap `interactions.replan()` and
   `interactions.find_nearby()` for real AI/location-service calls without
   changing their signatures or the UI. The chatbot and AI planner already

@@ -453,10 +453,16 @@
         locationStatus.textContent = "Using your location for nearby results.";
         useLocationBtn.disabled = false;
       },
-      () => {
-        locationStatus.textContent = "Couldn't get your location, showing general matches instead.";
+      (error) => {
+        // The timeout below matters: with no options at all this callback can
+        // never fire on a device with location services switched off, leaving
+        // the button looking dead. Results still work without a location.
+        locationStatus.textContent = error.code === error.PERMISSION_DENIED
+          ? "Location is blocked for this site, showing general matches instead."
+          : "Couldn't get your location, showing general matches instead.";
         useLocationBtn.disabled = false;
       },
+      { timeout: 10000, maximumAge: 60000 },
     );
   });
 
@@ -477,7 +483,8 @@
       const where = data.location && data.location.formatted_address
         ? ` near ${data.location.formatted_address}` : "";
       const cards = data.venues.map((v) => {
-        const meta = [v.type, v.neighbourhood].filter(Boolean).join(" · ");
+        const distance = v.distance_km != null ? `${v.distance_km} km away` : "";
+        const meta = [v.type, v.neighbourhood, distance].filter(Boolean).join(" · ");
         const linkLabel = data.source === "search" ? "🔗 Open result" : "📍 Open in Google Maps";
         return `<div class="need-card">
            <h4>${v.name}</h4>

@@ -10,6 +10,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const manualInput = document.getElementById("manual-location");
   const setLocationBtn = document.getElementById("set-location");
   const locationStatus = document.getElementById("location-status");
+  const locationPanel = document.getElementById("location-panel");
+  const manualHint = document.getElementById("manual-location-hint");
   const needBar = document.getElementById("need-bar");
   const heading = document.getElementById("find-nearby-heading");
   const resultList = document.getElementById("find-nearby-result-list");
@@ -18,6 +20,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // browser or {address} typed by hand. Sent with every need request so the
   // server can resolve it the same way in both cases.
   let location = null;
+
+  // Sharing a location needs no key; only a typed address does, since
+  // something has to turn text into coordinates. Say so before the parent
+  // types rather than failing the request afterwards.
+  let keyIsSet = locationPanel.dataset.keySet === "yes";
+
+  function syncAddressAvailability() {
+    manualInput.disabled = !keyIsSet;
+    setLocationBtn.disabled = !keyIsSet;
+    manualHint.textContent = keyIsSet ? "" :
+      "Address search needs a Google Maps API key (see below). " +
+      "Sharing your location works without one.";
+  }
+  syncAddressAvailability();
 
   // Only toggles visibility of whatever's currently typed -- the server
   // never sends a previously-saved key back to the browser.
@@ -43,6 +59,8 @@ document.addEventListener("DOMContentLoaded", () => {
       keyInput.value = "";
       keyInput.type = "password";
       showBtn.textContent = "Show";
+      keyIsSet = true;
+      syncAddressAvailability();
     } catch (e) {
       keyStatus.textContent = e.message || "Couldn't save the key.";
     } finally {
@@ -50,9 +68,30 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Never tell the parent to "set one by hand" when that input is disabled
+  // for want of a key: point at whichever escape hatch actually exists.
+  function fallbackAdvice() {
+    return keyIsSet
+      ? "Set a location by hand instead."
+      : "Allow location access in your browser, or add a Google Maps API key "
+        + "below to search by address instead.";
+  }
+
   useLocationBtn.addEventListener("click", () => {
+    // Geolocation only works in a secure context: https, or a localhost
+    // origin. The app binds 0.0.0.0, so reaching it by LAN address silently
+    // fails -- and Chrome reports that as a plain permission denial, which
+    // sends you hunting through browser settings for no reason. Say what is
+    // actually wrong instead.
+    if (window.isSecureContext === false) {
+      locationStatus.textContent =
+        "Browsers only share a location over https or on localhost, and this "
+        + `page was opened at ${window.location.hostname}. Open it at `
+        + `http://localhost:${window.location.port || 80} instead.`;
+      return;
+    }
     if (!navigator.geolocation) {
-      locationStatus.textContent = "This browser can't share a location. Set one by hand instead.";
+      locationStatus.textContent = `This browser can't share a location. ${fallbackAdvice()}`;
       return;
     }
     useLocationBtn.disabled = true;
@@ -68,11 +107,21 @@ document.addEventListener("DOMContentLoaded", () => {
         useLocationBtn.disabled = false;
       },
       (error) => {
-        locationStatus.textContent = error.code === error.PERMISSION_DENIED
-          ? "Location sharing was declined. Set a location by hand instead."
-          : "Couldn't get your location. Set one by hand instead.";
+        // Without an explicit timeout this callback may never fire at all --
+        // a desktop with OS location services switched off can leave the
+        // request pending indefinitely, which reads as a dead button.
+        const reason =
+          error.code === error.PERMISSION_DENIED
+            ? "Location sharing was blocked. Check the location permission for "
+              + "this site in your browser's address bar or settings."
+            : error.code === error.TIMEOUT
+              ? "Your browser took too long to answer. On a desktop, check that "
+                + "location services are enabled for it in your system settings."
+              : "Your device couldn't determine a location.";
+        locationStatus.textContent = `${reason} ${fallbackAdvice()}`;
         useLocationBtn.disabled = false;
       },
+      { timeout: 10000, maximumAge: 60000 },
     );
   });
 
@@ -97,7 +146,9 @@ document.addEventListener("DOMContentLoaded", () => {
       title.textContent = place.name;
       const meta = document.createElement("p");
       meta.className = "meta";
-      meta.textContent = [place.type, place.neighbourhood].filter(Boolean).join(" · ");
+      const distance = place.distance_km != null ? `${place.distance_km} km away` : "";
+      meta.textContent = [place.type, place.neighbourhood, distance]
+        .filter(Boolean).join(" · ");
       card.append(title, meta);
       if (source === "search" && place.reason) {
         const snippet = document.createElement("p");

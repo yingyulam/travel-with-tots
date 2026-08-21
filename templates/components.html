@@ -65,7 +65,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Find nearby stops</h3>
       <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
-      <p>src/components/find_nearby.py: narrows the curated venues to your resolved city and neighbourhood, then matches your need (restaurant, nursing room, quiet spot...) using the same interactions.find_nearby() the trip page already used. Falls back to a live web search when the curated table has nothing. Intentionally not AI, since there's no judgment call to make.</p>
+      <p>src/components/find_nearby.py: ranks venues by real straight-line distance from your location, then matches your need (restaurant, nursing room, quiet spot...) using the same interactions.find_nearby() the trip page already used. Venues without coordinates fall back to same-neighbourhood-first. Falls back to a live web search when the venue table has nothing. Intentionally not AI, since there's no judgment call to make.</p>
       <a class="cta-secondary" href="{{ url_for('find_nearby_page') }}">Try it</a>
     </div>
     <div class="plan-option">
@@ -82,8 +82,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Google Map handoff</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>src/components/geocode.py: turns browser coordinates (or a typed address) into a city and neighbourhood via the Google Geocoding API, so "find a place near us" knows where "us" is. The key stays server-side; the browser only uses its own free geolocation. Travel-time routing and the accommodation field are still to come.</p>
-      <a class="cta-secondary" href="{{ url_for('find_nearby_page') }}">Try it</a>
+      <p>src/components/geocode.py: turns a typed address into coordinates via the Google Geocoding API. It has no page of its own, since it only ever supports another component: it is the "set a location by hand" path on <a href="{{ url_for('find_nearby_page') }}">Find Nearby</a>. Sharing a location needs no key, because venues carry their own coordinates. Travel-time routing and the accommodation field are still to come.</p>
     </div>
   </div>
 </section>

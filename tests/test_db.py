@@ -112,6 +112,114 @@ class GetCandidateVenuesTest(unittest.TestCase):
         rows = db.get_candidate_venues("Vancouver", age_months=12, dining="on_the_go")
         self.assertEqual([v["name"] for v in rows], ["No Food"])
 
+    def test_user_submitted_venues_are_never_planned_around(self):
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Reviewed", kid_friendly=True)
+            conn.execute(
+                "INSERT INTO venues (name, city, neighbourhood, source, kid_friendly) "
+                "VALUES ('Unreviewed', 'Vancouver', 'Downtown', 'user_submitted', 1)")
+        rows = db.get_candidate_venues("Vancouver", age_months=12)
+        self.assertEqual([v["name"] for v in rows], ["Reviewed"])
+
+
+class EnsureColumnsMigrationTest(unittest.TestCase):
+    """The migration path had no coverage: every other test builds its schema
+    with executescript(db.SCHEMA), which already has every column, so
+    _ensure_columns never ran. This starts from a pre-lat/lng venues table."""
+
+    OLD_VENUES_SCHEMA = """
+    CREATE TABLE venues (
+        id                  INTEGER PRIMARY KEY,
+        name                TEXT NOT NULL,
+        type                TEXT,
+        neighbourhood       TEXT,
+        kid_friendly        INTEGER NOT NULL DEFAULT 0,
+        has_family_room     INTEGER NOT NULL DEFAULT 0,
+        has_nursing_room    INTEGER NOT NULL DEFAULT 0,
+        stroller_accessible INTEGER NOT NULL DEFAULT 0,
+        source              TEXT NOT NULL,
+        parent_id           INTEGER,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        city                TEXT,
+        category            TEXT,
+        nap_friendly        INTEGER NOT NULL DEFAULT 0,
+        can_eat             INTEGER NOT NULL DEFAULT 0,
+        open_time           TEXT,
+        close_time          TEXT,
+        min_age_months      INTEGER NOT NULL DEFAULT 0,
+        max_age_months      INTEGER NOT NULL DEFAULT 60
+    );
+    CREATE TABLE parents (id INTEGER PRIMARY KEY, email TEXT, password_hash TEXT,
+                          name TEXT, is_admin INTEGER NOT NULL DEFAULT 0,
+                          created_at TEXT);
+    CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER, name TEXT,
+                           gender TEXT, date_of_birth TEXT, created_at TEXT);
+    CREATE TABLE trips (id INTEGER PRIMARY KEY, parent_id INTEGER, child_id INTEGER,
+                        plan_json TEXT, feeding_1 TEXT, feeding_2 TEXT,
+                        transit_nap TEXT, preferred_lunch_time TEXT, naps TEXT,
+                        stop_count TEXT, created_at TEXT);
+    """
+
+    def setUp(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        self.db_path = tmp.name
+        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher.start()
+        with closing(db.connect()) as conn:
+            conn.executescript(self.OLD_VENUES_SCHEMA)
+
+    def tearDown(self):
+        self.patcher.stop()
+        os.unlink(self.db_path)
+
+    def _venue_columns(self):
+        with closing(db.connect()) as conn:
+            return {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
+
+    def test_adds_lat_lng_to_an_older_database(self):
+        self.assertNotIn("lat", self._venue_columns())
+        with closing(db.connect()) as conn:
+            db._ensure_columns(conn)
+        columns = self._venue_columns()
+        self.assertIn("lat", columns)
+        self.assertIn("lng", columns)
+
+    def test_is_idempotent_and_preserves_existing_rows(self):
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Already Here")
+        with closing(db.connect()) as conn:
+            db._ensure_columns(conn)
+            db._ensure_columns(conn)  # second run must be a no-op, not an error
+        with closing(db.connect()) as conn:
+            rows = conn.execute("SELECT name, lat FROM venues").fetchall()
+        self.assertEqual([r["name"] for r in rows], ["Already Here"])
+        self.assertIsNone(rows[0]["lat"])
+
+    def test_backfill_copies_coordinates_from_the_seed_file(self):
+        with closing(db.connect()) as conn:
+            db._ensure_columns(conn)
+        # A real seed-file venue that the geocoding pass resolved.
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Science World")
+        with closing(db.connect()) as conn:
+            db._backfill_venue_coordinates(conn)
+            row = conn.execute(
+                "SELECT lat, lng FROM venues WHERE name = 'Science World'").fetchone()
+        self.assertIsNotNone(row["lat"])
+        self.assertIsNotNone(row["lng"])
+
+    def test_backfill_leaves_unknown_venues_alone(self):
+        with closing(db.connect()) as conn:
+            db._ensure_columns(conn)
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Not In The Seed File")
+        with closing(db.connect()) as conn:
+            db._backfill_venue_coordinates(conn)
+            row = conn.execute(
+                "SELECT lat FROM venues WHERE name = 'Not In The Seed File'").fetchone()
+        self.assertIsNone(row["lat"])
+
 
 if __name__ == "__main__":
     unittest.main()
