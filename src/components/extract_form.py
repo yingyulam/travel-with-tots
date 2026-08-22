@@ -19,7 +19,7 @@ import os
 
 from werkzeug.datastructures import MultiDict
 
-from ..agents import _call_openrouter, _parse_json_reply
+from ..agents import call_openrouter, parse_json_reply
 from ..data_loader import FEATURE_LABELS
 from ..form_helpers import (
     DINING_OPTIONS,
@@ -256,11 +256,11 @@ def extract_form(description: str, model: str = EXTRACTOR_MODEL) -> dict:
     planner for a parent without saved children.
     """
     messages = _build_messages(description)
-    reply, _usage, elapsed = _call_openrouter(
+    reply, _usage, elapsed = call_openrouter(
         messages, model, EXTRACTED_FORM_RESPONSE_FORMAT)
 
     try:
-        extracted = _parse_json_reply(reply)
+        extracted = parse_json_reply(reply)
     except (ValueError, AttributeError) as e:
         raise FormExtractionError("That wasn't valid JSON.") from e
     if not isinstance(extracted, dict):

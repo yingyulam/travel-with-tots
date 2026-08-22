@@ -83,7 +83,7 @@ def _log_request_failure(model: str, detail: str) -> None:
     print("└" + "─" * 44)
 
 
-def _call_openrouter(messages: list[dict], model: str, response_format: dict | None = None) -> tuple[str, dict, float]:
+def call_openrouter(messages: list[dict], model: str, response_format: dict | None = None) -> tuple[str, dict, float]:
     """Returns (reply text, usage dict, elapsed seconds). `response_format`,
     when given, is OpenRouter's json_schema structured-output shape -- makes
     schema-valid JSON the model's actual output contract instead of only a
@@ -143,7 +143,7 @@ def _sum_optional(a, b):
 
 def ask(message: str, model: str = DEFAULT_MODEL) -> str:
     """Send a message to an OpenRouter-hosted model and return the reply text."""
-    reply, _, _ = _call_openrouter([{"role": "user", "content": message}], model)
+    reply, _, _ = call_openrouter([{"role": "user", "content": message}], model)
     return reply
 
 
@@ -200,7 +200,7 @@ def ask_website_chatbot(
         + (history or [])
         + [{"role": "user", "content": message}]
     )
-    reply, usage, elapsed = _call_openrouter(messages, model)
+    reply, usage, elapsed = call_openrouter(messages, model)
     return {
         "reply": _space_out_bullets(reply),
         "sources": sources,
@@ -252,7 +252,7 @@ _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL)
 
 
-def _parse_json_reply(text: str):
+def parse_json_reply(text: str):
     """Parse a model's reply as JSON, tolerating the wrappers models put
     around it: a ``` fence anywhere in the reply, a reasoning model's <think>
     block, and prose either side of the object.
@@ -520,13 +520,13 @@ def _call_and_validate_edits(messages: list[dict], model: str, stops: list,
     input_tokens, output_tokens). Shared by adjust_plan and adjust_replan,
     which only differ in which stops the edits are validated against and
     which error to raise."""
-    reply, usage, elapsed = _call_openrouter(messages, model, PLAN_EDITS_RESPONSE_FORMAT)
+    reply, usage, elapsed = call_openrouter(messages, model, PLAN_EDITS_RESPONSE_FORMAT)
     input_tokens = usage.get("prompt_tokens")
     output_tokens = usage.get("completion_tokens")
 
     cleaned, error = None, None
     try:
-        parsed = _parse_json_reply(reply)
+        parsed = parse_json_reply(reply)
         edits = parsed.get("edits") if isinstance(parsed, dict) else None
         cleaned, error = _validate_plan_edits(edits, stops, by_id, ctx)
     except (ValueError, AttributeError):
@@ -540,12 +540,12 @@ def _call_and_validate_edits(messages: list[dict], model: str, stops: list,
                 "strict JSON in the same {\"edits\": [...]} shape, or an "
                 "empty \"edits\" list if nothing actually needs to change.")},
         ]
-        reply2, usage2, elapsed2 = _call_openrouter(retry_messages, model, PLAN_EDITS_RESPONSE_FORMAT)
+        reply2, usage2, elapsed2 = call_openrouter(retry_messages, model, PLAN_EDITS_RESPONSE_FORMAT)
         elapsed += elapsed2
         input_tokens = _sum_optional(input_tokens, usage2.get("prompt_tokens"))
         output_tokens = _sum_optional(output_tokens, usage2.get("completion_tokens"))
         try:
-            parsed2 = _parse_json_reply(reply2)
+            parsed2 = parse_json_reply(reply2)
             edits2 = parsed2.get("edits") if isinstance(parsed2, dict) else None
             cleaned, error = _validate_plan_edits(edits2, stops, by_id, ctx)
         except (ValueError, AttributeError):

@@ -3,7 +3,7 @@
 Self-contained entry point, one file per component (see /components). The
 substantial logic lives in itinerary.py (rule-based draft) and agents.py
 (AI adjustment) -- this file only composes them, so app.py's /plan route
-and src/llms.py's plan_trip_tool both use this single implementation
+and src/agent.py's plan_trip_tool both use this single implementation
 instead of each having their own copy.
 """
 

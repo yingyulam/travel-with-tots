@@ -37,7 +37,7 @@ def _reply(**overrides):
 def _run(reply, elapsed=1.0):
     """Fake only the OpenRouter boundary. The real schema, the real read_form,
     and the real option lists all run."""
-    with mock.patch("src.components.extract_form._call_openrouter",
+    with mock.patch("src.components.extract_form.call_openrouter",
                     return_value=(reply, {}, elapsed)) as call:
         return extract_form("a description"), call
 
@@ -140,7 +140,7 @@ class ExtractFormTest(unittest.TestCase):
 
     def test_transport_errors_are_not_swallowed(self):
         # The route turns this into a 502; the component must not hide it.
-        with mock.patch("src.components.extract_form._call_openrouter",
+        with mock.patch("src.components.extract_form.call_openrouter",
                         side_effect=requests.exceptions.RequestException("down")):
             with self.assertRaises(requests.exceptions.RequestException):
                 extract_form("a description")
@@ -315,7 +315,7 @@ class ExtractFormRouteTest(unittest.TestCase):
 
     def test_run_returns_the_form_and_what_was_found(self):
         with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
-             mock.patch("src.components.extract_form._call_openrouter",
+             mock.patch("src.components.extract_form.call_openrouter",
                         return_value=(_reply(destination="Kitsilano"), {}, 1.0)):
             resp = self.client.post("/extract-form/run",
                                     json={"description": "a day in Kitsilano"})
@@ -326,14 +326,14 @@ class ExtractFormRouteTest(unittest.TestCase):
 
     def test_missing_api_key_is_a_clean_500(self):
         with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
-             mock.patch("src.components.extract_form._call_openrouter",
+             mock.patch("src.components.extract_form.call_openrouter",
                         side_effect=KeyError("OPENROUTER_API_KEY")):
             resp = self.client.post("/extract-form/run", json={"description": "x"})
         self.assertEqual(resp.status_code, 500)
 
     def test_unusable_reply_is_a_clean_502(self):
         with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
-             mock.patch("src.components.extract_form._call_openrouter",
+             mock.patch("src.components.extract_form.call_openrouter",
                         return_value=("not json", {}, 1.0)):
             resp = self.client.post("/extract-form/run", json={"description": "x"})
         self.assertEqual(resp.status_code, 502)

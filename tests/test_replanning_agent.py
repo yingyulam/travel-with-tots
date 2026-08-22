@@ -60,7 +60,7 @@ class AdjustReplanTest(unittest.TestCase):
             return self._good_reply(), {}, 1.0
 
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+             mock.patch("src.agents.call_openrouter", side_effect=fake_call):
             result = self.agent.adjust_replan(
                 self.draft, current_time="13:00", destination="Vancouver", age_months=30)
 
@@ -78,14 +78,14 @@ class AdjustReplanTest(unittest.TestCase):
         reply = ('{"edits": [{"current_venue_name": "Old Park", "new_venue_id": 7, '
                  '"new_time": null, "reason": "r"}]}')
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", return_value=(reply, {}, 1.0)):
+             mock.patch("src.agents.call_openrouter", return_value=(reply, {}, 1.0)):
             with self.assertRaises(ReplanningAgentError):
                 self.agent.adjust_replan(
                     self.draft, current_time="13:00", destination="Vancouver", age_months=30)
 
     def test_empty_edits_leaves_draft_unchanged(self):
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", return_value=('{"edits": []}', {}, 1.0)):
+             mock.patch("src.agents.call_openrouter", return_value=('{"edits": []}', {}, 1.0)):
             result = self.agent.adjust_replan(
                 self.draft, current_time="13:00", destination="Vancouver", age_months=30)
         self.assertEqual(result["stops"][1]["venue"]["name"], "Afternoon Stop")
@@ -100,7 +100,7 @@ class AdjustReplanTest(unittest.TestCase):
                     '"new_time": null, "reason": "r"}]}'), {}, 1.0
 
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+             mock.patch("src.agents.call_openrouter", side_effect=fake_call):
             with self.assertRaises(ReplanningAgentError):
                 self.agent.adjust_replan(
                     self.draft, current_time="13:00", destination="Vancouver", age_months=30)
@@ -114,7 +114,7 @@ class AdjustReplanTest(unittest.TestCase):
             return self.candidates
 
         with mock.patch("src.agents.db.get_candidate_venues", side_effect=fake_get_candidates), \
-             mock.patch("src.agents._call_openrouter", return_value=('{"edits": []}', {}, 1.0)):
+             mock.patch("src.agents.call_openrouter", return_value=('{"edits": []}', {}, 1.0)):
             self.agent.adjust_replan(
                 self.draft, current_time="13:00", destination="Vancouver", age_months=30)
         self.assertEqual(captured["near_neighbourhood"], "Downtown")
@@ -127,7 +127,7 @@ class AdjustReplanTest(unittest.TestCase):
         }
         draft["stops"][0]["adjusted"] = True
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", return_value=('{"edits": []}', {}, 1.0)):
+             mock.patch("src.agents.call_openrouter", return_value=('{"edits": []}', {}, 1.0)):
             result = self.agent.adjust_replan(
                 draft, current_time="13:00", destination="Vancouver", age_months=30)
         self.assertNotIn("adjusted", result["stops"][0])
@@ -221,7 +221,7 @@ class ReplanContextTest(unittest.TestCase):
             return '{"edits": []}', {}, 1.0
 
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+             mock.patch("src.agents.call_openrouter", side_effect=fake_call):
             self.agent.adjust_replan(
                 self.draft, current_time="13:00", destination="Vancouver",
                 age_months=30, **kwargs)
@@ -273,7 +273,7 @@ class ReplanPastTimeGuardTest(unittest.TestCase):
         reply = ('{"edits": [{"current_venue_name": "Afternoon Stop", '
                  f'"new_venue_id": 7, "new_time": "{new_time}", "reason": "r"}}]}}')
         with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents._call_openrouter",
+             mock.patch("src.agents.call_openrouter",
                         return_value=(reply, {}, 1.0)):
             return self.agent.adjust_replan(
                 self.draft, current_time="13:00", destination="Vancouver",
