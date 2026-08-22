@@ -702,6 +702,7 @@ def plan():
             nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
             transit=form["transit"], accommodation=form["accommodation"],
             features=form["features"], strict_schedule=form["strict_schedule"],
+            themes=form["themes"], transit_nap=form["transit_nap"],
         )
         plans = [Plan.from_dict(result)]
         if result["adjusted"]:

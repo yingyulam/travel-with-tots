@@ -539,6 +539,7 @@ class PlanningAgent:
             .replace("{accommodation}", ctx["accommodation"] or "not specified")
             .replace("{dining}", ctx["dining"] or "dine_out")
             .replace("{preferred_lunch_time}", ctx["preferred_lunch_time"] or "none")
+            .replace("{transit_nap}", ctx.get("transit_nap") or "sometimes")
             .replace("{nap_notes}", ctx["nap_notes"] or "none")
             .replace("{extra_notes}", ctx["extra_notes"] or "none")
             .replace("{draft_stops}", _format_draft_stops_for_prompt(draft_stops))
@@ -549,7 +550,7 @@ class PlanningAgent:
     def adjust_plan(self, draft_plan, *, destination, age_months, wake_up, bedtime,
                      stop_count, dining, naps=None, preferred_lunch_time="", nap_notes="",
                      extra_notes="", transit=None, accommodation="", features=None,
-                     strict_schedule=False):
+                     strict_schedule=False, transit_nap=""):
         """Given an already-valid rule-based draft, proposes a short list of
         edits (never a full regeneration) that smooth the day's flow and/or
         apply nap_notes/extra_notes, then applies them. Returns
@@ -566,7 +567,7 @@ class PlanningAgent:
                    bedtime=bedtime, stop_count=stop_count, dining=dining, naps=naps,
                    preferred_lunch_time=preferred_lunch_time, nap_notes=nap_notes,
                    extra_notes=extra_notes, transit=transit, accommodation=accommodation,
-                   strict_schedule=strict_schedule,
+                   strict_schedule=strict_schedule, transit_nap=transit_nap,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),
                    transit_buffer_min=transit_buffer_min(transit))

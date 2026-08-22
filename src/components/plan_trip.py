@@ -18,7 +18,7 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
                stop_count=3, dining="dine_out", features=None, naps=None,
                preferred_lunch_time="", nap_notes="", extra_notes="",
                transit=None, accommodation="", strict_schedule=False,
-               themes=None) -> dict:
+               themes=None, transit_nap="") -> dict:
     """Build a full day plan: a rule-based draft, then AI-smoothed. Always
     returns a usable plan -- if the AI step fails, falls back to the
     unadjusted draft rather than raising, so every caller gets that
@@ -31,6 +31,7 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
         "destination": destination, "stop_count": stop_count,
         "features": features or [], "themes": themes or [], "dining": dining,
         "accommodation": accommodation, "preferred_lunch_time": preferred_lunch_time,
+        "transit_nap": transit_nap,
     }
     plan = generate_plans(VENUES, inputs)[0]
     adjusted = True
@@ -41,6 +42,7 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
             naps=naps, preferred_lunch_time=preferred_lunch_time,
             nap_notes=nap_notes, extra_notes=extra_notes, transit=transit,
             accommodation=accommodation, features=features, strict_schedule=strict_schedule,
+            transit_nap=transit_nap,
         )
         plan.stops = adjustment["stops"]
     except (PlanningAgentError, requests.exceptions.RequestException, KeyError) as e:

@@ -16,6 +16,7 @@ Trip context:
 - Accommodation: {accommodation}
 - Dining preference: {dining}
 - Preferred lunch time: {preferred_lunch_time}
+- Can nap during transit: {transit_nap}
 - Nap/sleep habits: {nap_notes}
 - Notes from the parent: {extra_notes}
 
@@ -29,7 +30,8 @@ Candidate venues you may swap in. This is the live result of a fresh database qu
 Rules:
 - Reference the stop you're editing by its exact current venue name, exactly as shown in the draft above.
 - Never invent a venue_id, a venue name, or any venue detail not present in the candidate list above.
-- An edit may change the venue ("new_venue_id"), the time ("new_time"), or both, but never what kind of stop it is: a meal stays a meal, a nap stays a nap, an activity stays an activity. A replacement venue for a meal stop must be somewhere a meal is possible; a replacement for a nap stop must be genuinely nap-friendly.
+- An edit may change the venue ("new_venue_id"), the time ("new_time"), or both, but never what kind of stop it is: a meal stays a meal, a nap stays a nap, an activity stays an activity. A replacement venue for a meal stop must be somewhere a meal is possible.
+- How strict a nap stop's venue needs to be depends on "Can nap during transit" above. When it is "no", a replacement for a nap stop must be genuinely nap-friendly: the child needs a real place to sleep. When it is "yes", the child sleeps on the move, so the nap stop is about giving them an uninterrupted stretch rather than a nap-friendly room, and any venue that suits a long stroller walk or a quiet wander will do. When it is "sometimes", prefer a nap-friendly venue but do not swap out a better-fitting stop just to get one. In every case, the nap/sleep habits above override this if they describe what actually works for this child.
 - Never introduce a second meal stop, or remove the only one, that count is fixed by the parent's dining choice, not something to adjust.
 - Keep every nudge grounded: moving a stop by tens of minutes to smooth the day is normal and expected; moving it by hours is not, that's a different day, not an adjustment. A meal stop should still land somewhere a real lunch would.
 - A venue must actually be open at whatever time you place a stop.
