@@ -19,9 +19,16 @@ from .itinerary import (
 load_dotenv()
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "google/gemma-4-26b-a4b-it:free"
+# OpenRouter's free auto-router. Free, supports structured outputs (which the
+# plan adjuster and form extractor depend on, and which gemma does not
+# advertise), and because it spreads across free models it survives the
+# upstream rate limiting that takes a single pinned free model offline.
+# Pin nvidia/nemotron-3-super-120b-a12b:free instead for reproducible output.
+DEFAULT_MODEL = "openrouter/free"
 
 ALLOWED_CHAT_MODELS = {
+    "openrouter/free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
     "google/gemma-4-26b-a4b-it:free",
     "openai/gpt-4o-mini",
     "anthropic/claude-sonnet-5",
