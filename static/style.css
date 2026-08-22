@@ -676,7 +676,7 @@ textarea:focus {
   margin-bottom: 0.6rem;
 }
 
-/* Armed-or-not banner on the Plan from chat page. Colour carries the state so
+/* Armed-or-not banner on the fill-the-form-from-chat page. Colour carries the state so
    it reads at a glance instead of hiding in a line of grey text. The two
    armed states borrow the badge palette: amber for waiting, green for live. */
 .watch-status {

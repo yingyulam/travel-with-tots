@@ -5,10 +5,11 @@ reliable as the pieces it chains, which is the point: every component is
 already built and tested on its own page, so a workflow adds sequencing rather
 than new risk.
 
-None of these run yet -- each module declares its chain so /workflows can show
-what the parts add up to. `TRIGGERS` names how a workflow would start; today
-the message and event triggers already exist (the chat bubble and the /trip
-situation buttons), while scheduled has no mechanism in the app at all.
+Each module declares its chain so /workflows can show what the parts add up to,
+and a module with a `page` key has a test page where the chain really runs.
+`TRIGGERS` names how a workflow starts; today the message and event triggers
+already exist (the chat bubble and the /trip situation buttons), while scheduled
+has no mechanism in the app at all.
 """
 
 from .answer_with_web_fallback import WORKFLOW as _answer_with_web_fallback

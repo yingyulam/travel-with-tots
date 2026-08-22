@@ -6,7 +6,7 @@
 {% block content %}
 <section class="card">
   <p class="meta">A workflow chains components together. Each one is already built and tested on its own page, so a workflow adds sequencing rather than new risk. <a href="{{ url_for('components') }}">See the components →</a></p>
-  <p class="meta">None of these run yet: the cards below name the chain each one would follow. Amber chips mark a step with nothing behind it yet.</p>
+  <p class="meta">A card with a "Try it" link runs today; the rest name the chain they would follow. Amber chips mark a step with nothing behind it yet.</p>
 </section>
 
 {% for label, workflows in trigger_groups %}

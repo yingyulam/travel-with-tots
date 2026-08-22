@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Travel with Tots: Plan from chat{% endblock %}
-{% block heading %}Plan from chat{% endblock %}
+{% block title %}Travel with Tots: Fill the form from chat{% endblock %}
+{% block heading %}Fill the form from chat{% endblock %}
 {% block tagline %}Describe a day in the chat bubble, watch it become the planning form.{% endblock %}
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the Plan from chat workflow. Type in the bubble in the corner, which is the agent, and the form it extracted appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+  <p class="meta">Test page for the "Fill the form from a chat message" workflow. Type in the bubble in the corner, which is the agent, and the form it extracted appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
 
-  <p class="field-hint">The chain is: your message goes to the AI agent, the agent calls the form extractor, and the filled form shows below for you to check before any plan is built from it. Pick the model in the bubble's own dropdown. Extraction can take a while on a free model, so a turn may sit waiting for a minute or so.</p>
+  <p class="field-hint">The chain is: your message goes to the AI agent, the agent calls the form extractor, and the filled form shows below for you to check. It stops there on purpose. Building the day from the form is a separate step, so one description does not become a finished itinerary. Pick the model in the bubble's own dropdown. Extraction can take a while on a free model, so a turn may sit waiting for a minute or so.</p>
 
   <div class="action-panel">
     <p class="panel-title">Watch the chat</p>

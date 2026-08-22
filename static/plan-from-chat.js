@@ -1,4 +1,4 @@
-// Plan from chat workflow test page: shows the form the agent extracted from
+// Fill-the-form-from-chat workflow test page: shows the form the agent extracted from
 // each message sent through the real chat bubble. Driven by the
 // "twt:chat-reply" event chatbot.js fires once per reply, so there is nothing
 // to poll and a message cannot be processed twice.

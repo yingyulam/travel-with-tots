@@ -34,11 +34,16 @@ SYSTEM_PROMPT = (
     "- answer_faq_tool for any question about how the site works or what it "
     "can do. Pass the parent's question through unchanged, and reply with what "
     "it gives you, keeping its [Source N] markers exactly as they are.\n"
-    "- extract_form_tool when a parent describes a day out they want, so their "
-    "words become the planning form. Pass their whole description.\n"
-    "- plan_trip_tool when they want an actual itinerary built.\n"
+    "- extract_form_tool whenever a parent describes a day out they want, so "
+    "their words become the planning form. Pass their whole description. This "
+    "is the tool for a description even when it sounds like a request for a "
+    "plan: the form is filled in first so the parent can check it.\n"
+    "- plan_trip_tool only when they explicitly ask you to build the itinerary "
+    "now. Never on a first description of a day.\n"
     "- find_nearby_tool when they need somewhere nearby right now.\n"
-    "Use exactly one tool per message. Keep replies short and plain."
+    "Use exactly one tool per message. Keep replies short and plain. After "
+    "extract_form_tool, say which details you picked up and ask them to check "
+    "the form. Never write an itinerary of your own."
 )
 
 # Errors a tool must swallow: the chat route only catches KeyError and

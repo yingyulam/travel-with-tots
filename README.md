@@ -169,8 +169,15 @@ already powers the rest of the site rather than new logic:
 | --- | --- | --- |
 | `answer_faq_tool` | `ask_website_chatbot` | questions about the site, with `[Source N]` citations |
 | `extract_form_tool` | the Form Extractor | a described day, turned into the planning form |
-| `plan_trip_tool` | the Plan Trips component | building an actual itinerary |
+| `plan_trip_tool` | the Plan Trips component | building an itinerary, only when explicitly asked |
 | `find_nearby_tool` | `find_nearby` | somewhere kid-friendly right now |
+
+The last two overlap, so the system prompt gives the extractor priority: a
+parent describing a day they want always fills the form first, even when it
+sounds like a request for a plan, because the point is that they see what was
+read from their words before a day is built on it. `plan_trip_tool` fires only
+when they ask for the itinerary outright. It is a prompt-level rule rather than
+a guarantee, so the workflow test page reports which tool actually ran.
 
 Answering questions is now one tool among several rather than a separate code
 path, so there is a single implementation behind the bubble and the admin test
@@ -256,8 +263,10 @@ the planner's prompt. Prose a structured field already captured is *not*
 repeated there, so the planner never reads the same constraint twice.
 
 Reachable from the chat bubble: describing a day there has the agent call this
-component, which is the `plan_from_chat` workflow (see `/workflows`). Not wired
-into `/plan`'s form itself yet.
+component, which is the "Fill the form from a chat message" workflow (see
+`/workflows`). That chain ends at the filled form on purpose, so one description
+never becomes a finished itinerary without the parent seeing what was read from
+it. Not wired into `/plan`'s form itself yet.
 
 It pins its own model rather than using the app default, which is OpenRouter's
 free auto-router. The router advertises structured outputs but picks a
@@ -391,7 +400,7 @@ travel-with-tots/
 │   ├── workflows/                 # one file per workflow, each chaining components
 │   │   ├── nap_time_rescue.py     # replan around a long nap, substitute closed stops
 │   │   ├── answer_with_web_fallback.py  # knowledge base, then live web search
-│   │   └── plan_from_chat.py      # describe a day in chat, get a plan back
+│   │   └── plan_from_chat.py      # describe a day in chat, get the form filled
 │   └── prompts/
 │       ├── website_chatbot.txt    # chatbot system prompt
 │       ├── extract_form.txt       # form extractor system prompt
@@ -409,7 +418,7 @@ travel-with-tots/
 │   ├── results.html               # admin: browse ratings, stats per session
 │   ├── components.html            # admin: inventory of the app's components
 │   ├── workflows.html             # admin: use cases chaining those components
-│   ├── plan_from_chat.html        # admin: Plan from chat workflow test page
+│   ├── plan_from_chat.html        # admin: fill-the-form-from-chat workflow test page
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
@@ -431,7 +440,7 @@ travel-with-tots/
 │   ├── replan-trip.js             # Replan a Trip test page's run behaviour
 │   ├── find-nearby.js             # Find Nearby test page's geolocation + run behaviour
 │   ├── extract-form.js            # Form Extractor test page's run behaviour
-│   ├── plan-from-chat.js          # Plan from chat page: watches chat replies
+│   ├── plan-from-chat.js          # fill-the-form page: watches chat replies
 │   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
@@ -452,7 +461,7 @@ travel-with-tots/
 │   ├── test_geo.py                # unit tests for haversine distance
 │   ├── test_workflows.py          # unit tests for workflow declarations + page
 │   ├── test_llms.py               # unit tests for the agent's tools + chat contract
-│   ├── test_workflow_plan_from_chat.py # unit tests for the Plan from chat workflow
+│   ├── test_workflow_plan_from_chat.py # unit tests for the fill-the-form workflow
 │   ├── test_db.py                 # unit tests for get_candidate_venues
 │   └── test_results.py            # unit tests for results.py's kind-filtering and stats
 ├── requirements.txt
@@ -502,7 +511,7 @@ transactional.
 | `/components`                   | GET      | Admin: inventory of components, each with its own test page     |
 | `/workflows`                    | GET      | Admin: end-to-end use cases, each a chain of components         |
 | `/agent`                        | GET      | Admin: AI Agent test page, watches real chat-bubble traffic      |
-| `/workflows/plan-from-chat`     | GET      | Admin: Plan from chat workflow test page                        |
+| `/workflows/plan-from-chat`     | GET      | Admin: fill-the-form-from-chat workflow test page               |
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |
