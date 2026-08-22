@@ -314,6 +314,68 @@ def plan_from_chat_page():
     return render_template("plan_from_chat.html")
 
 
+@app.route("/workflows/log-a-place")
+@login_required
+@admin_required
+def log_a_place_page():
+    """The Log a place workflow's test page: set a location, name a place we
+    don't have, say what it offers, and submit it for verification."""
+    return render_template("log_a_place.html", amenity_options=AMENITY_OPTIONS)
+
+
+@app.route("/workflows/log-a-place/area", methods=["POST"])
+@login_required
+@admin_required
+def log_a_place_area_route():
+    """Browser coordinates to a readable area, so step 1 can show where the
+    parent is rather than a pair of decimals. Kept separate from /resolve
+    because it answers a different question: where am I, not which place."""
+    data = request.get_json(silent=True) or {}
+    if data.get("lat") is None or data.get("lng") is None:
+        return jsonify({"error": "lat and lng are required"}), 400
+    try:
+        location = reverse_geocode(data["lat"], data["lng"])
+    except (GeocodeError, KeyError) as e:
+        print(f"Logged-place area lookup failed: {e}")
+        return jsonify({"error": "Couldn't name that location."}), 502
+    return jsonify({"area": location["formatted_address"] or location["city"]})
+
+
+@app.route("/workflows/log-a-place/resolve", methods=["POST"])
+@login_required
+@admin_required
+def log_a_place_resolve_route():
+    """Look up a named place so the parent can confirm it is the right one
+    before anything is stored. This is the "select the specific place" step:
+    the geocoder answers with an address, which is the only way to tell "Nourish
+    Kitchen" the cafe from a street of the same name."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    place = _resolve_place(name, (data.get("area") or "").strip())
+    return jsonify({"name": name, "place": place,
+                    "resolved": place["lat"] is not None})
+
+
+@app.route("/workflows/log-a-place/run", methods=["POST"])
+@login_required
+@admin_required
+def log_a_place_run_route():
+    """Store the submission and hand back exactly what was stored, so the page
+    can show it rather than claiming success. Never searchable: see _log_place."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    area = (data.get("area") or "").strip()
+    # Resolved again rather than trusting the coordinates the page sends back:
+    # a second lookup is cheap, and it means what gets stored is what the
+    # geocoder actually said, not what a caller claimed it said.
+    record = _log_place(_current_parent()["id"], data, _resolve_place(name, area))
+    return jsonify({"stored": record, "searchable": False})
+
+
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
 
@@ -390,6 +452,12 @@ def search_web_key_route():
     return jsonify({"status": "saved"})
 
 
+# "We don't know where they are", in the shape a resolved location has. Named
+# rather than repeated so the three places that need it cannot drift.
+UNKNOWN_LOCATION = {"city": "", "neighbourhood": "", "formatted_address": "",
+                    "lat": None, "lng": None}
+
+
 def _resolve_location(data):
     """The place a find-nearby request is centred on: reverse-geocoded
     browser coordinates, a typed address, or (when neither was sent) nothing
@@ -399,8 +467,24 @@ def _resolve_location(data):
     address = (data.get("address") or "").strip()
     if address:
         return geocode(address)
-    return {"city": "", "neighbourhood": "", "formatted_address": "",
-            "lat": None, "lng": None}
+    return dict(UNKNOWN_LOCATION)
+
+
+def _resolve_place(name, area=""):
+    """Coordinates and a confirmable address for a place named by a parent.
+
+    Geocoding a name is what turns a logged place from a dead record into one
+    an admin can verify: without coordinates it can never be distance-ranked.
+    But a failure here must not cost the parent their submission, so an
+    unreachable or unconfigured geocoder degrades to the unknown location and
+    the caller stores what it has. Same choice find_nearby_route makes.
+    """
+    query = f"{name}, {area}" if area else name
+    try:
+        return geocode(query)
+    except (GeocodeError, KeyError) as e:
+        print(f"Logged-place lookup skipped, storing without coordinates: {e}")
+        return dict(UNKNOWN_LOCATION)
 
 
 @app.route("/find-nearby")
@@ -629,6 +713,49 @@ def delete_trip_route(trip_id):
     return redirect(url_for("dashboard"))
 
 
+# The amenities a parent can vouch for, as (field name, label). Shared by the
+# dashboard form and the workflow page so the two cannot offer different lists.
+AMENITY_OPTIONS = [
+    ("kid_friendly", "Kid-friendly"),
+    ("has_family_room", "Family room"),
+    ("has_nursing_room", "Nursing room"),
+    ("stroller_accessible", "Stroller / step-free"),
+]
+
+
+def _log_place(parent_id, values, location):
+    """Store one parent-submitted place and return the row as stored.
+
+    Always `source="user_submitted"`, which is what keeps it out of every
+    search until an admin verifies it: db.VERIFIED_SOURCES excludes it. The
+    coordinates are stored anyway, so the submission is complete enough to
+    verify rather than needing to be chased up later.
+    """
+    record = {
+        # Stripped here rather than trusting each caller to have done it.
+        "name": (values.get("name") or "").strip(),
+        "venue_type": values.get("venue_type") or None,
+        "neighbourhood": (values.get("neighbourhood")
+                          or location["neighbourhood"] or None),
+        "city": location["city"] or None,
+        "lat": location["lat"],
+        "lng": location["lng"],
+        "formatted_address": location["formatted_address"],
+        "amenities": [key for key, _ in AMENITY_OPTIONS if values.get(key)],
+    }
+    add_venue(
+        record["name"],
+        source="user_submitted",
+        parent_id=parent_id,
+        venue_type=record["venue_type"],
+        neighbourhood=record["neighbourhood"],
+        city=record["city"],
+        lat=record["lat"],
+        lng=record["lng"],
+        **{key: bool(values.get(key)) for key, _ in AMENITY_OPTIONS})
+    return record
+
+
 @app.route("/log-place", methods=["POST"])
 @login_required
 def log_place():
@@ -638,16 +765,8 @@ def log_place():
     if not name:
         flash("A place needs a name.")
         return redirect(url_for("dashboard"))
-    add_venue(
-        name,
-        source="user_submitted",
-        parent_id=parent["id"],
-        venue_type=request.form.get("venue_type") or None,
-        neighbourhood=request.form.get("neighbourhood") or None,
-        kid_friendly=bool(request.form.get("kid_friendly")),
-        has_family_room=bool(request.form.get("has_family_room")),
-        has_nursing_room=bool(request.form.get("has_nursing_room")),
-        stroller_accessible=bool(request.form.get("stroller_accessible")))
+    area = request.form.get("neighbourhood", "").strip()
+    _log_place(parent["id"], request.form, _resolve_place(name, area))
     return redirect(url_for("dashboard"))
 
 
@@ -898,7 +1017,7 @@ def find_nearby_route():
         # Naming the place is a nicety; the coordinates are the useful part,
         # so a missing or failing geocoder must not throw them away.
         print(f"Find-nearby place lookup skipped, using raw coordinates: {e}")
-        location = {"city": "", "neighbourhood": "", "formatted_address": "",
+        location = {**UNKNOWN_LOCATION,
                     "lat": data.get("lat"), "lng": data.get("lng")}
 
     if location["city"] or location["lat"] is not None:

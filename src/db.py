@@ -409,13 +409,26 @@ def delete_trip(trip_id, parent_id):
 def add_venue(name, *, source, venue_type=None, neighbourhood=None,
               kid_friendly=False, has_family_room=False,
               has_nursing_room=False, stroller_accessible=False,
-              parent_id=None):
+              parent_id=None, city=None, lat=None, lng=None):
+    """Insert a venue. `city`, `lat` and `lng` are optional so a submission
+    still survives a geocoder that is unreachable or unconfigured, but
+    supplying them is what makes the row verifiable later: without coordinates
+    it can never be distance-ranked, and without a city it never matches a city
+    query.
+
+    `source` alone decides whether the row is searchable, since only
+    VERIFIED_SOURCES are queried. A "user_submitted" row therefore stays out of
+    every result however complete it is, which is the human-in-the-loop gate
+    rather than a gap.
+    """
     return _write(
         "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
         "has_family_room, has_nursing_room, stroller_accessible, source, "
-        "parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "parent_id, city, lat, lng) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (name, venue_type, neighbourhood, int(kid_friendly), int(has_family_room),
-         int(has_nursing_room), int(stroller_accessible), source, parent_id))
+         int(has_nursing_room), int(stroller_accessible), source, parent_id,
+         city, lat, lng))
 
 
 def get_parent_by_email(email):

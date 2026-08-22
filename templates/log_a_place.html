@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Log a place{% endblock %}
+{% block heading %}Log a place{% endblock %}
+{% block tagline %}Found somewhere good that isn't in our venues? Add it.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Test page for the "Log a place we don't have" workflow. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+
+  <p class="field-hint">The chain is: set a location, name the place, say what it offers, and submit. Naming it is looked up so the submission carries real coordinates, which is what makes it checkable later. Nothing you add here becomes searchable: it waits for an admin to verify it first.</p>
+
+  <div class="action-panel">
+    <p class="panel-title">1. Where is it?</p>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="use-my-location">📍 Use my location</button>
+    </div>
+    <p class="field-hint">Sharing your location needs no API key: your browser supplies the coordinates and we name the area from them.</p>
+    <div class="search-web-action-row">
+      <label class="field">
+        <span>Area, or type one by hand</span>
+        <input type="text" id="place-area" placeholder="e.g. Kitsilano, Vancouver">
+      </label>
+    </div>
+    <p id="location-status" class="meta">No area set yet.</p>
+  </div>
+
+  <div class="action-panel">
+    <p class="panel-title">2. Which place?</p>
+    <div class="search-web-action-row">
+      <label class="field">
+        <span>Place name</span>
+        <input type="text" id="place-name" placeholder="e.g. Nourish Kitchen">
+      </label>
+      <button type="button" class="cta-secondary" id="resolve-place">Look it up</button>
+    </div>
+    <p class="field-hint">Looking it up is how we tell the cafe from a street of the same name. Check the address that comes back before submitting.</p>
+    <p id="resolve-status" class="meta">Not looked up yet.</p>
+  </div>
+
+  <div class="action-panel">
+    <p class="panel-title">3. What does it have?</p>
+    <div class="chips" id="amenity-bar">
+      {% for key, label in amenity_options %}
+      <label class="chip">
+        <input type="checkbox" value="{{ key }}">
+        <span>{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="search-web-action-row">
+      <label class="field">
+        <span>Kind of place <em>(optional)</em></span>
+        <input type="text" id="place-type" placeholder="e.g. cafe, park, museum">
+      </label>
+    </div>
+  </div>
+
+  <div class="action-panel">
+    <p class="panel-title">4. Submit it</p>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="log-place-submit">Log this place</button>
+    </div>
+    <p class="field-hint">It goes to your dashboard and into the verification queue. It stays out of Find Nearby and every plan until an admin promotes it, so a wrong guess here cannot reach another parent.</p>
+    <p id="log-place-status" class="meta">Nothing submitted yet.</p>
+    <div id="log-place-result-list"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='geolocate.js') }}"></script>
+<script src="{{ url_for('static', filename='log-a-place.js') }}"></script>
+{% endblock %}

@@ -1,6 +1,8 @@
 import unittest
 from unittest import mock
 
+from markupsafe import escape
+
 from src.workflows import TRIGGERS, WORKFLOWS, workflows_by_trigger
 
 TRIGGER_KEYS = {key for key, _ in TRIGGERS}
@@ -72,10 +74,14 @@ class WorkflowsPageTest(unittest.TestCase):
             resp = self.client.get("/workflows")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
+        # Compared escaped, because the template escapes: a name containing an
+        # apostrophe reaches the page as &#39; and a raw comparison would call
+        # that missing. markupsafe rather than html.escape, since that is what
+        # Jinja itself uses and the two differ on quotes (&#39; vs &#x27;).
         for workflow in WORKFLOWS:
-            self.assertIn(workflow["name"], html)
+            self.assertIn(str(escape(workflow["name"])), html)
             for step in workflow["steps"]:
-                self.assertIn(step["component"], html)
+                self.assertIn(str(escape(step["component"])), html)
 
     def test_unbuilt_steps_are_marked_pending(self):
         with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
