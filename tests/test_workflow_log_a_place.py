@@ -276,6 +276,35 @@ class PageTest(unittest.TestCase):
             html = self.client.get("/workflows").get_data(as_text=True)
         self.assertIn('href="/log-place"', html)
 
+    def test_submitting_comes_back_showing_what_was_stored(self):
+        # The chain is only observable if its output appears where it was run.
+        # A bare redirect to the dashboard gave no confirmation at all.
+        stored = {"id": 7, "name": "Science World", "type": "museum",
+                  "neighbourhood": "False Creek", "city": "Vancouver",
+                  "address": "1455 Quebec St", "lat": 49.2734, "lng": -123.1038,
+                  "notes": "change table by the gift shop",
+                  "kid_friendly": 1, "has_family_room": 0,
+                  "has_nursing_room": 0, "stroller_accessible": 0}
+        with self._as_parent(), \
+             mock.patch.object(self.app_module.log_a_place, "run",
+                               return_value={"id": 7}), \
+             mock.patch.object(self.app_module, "_logged_place", return_value=stored):
+            resp = self.client.post("/log-place", data={"name": "Science World"})
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn("logged=7", resp.headers["Location"])
+            html = self.client.get("/log-place?logged=7").get_data(as_text=True)
+        self.assertIn("Science World", html)
+        self.assertIn("1455 Quebec St", html)
+        self.assertIn("49.27340", html)
+        self.assertIn("awaiting verification", html)
+
+    def test_a_place_that_is_not_yours_shows_nothing(self):
+        # ?logged= is a query parameter, so it has to be ownership-checked.
+        with self._as_parent(), \
+             mock.patch.object(self.app_module, "_logged_place", return_value=None):
+            html = self.client.get("/log-place?logged=999").get_data(as_text=True)
+        self.assertNotIn("awaiting verification", html)
+
     def test_area_needs_coordinates(self):
         with self._as_parent():
             resp = self.client.post("/log-place/area", json={})

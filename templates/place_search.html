@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Place Search{% endblock %}
+{% block heading %}Place Search{% endblock %}
+{% block tagline %}Find a place by name, the way Log a Place does.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the Place Search component. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <p class="field-hint">Google Places, not geocoding. Geocoding is address-shaped and answers a cafe's name with a street; this answers "which place did you mean". Server-side, so the key never reaches your browser.</p>
+
+  <div class="action-panel">
+    <p class="panel-title">Search</p>
+    <div class="need-other-row">
+      <input type="text" id="query" placeholder="e.g. Science World, or a cafe on Main St">
+      <button type="button" class="tap-btn" id="run">Search</button>
+    </div>
+    <p class="field-hint">Optionally bias the search toward a point, the way the map's centre does on Log a Place. Leave both blank for an unbiased search.</p>
+    <div class="field-row">
+      <label class="field">
+        <span>Bias latitude <em>(optional)</em></span>
+        <input type="number" id="lat" step="any" placeholder="49.2827">
+      </label>
+      <label class="field">
+        <span>Bias longitude <em>(optional)</em></span>
+        <input type="number" id="lng" step="any" placeholder="-123.1207">
+      </label>
+    </div>
+  </div>
+
+  <p id="heading" class="meta">No search run yet.</p>
+  <div id="result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='place-search.js') }}"></script>
+{% endblock %}

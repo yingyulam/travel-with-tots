@@ -88,7 +88,8 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Place Search</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>src/components/place_search.py: finds a place by name via Google Places, so Log a Place can offer candidates to pick from instead of asking a parent to describe a location twice. Separate from Geocode on purpose: that one turns an address into coordinates, this one answers "which place did you mean", and geocoding a business name tends to return a street. Server-side like every other key, and the key travels in a header rather than a URL, so a logged request can't carry it. No page of its own; <a href="{{ url_for('log_place_page') }}">Log a Place</a> is what exercises it.</p>
+      <p>src/components/place_search.py: finds a place by name via Google Places, so Log a Place can offer candidates to pick from instead of asking a parent to describe a location twice. Separate from Geocode on purpose: that one turns an address into coordinates, this one answers "which place did you mean", and geocoding a business name tends to return a street. Server-side like every other key, and the key travels in a header rather than a URL, so a logged request can't carry it.</p>
+      <a class="cta-secondary" href="{{ url_for('place_search_page') }}">Try it</a>
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">Google Map handoff</h3>

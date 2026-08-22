@@ -173,6 +173,35 @@ class SearchRouteTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 503)
         self.assertIn("key", resp.get_json()["error"].lower())
 
+    def test_the_component_has_its_own_page(self):
+        # Every other invokable component is testable in isolation; without
+        # this you can only reach the search through the log-a-place form, so a
+        # wrong address can't be pinned on the search or the form.
+        admin = {**self.parent, "is_admin": True}
+        with mock.patch.object(self.app_module, "_current_parent", return_value=admin):
+            resp = self.client.get("/place-search")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Place Search", resp.get_data(as_text=True))
+
+    def test_the_component_page_is_admin_only(self):
+        with self._as_parent():
+            self.assertEqual(self.client.get("/place-search").status_code, 302)
+
+    def test_the_components_page_links_to_it(self):
+        admin = {**self.parent, "is_admin": True}
+        with mock.patch.object(self.app_module, "_current_parent", return_value=admin):
+            html = self.client.get("/components").get_data(as_text=True)
+        self.assertIn('href="/place-search"', html)
+
+    def test_the_component_run_route_returns_results(self):
+        admin = {**self.parent, "is_admin": True}
+        with mock.patch.object(self.app_module, "_current_parent", return_value=admin), \
+             mock.patch.object(self.app_module, "search_places",
+                               return_value=[{"name": "Science World"}]):
+            resp = self.client.post("/place-search/run", json={"query": "science"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["places"][0]["name"], "Science World")
+
     def test_searching_needs_a_login(self):
         with mock.patch.object(self.app_module, "_current_parent", return_value=None):
             self.assertEqual(

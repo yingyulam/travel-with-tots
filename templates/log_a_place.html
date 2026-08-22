@@ -12,6 +12,31 @@
 <section class="card">
   <p class="meta">Add a place we don't have yet, so other parents can find it once it's checked. It goes to your <a href="{{ url_for('dashboard') }}">dashboard</a> straight away.</p>
 
+  {% if stored %}
+  {# Exactly what went into the database, so the whole chain is visible where
+     it was run: the name you gave, the address the geocoder resolved, and the
+     coordinates that make it checkable later. #}
+  <div class="need-card" id="logged-confirmation">
+    <h4>✅ Logged: {{ stored.name }}</h4>
+    <p class="meta"><strong>Kind:</strong> {{ stored.type or 'not given' }}</p>
+    <p class="meta"><strong>Area:</strong> {{ stored.neighbourhood or 'not given' }}</p>
+    <p class="meta"><strong>City:</strong> {{ stored.city or 'not resolved' }}</p>
+    <p class="meta"><strong>Address:</strong> {{ stored.address or 'not resolved' }}</p>
+    <p class="meta"><strong>Coordinates:</strong>
+      {% if stored.lat is not none %}{{ '%.5f'|format(stored.lat) }}, {{ '%.5f'|format(stored.lng) }}
+      {% else %}none, so it can't be distance-ranked yet{% endif %}</p>
+    {% if stored.notes %}<p class="reason">{{ stored.notes }}</p>{% endif %}
+    <div class="badges">
+      {% for key, label in amenity_options %}
+      {% if stored[key] %}<span class="badge">{{ label }}</span>{% endif %}
+      {% endfor %}
+      <span class="badge badge-pending">awaiting verification</span>
+    </div>
+    <p class="field-hint">Not searchable until an admin checks it. It's on your
+      <a href="{{ url_for('dashboard') }}">dashboard</a>, where you can correct or remove it.</p>
+  </div>
+  {% endif %}
+
   <form method="post" action="{{ url_for('log_place') }}" class="section-form">
     <div class="action-panel" id="search-panel">
       <p class="panel-title">1. Which place?</p>

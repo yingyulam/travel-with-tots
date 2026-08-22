@@ -650,20 +650,33 @@ def log_place_page():
     # No key_set flag: it read os.environ, which is fixed when the process
     # starts, so a key added to .env afterwards left the page claiming there
     # was none. The search route reports that accurately when asked.
-    return render_template("log_a_place.html", amenity_options=AMENITY_OPTIONS)
+    #
+    # `?logged=<id>` is how a just-submitted place gets shown back. Redirecting
+    # here after the POST rather than rendering it directly means a refresh
+    # re-reads the row instead of re-submitting the form.
+    logged_id = request.args.get("logged", type=int)
+    return render_template(
+        "log_a_place.html", amenity_options=AMENITY_OPTIONS,
+        stored=_logged_place(_current_parent()["id"], logged_id) if logged_id else None)
 
 
 @app.route("/log-place", methods=["POST"])
 @login_required
 def log_place():
-    """Log a kid-friendly place, family room, or nursing room."""
+    """Log a kid-friendly place, family room, or nursing room.
+
+    Comes back to this page showing what was stored, rather than redirecting to
+    the dashboard. The whole chain (a name, a geocode, a row) is only
+    observable if its output appears where it was run, and a bare redirect gave
+    no confirmation that anything had happened at all.
+    """
     parent = _current_parent()
     try:
-        log_a_place.run(parent["id"], request.form)
+        record = log_a_place.run(parent["id"], request.form)
     except ValueError as e:
         flash(str(e).capitalize() + ".")
         return redirect(url_for("log_place_page"))
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("log_place_page", logged=record["id"]))
 
 
 @app.route("/log-place/area", methods=["POST"])
@@ -683,6 +696,36 @@ def log_place_area_route():
     return jsonify({"area": location["formatted_address"] or location["city"],
                     "city": location["city"],
                     "neighbourhood": location["neighbourhood"]})
+
+
+@app.route("/place-search")
+@login_required
+@admin_required
+def place_search_page():
+    """The Place Search component's own page: a query in, candidates out.
+
+    Isolated from Log a Place on purpose. When a submission comes back with the
+    wrong address, this is how you tell a bad search result from a bad form.
+    """
+    return render_template("place_search.html")
+
+
+@app.route("/place-search/run", methods=["POST"])
+@login_required
+@admin_required
+def place_search_run_route():
+    """Run the Place Search component, as JSON."""
+    data = request.get_json(silent=True) or {}
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+    try:
+        places = search_places(query, lat=data.get("lat"), lng=data.get("lng"))
+    except KeyError:
+        return jsonify({"error": "Set GOOGLE_MAPS_API_KEY, with the Places API enabled."}), 503
+    except PlaceSearchError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"query": query, "places": places})
 
 
 @app.route("/log-place/search", methods=["POST"])
@@ -708,11 +751,21 @@ def log_place_search_route():
     return jsonify({"query": query, "places": places})
 
 
+def _logged_place(parent_id, place_id):
+    """One of this parent's own submissions, or None.
+
+    Reuses the query the dashboard already runs, which filters on both
+    parent_id and user_submitted, so a curated row can never match and no new
+    db function is needed.
+    """
+    for place in get_logged_venues_for_parent(parent_id):
+        if place["id"] == place_id:
+            return place
+    return None
+
+
 def _owns_place(parent_id, place_id):
-    """Whether this place is one of the parent's own submissions. Reuses the
-    query the dashboard already runs, which filters on both parent_id and
-    user_submitted, so a curated row can never match."""
-    return place_id in {p["id"] for p in get_logged_venues_for_parent(parent_id)}
+    return _logged_place(parent_id, place_id) is not None
 
 
 @app.route("/edit-place/<int:place_id>", methods=["POST"])

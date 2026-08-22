@@ -139,8 +139,21 @@ worth knowing. The dashboard lists your submissions, with edit and remove.
 address-shaped and answers a cafe's name with a street; Places answers "which
 place did you mean". Picking a result fills the name, the kind of place, the
 area and the pin from one choice. It needs the **Places API** enabled on the
-same Google project as the Geocoding API; without a key the search box is
-disabled and says so, and pinning by hand still works.
+same Google project as the Geocoding API; without a key the search says so when
+you try it, and pinning by hand still works.
+
+The page is never disabled based on whether a key is configured. That flag was
+read from `os.environ`, which is fixed when the process starts, so adding a key
+to `.env` without restarting left the page insisting there was none while
+locking a search box that would have worked. The route answers the question at
+the moment it is asked, which is the only answer that can be right.
+
+**Submitting comes back here, showing what was stored** rather than redirecting
+away: the name, the address the geocoder resolved, the coordinates, the
+amenities and the pending badge. A chain is only observable if its output
+appears where it was run. Also testable in isolation: the search half has its
+own admin page at `/place-search`, so a wrong address can be pinned on the
+search or on the form rather than guessed at.
 
 Two things worth knowing about how it works:
 
@@ -502,6 +515,7 @@ travel-with-tots/
 │   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
 │   ├── geolocate.js               # shared browser-geolocation request, with its guards
 │   ├── log-a-place.js             # Log a Place page: the pin map and its form
+│   ├── place-search.js            # Place Search test page's run behaviour
 │   ├── vendor/leaflet.js          # Leaflet 1.9.4 (BSD-2-Clause), vendored not CDN
 │   ├── vendor/leaflet.css         # Leaflet's stylesheet
 │   ├── rag-status.js              # shared polling helper for indexing progress
@@ -555,6 +569,7 @@ transactional.
 | `/log-place`                   | GET, POST | Log a Place page (map + form), and the submission             |
 | `/log-place/area`              | POST     | Pin coordinates to a readable area (server-side geocoding)    |
 | `/log-place/search`            | POST     | Find a place by name (server-side Google Places)              |
+| `/place-search`, `/place-search/run` | GET, POST | Admin: isolated Place Search component test page + run |
 | `/edit-place/<id>`, `/delete-place/<id>` | POST | Correct or remove one of your own logged places       |
 | `/plan`                        | GET/POST | Page 1: trip form and candidate plan cards                    |
 | `/save-trip`                   | POST     | Save a generated plan to the account                           |
