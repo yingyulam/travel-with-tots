@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import time
 
 import requests
@@ -244,15 +245,46 @@ def _format_venue_candidates(venues: list) -> str:
     return "\n\n".join(blocks)
 
 
+# A reasoning model puts its working in the reply when the provider does not
+# split it out, and some models add a line of prose either side of the object
+# even under a strict schema. Both arrive as content that is not quite JSON.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL)
+
+
 def _parse_json_reply(text: str):
-    """Strip a ``` fence if present, then parse strict JSON. Shared by
-    PlanningAgent and ReplanningAgent, which both expect the same
-    {"stops": [...]} shape back from the model."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        text = text[4:] if text.startswith("json") else text
-    return json.loads(text)
+    """Parse a model's reply as JSON, tolerating the wrappers models put
+    around it: a ``` fence anywhere in the reply, a reasoning model's <think>
+    block, and prose either side of the object.
+
+    Raises ValueError naming what came back instead. The message matters: a
+    bare "that wasn't valid JSON" costs a slow live repro to diagnose, and an
+    empty reply (all the tokens went to reasoning) needs a different fix from
+    a reply with unparseable content in it.
+    """
+    if not text or not text.strip():
+        raise ValueError("the model returned an empty reply")
+
+    cleaned = _THINK_BLOCK_RE.sub("", text).strip()
+    fenced = _FENCE_RE.search(cleaned)
+    if fenced:
+        cleaned = fenced.group(1).strip()
+    if not cleaned:
+        raise ValueError("the reply was only reasoning, with no answer in it")
+
+    try:
+        return json.loads(cleaned)
+    except ValueError:
+        pass
+
+    # Prose either side of the object, so take the outermost braces.
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError(f"no JSON object in the reply: {cleaned[:200]!r}")
+    try:
+        return json.loads(cleaned[start:end + 1])
+    except ValueError as e:
+        raise ValueError(f"unparseable JSON in the reply: {cleaned[:200]!r}") from e
 
 
 # OpenRouter structured-output schema for the {"edits": [...]} shape

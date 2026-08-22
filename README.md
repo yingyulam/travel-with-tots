@@ -269,10 +269,22 @@ never becomes a finished itinerary without the parent seeing what was read from
 it. Not wired into `/plan`'s form itself yet.
 
 It pins its own model rather than using the app default, which is OpenRouter's
-free auto-router. The router advertises structured outputs but picks a
+free auto-router: the router advertises structured outputs but picks a
 different model per request, and measured live it honoured the schema only
-about half the time. It is faster when it works, but this component's failure
-mode is "no form at all", so a slower model that always answers wins.
+about half the time.
+
+The pin is a paid non-reasoning model, chosen by measurement. A free reasoning
+model was tried first and replaced: on the same description it spent 3.2k-4.5k
+tokens, mostly reasoning, over 25-75s, and found fewer fields than the current
+model does in about 2s on roughly 130 tokens. It also failed outright near the
+free-tier ceiling, where the reasoning consumed the whole reply and the content
+came back empty. At about $0.0003 a call, the paid model buys latency a parent
+will wait through and a result that does not change between identical requests.
+
+One known gap in both: given a nap time but no duration, the model invents a
+duration instead of omitting it as the prompt asks. `read_form` supplies a
+default regardless, but an invented 15 minutes and an invented hour shape very
+different days.
 
 ## Find Nearby
 

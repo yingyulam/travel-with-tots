@@ -38,13 +38,25 @@ EXTRACT_FORM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "extract_form.txt")
 _EXTRACT_FORM_TEMPLATE = None
 
 # Pinned rather than using agents.DEFAULT_MODEL, which is OpenRouter's free
-# auto-router. The router advertises structured outputs but picks a different
+# auto-router: the router advertises structured outputs but picks a different
 # model per request, and measured live it honoured the schema only about half
-# the time, failing outright on the rest. It is faster when it works, but this
-# component's failure mode is "no form at all", so a slower model that always
-# answers beats a fast one that sometimes cannot. Everything else keeps using
-# the router.
-EXTRACTOR_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+# the time.
+#
+# The pin was a free reasoning model until measurement replaced it. On the same
+# description it spent 3.2k-4.5k tokens, mostly reasoning, over 25-75s, and
+# found fewer fields than this model does in ~2s on ~130 tokens. Worse, when
+# the account was near its free-tier ceiling the reasoning consumed the whole
+# reply and `content` came back empty, so the extractor failed outright.
+#
+# So this is a paid non-reasoning model with real structured-output support. It
+# costs about $0.0003 a call, which buys latency a parent will wait through and
+# a result that does not change between identical requests.
+#
+# Known gap, in both models: when a parent names a nap time but no duration,
+# the model invents one rather than omitting it as the prompt asks. read_form
+# supplies a default anyway, but an invented 15 minutes and an invented hour
+# shape very different days.
+EXTRACTOR_MODEL = "openai/gpt-4o-mini"
 
 DINING_KEYS = [key for key, _ in DINING_OPTIONS]
 TRANSIT_NAP_KEYS = [key for key, _ in TRANSIT_NAP_OPTIONS]
