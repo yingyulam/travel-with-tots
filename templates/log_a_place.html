@@ -1,73 +1,95 @@
 {% extends "base.html" %}
-{% block title %}Travel with Tots: Log a place{% endblock %}
-{% block heading %}Log a place{% endblock %}
+{% block title %}Travel with Tots: Log a Place{% endblock %}
+{% block heading %}Log a Place{% endblock %}
 {% block tagline %}Found somewhere good that isn't in our venues? Add it.{% endblock %}
+
+{% block stylesheets %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
+{% endblock %}
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the "Log a place we don't have" workflow. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+  <p class="meta">Add a place we don't have yet, so other parents can find it once it's checked. It goes to your <a href="{{ url_for('dashboard') }}">dashboard</a> straight away.</p>
 
-  <p class="field-hint">The chain is: set a location, name the place, say what it offers, and submit. Naming it is looked up so the submission carries real coordinates, which is what makes it checkable later. Nothing you add here becomes searchable: it waits for an admin to verify it first.</p>
-
-  <div class="action-panel">
-    <p class="panel-title">1. Where is it?</p>
-    <div class="chips">
-      <button type="button" class="cta-secondary" id="use-my-location">📍 Use my location</button>
+  <form method="post" action="{{ url_for('log_place') }}" class="section-form">
+    <div class="action-panel" id="search-panel">
+      <p class="panel-title">1. Which place?</p>
+      <p class="field-hint">Search for it by name, or skip this and drop the pin yourself. Results are biased to wherever the map is looking.</p>
+      <div class="need-other-row">
+        <input type="text" id="place-search" placeholder="e.g. Science World, or a cafe on Main St">
+        <button type="button" class="tap-btn" id="place-search-go">Search</button>
+      </div>
+      <p class="field-hint" id="place-search-hint"></p>
+      <div id="place-search-results"></div>
     </div>
-    <p class="field-hint">Sharing your location needs no API key: your browser supplies the coordinates and we name the area from them.</p>
-    <div class="search-web-action-row">
-      <label class="field">
-        <span>Area, or type one by hand</span>
-        <input type="text" id="place-area" placeholder="e.g. Kitsilano, Vancouver">
+
+    <div class="action-panel">
+      <p class="panel-title">2. Where is it?</p>
+      <p class="field-hint">Picking a result above moves the pin. You can also click the map to move it, or share your location to start nearby.</p>
+      <div class="chips">
+        <button type="button" class="tap-btn" id="use-my-location">📍 Use my location</button>
+      </div>
+      <div id="place-map" class="place-map"></div>
+      <p id="location-status" class="meta">Drop a pin, or type an area below.</p>
+      <label class="field field-full">
+        <span>Area <em>(filled in from the pin, or type it yourself)</em></span>
+        <input type="text" name="neighbourhood" id="place-area"
+               placeholder="e.g. Kitsilano, Vancouver">
+      </label>
+      {# The pin itself, not just its name. A spot with no address -- a
+         playground, a park building -- is only findable by coordinates, so
+         these are submitted and preferred over geocoding the name. #}
+      <input type="hidden" name="lat" id="place-lat">
+      <input type="hidden" name="lng" id="place-lng">
+      <input type="hidden" name="city" id="place-city">
+      <input type="hidden" name="address" id="place-address">
+    </div>
+
+    <div class="action-panel">
+      <p class="panel-title">3. Check the details</p>
+      <p class="field-hint">Filled in from your search where possible. Correct anything that looks wrong.</p>
+      <div class="field-row">
+        <label class="field">
+          <span>Name</span>
+          <input type="text" name="name" id="place-name" required>
+        </label>
+        <label class="field">
+          <span>Kind of place <em>(optional)</em></span>
+          <input type="text" name="venue_type" id="place-type"
+                 placeholder="e.g. cafe, park, museum">
+        </label>
+      </div>
+    </div>
+
+    <div class="action-panel">
+      <p class="panel-title">4. What does it have?</p>
+      <div class="chips">
+        {% for key, label in amenity_options %}
+        <label class="chip">
+          <input type="checkbox" name="{{ key }}">
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <label class="field field-full">
+        <span>Anything else worth knowing <em>(optional)</em></span>
+        <textarea name="notes" rows="3"
+                  placeholder="e.g. the nursing room is behind the lifts on level 2, ask staff for the key"></textarea>
       </label>
     </div>
-    <p id="location-status" class="meta">No area set yet.</p>
-  </div>
 
-  <div class="action-panel">
-    <p class="panel-title">2. Which place?</p>
-    <div class="search-web-action-row">
-      <label class="field">
-        <span>Place name</span>
-        <input type="text" id="place-name" placeholder="e.g. Nourish Kitchen">
-      </label>
-      <button type="button" class="cta-secondary" id="resolve-place">Look it up</button>
+    <div class="action-panel">
+      <p class="panel-title">5. Submit it</p>
+      <p class="field-hint">It stays out of Find Nearby and every plan until an admin checks it, so a wrong guess here can't reach another parent.</p>
+      <button type="submit" class="cta">Log this place</button>
     </div>
-    <p class="field-hint">Looking it up is how we tell the cafe from a street of the same name. Check the address that comes back before submitting.</p>
-    <p id="resolve-status" class="meta">Not looked up yet.</p>
-  </div>
-
-  <div class="action-panel">
-    <p class="panel-title">3. What does it have?</p>
-    <div class="chips" id="amenity-bar">
-      {% for key, label in amenity_options %}
-      <label class="chip">
-        <input type="checkbox" value="{{ key }}">
-        <span>{{ label }}</span>
-      </label>
-      {% endfor %}
-    </div>
-    <div class="search-web-action-row">
-      <label class="field">
-        <span>Kind of place <em>(optional)</em></span>
-        <input type="text" id="place-type" placeholder="e.g. cafe, park, museum">
-      </label>
-    </div>
-  </div>
-
-  <div class="action-panel">
-    <p class="panel-title">4. Submit it</p>
-    <div class="chips">
-      <button type="button" class="cta-secondary" id="log-place-submit">Log this place</button>
-    </div>
-    <p class="field-hint">It goes to your dashboard and into the verification queue. It stays out of Find Nearby and every plan until an admin promotes it, so a wrong guess here cannot reach another parent.</p>
-    <p id="log-place-status" class="meta">Nothing submitted yet.</p>
-    <div id="log-place-result-list"></div>
-  </div>
+  </form>
 </section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet.js') }}"></script>
 <script src="{{ url_for('static', filename='geolocate.js') }}"></script>
 <script src="{{ url_for('static', filename='log-a-place.js') }}"></script>
 {% endblock %}

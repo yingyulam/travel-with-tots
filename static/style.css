@@ -372,6 +372,15 @@ textarea:focus {
   background: #1565c0;
 }
 
+/* Without this a disabled .cta-secondary still renders as confident blue, so a
+   dead button looks live. Several pages disable one while a request is in
+   flight, and find-nearby disables one outright when no key is set. */
+.cta-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: var(--blue);
+}
+
 .cta-danger {
   border: none;
   cursor: pointer;
@@ -683,6 +692,41 @@ textarea:focus {
   font-size: 0.9rem;
   color: #55637a;
   white-space: nowrap;
+}
+
+/* One candidate from a place search. A button, not a div, so it is reachable
+   by keyboard and announced as clickable. */
+.place-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.place-result:hover {
+  border-color: var(--blue);
+  background: var(--surface);
+}
+
+.place-result .meta {
+  display: block;
+}
+
+/* The pin map on Log a Place. An explicit height is not optional: Leaflet
+   measures its container, and a container with no height renders an empty map
+   with no error. */
+.place-map {
+  height: 320px;
+  margin: 0.85rem 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
 /* Armed-or-not banner on the fill-the-form-from-chat page. Colour carries the state so

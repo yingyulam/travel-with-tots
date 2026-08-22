@@ -129,6 +129,39 @@ Every page's top-right corner shows login status (a "Log in" button, or an
 avatar when signed in). Signed-in users get a collapsible sidebar with
 navigation to every page, including admin-only pages when applicable.
 
+## Log a Place (`/log-place`)
+
+Found somewhere the venue table doesn't have? Search for it by name, or drop a
+pin on the map yourself, then tick what it offers and describe anything else
+worth knowing. The dashboard lists your submissions, with edit and remove.
+
+**Searching by name uses Google Places, not geocoding.** Geocoding is
+address-shaped and answers a cafe's name with a street; Places answers "which
+place did you mean". Picking a result fills the name, the kind of place, the
+area and the pin from one choice. It needs the **Places API** enabled on the
+same Google project as the Geocoding API; without a key the search box is
+disabled and says so, and pinning by hand still works.
+
+Two things worth knowing about how it works:
+
+- **A submission never becomes searchable on its own.** It is stored with
+  `source="user_submitted"`, and `db.VERIFIED_SOURCES` covers only `curated`
+  and `municipal_open_data`, so it appears on your own dashboard and in no
+  search or plan until an admin promotes it. Editing your own entry cannot
+  change `source`, so a parent can't publish their own guess. The admin page
+  for reviewing the queue does not exist yet.
+- **The map uses Leaflet with OpenStreetMap tiles, not Google.** Every Google
+  embedding option needs the API key in the browser, and this app keeps all its
+  keys server-side. The pin's coordinates are something the browser already
+  has; turning them into an area name still goes through the server, so the
+  Google Geocoding key never moves. Leaflet is vendored in
+  `static/vendor/` rather than loaded from a CDN, keeping the property that
+  every script the app serves is its own.
+
+A pinned location beats geocoding the name, and not as an optimisation: a
+playground or a park building has no address to look up, so its coordinates are
+the only thing that locates it.
+
 Admin accounts (`is_admin` flag on `parents`) get extra pages:
 
 | Page         | Purpose                                                                 |
@@ -467,6 +500,10 @@ travel-with-tots/
 │   ├── extract-form.js            # Form Extractor test page's run behaviour
 │   ├── plan-from-chat.js          # fill-the-form page: watches chat replies
 │   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
+│   ├── geolocate.js               # shared browser-geolocation request, with its guards
+│   ├── log-a-place.js             # Log a Place page: the pin map and its form
+│   ├── vendor/leaflet.js          # Leaflet 1.9.4 (BSD-2-Clause), vendored not CDN
+│   ├── vendor/leaflet.css         # Leaflet's stylesheet
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
 │   └── results.js                 # Results page auto-refresh polling
@@ -515,7 +552,10 @@ transactional.
 | `/logout`                      | GET      | Clear the session                                             |
 | `/dashboard`                   | GET      | Logged-in parent's children, trips, and places                |
 | `/add-child`, `/edit-child/<id>`, `/delete-child/<id>` | POST | Manage saved children |
-| `/log-place`                   | POST     | Save a user-submitted venue                                   |
+| `/log-place`                   | GET, POST | Log a Place page (map + form), and the submission             |
+| `/log-place/area`              | POST     | Pin coordinates to a readable area (server-side geocoding)    |
+| `/log-place/search`            | POST     | Find a place by name (server-side Google Places)              |
+| `/edit-place/<id>`, `/delete-place/<id>` | POST | Correct or remove one of your own logged places       |
 | `/plan`                        | GET/POST | Page 1: trip form and candidate plan cards                    |
 | `/save-trip`                   | POST     | Save a generated plan to the account                           |
 | `/delete-trip/<id>`             | POST     | Remove a saved plan from the account                           |

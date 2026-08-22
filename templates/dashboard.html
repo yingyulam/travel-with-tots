@@ -93,62 +93,66 @@
 </section>
 
 <section class="card">
-  <h2>Family &amp; nursing rooms you've logged</h2>
+  <h2>Places you've logged</h2>
+  <p class="meta">Yours to correct or remove. Each one waits for a check before other parents can find it. <a href="{{ url_for('log_place_page') }}">Log another →</a></p>
   {% if places %}
   <div class="plan-grid">
     {% for place in places %}
     <div class="plan-option">
       <h3 class="plan-option-title">{{ place.name }}</h3>
-      <p class="meta">{{ place.neighbourhood or place.type or '' }}</p>
+      <p class="meta">{{ place.neighbourhood or place.type or place.city or 'Location not recorded' }}</p>
+      {% if place.lat is not none %}
+      <p class="meta">📍 {{ '%.5f'|format(place.lat) }}, {{ '%.5f'|format(place.lng) }}</p>
+      {% endif %}
+      {% if place.notes %}<p class="reason">{{ place.notes }}</p>{% endif %}
       <div class="badges">
-        {% if place.kid_friendly %}<span class="badge">Kid-friendly</span>{% endif %}
-        {% if place.has_family_room %}<span class="badge">Family room</span>{% endif %}
-        {% if place.has_nursing_room %}<span class="badge badge-nap">Nursing room</span>{% endif %}
-        {% if place.stroller_accessible %}<span class="badge">Stroller accessible</span>{% endif %}
+        {% for key, label in amenity_options %}
+        {% if place[key] %}<span class="badge">{{ label }}</span>{% endif %}
+        {% endfor %}
+        <span class="badge badge-pending">awaiting verification</span>
+      </div>
+      <div class="child-actions">
+        <details>
+          <summary>Edit</summary>
+          <form method="post" action="{{ url_for('edit_place_route', place_id=place.id) }}" class="child-edit-form">
+            <label class="field">
+              <span>Name</span>
+              <input type="text" name="name" value="{{ place.name }}" required>
+            </label>
+            <label class="field">
+              <span>Kind of place <em>(optional)</em></span>
+              <input type="text" name="venue_type" value="{{ place.type or '' }}">
+            </label>
+            <label class="field">
+              <span>Area <em>(optional)</em></span>
+              <input type="text" name="neighbourhood" value="{{ place.neighbourhood or '' }}">
+            </label>
+            <label class="field">
+              <span>Anything else worth knowing</span>
+              <textarea name="notes" rows="2">{{ place.notes or '' }}</textarea>
+            </label>
+            <div class="chips">
+              {% for key, label in amenity_options %}
+              <label class="chip">
+                <input type="checkbox" name="{{ key }}" {% if place[key] %}checked{% endif %}>
+                <span>{{ label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <button type="submit" class="cta-secondary">Save changes</button>
+          </form>
+        </details>
+        <form method="post" action="{{ url_for('delete_place_route', place_id=place.id) }}"
+              onsubmit="return confirm('Remove ' + {{ place.name|tojson }} + '?');">
+          <button type="submit" class="cta-danger">Remove</button>
+        </form>
       </div>
     </div>
     {% endfor %}
   </div>
   {% else %}
-  <p class="empty-plan">No places logged yet.</p>
+  <p class="empty-plan">No places logged yet. <a href="{{ url_for('log_place_page') }}">Log your first one</a>.</p>
   {% endif %}
-
-  <form method="post" action="{{ url_for('log_place') }}" class="section-form">
-    <h2>Log a place</h2>
-    <div class="field-row">
-      <label class="field">
-        <span>Name</span>
-        <input type="text" name="name" required>
-      </label>
-      <label class="field">
-        <span>Type <em>(optional)</em></span>
-        <input type="text" name="venue_type" placeholder="e.g. cafe, mall, park">
-      </label>
-      <label class="field">
-        <span>Neighbourhood <em>(optional)</em></span>
-        <input type="text" name="neighbourhood">
-      </label>
-    </div>
-    <div class="chips">
-      <label class="chip">
-        <input type="checkbox" name="kid_friendly">
-        <span>Kid-friendly</span>
-      </label>
-      <label class="chip">
-        <input type="checkbox" name="has_family_room">
-        <span>Family room</span>
-      </label>
-      <label class="chip">
-        <input type="checkbox" name="has_nursing_room">
-        <span>Nursing room</span>
-      </label>
-      <label class="chip">
-        <input type="checkbox" name="stroller_accessible">
-        <span>Stroller accessible</span>
-      </label>
-    </div>
-    <button type="submit" class="cta">Log this place</button>
-  </form>
 </section>
 
 <script>

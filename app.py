@@ -35,6 +35,7 @@ from src.agents import (
 from src.components.extract_form import FormExtractionError, extract_form
 from src.components.find_nearby import find_nearby as find_nearby_component
 from src.components.geocode import GeocodeError, geocode, reverse_geocode
+from src.components.place_search import PlaceSearchError, search_places
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
@@ -45,9 +46,9 @@ from src.db import (
     add_child,
     add_parent,
     add_trip,
-    add_venue,
     delete_child,
     delete_trip,
+    delete_venue,
     get_children,
     get_logged_venues_for_parent,
     get_parent,
@@ -56,6 +57,7 @@ from src.db import (
     get_trips_for_parent,
     init_db,
     update_child,
+    update_venue,
 )
 from src.form_helpers import (
     DEFAULTS,
@@ -83,7 +85,8 @@ from src.itinerary import THEMES
 from src.llms import run_agent
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
-from src.workflows import workflows_by_trigger
+from src.workflows import log_a_place, workflows_by_trigger
+from src.workflows.log_a_place import AMENITY_OPTIONS
 
 app = Flask(__name__)
 
@@ -238,7 +241,8 @@ def dashboard():
         trips.append(trip)
     places = get_logged_venues_for_parent(parent["id"])
 
-    return render_template("dashboard.html", parent=parent, trips=trips, places=places)
+    return render_template("dashboard.html", parent=parent, trips=trips,
+                           places=places, amenity_options=AMENITY_OPTIONS)
 
 
 @app.route("/settings")
@@ -312,68 +316,6 @@ def plan_from_chat_page():
     """The Plan from chat workflow's test page: describe a day in the bubble,
     watch the agent turn it into the planning form."""
     return render_template("plan_from_chat.html")
-
-
-@app.route("/workflows/log-a-place")
-@login_required
-@admin_required
-def log_a_place_page():
-    """The Log a place workflow's test page: set a location, name a place we
-    don't have, say what it offers, and submit it for verification."""
-    return render_template("log_a_place.html", amenity_options=AMENITY_OPTIONS)
-
-
-@app.route("/workflows/log-a-place/area", methods=["POST"])
-@login_required
-@admin_required
-def log_a_place_area_route():
-    """Browser coordinates to a readable area, so step 1 can show where the
-    parent is rather than a pair of decimals. Kept separate from /resolve
-    because it answers a different question: where am I, not which place."""
-    data = request.get_json(silent=True) or {}
-    if data.get("lat") is None or data.get("lng") is None:
-        return jsonify({"error": "lat and lng are required"}), 400
-    try:
-        location = reverse_geocode(data["lat"], data["lng"])
-    except (GeocodeError, KeyError) as e:
-        print(f"Logged-place area lookup failed: {e}")
-        return jsonify({"error": "Couldn't name that location."}), 502
-    return jsonify({"area": location["formatted_address"] or location["city"]})
-
-
-@app.route("/workflows/log-a-place/resolve", methods=["POST"])
-@login_required
-@admin_required
-def log_a_place_resolve_route():
-    """Look up a named place so the parent can confirm it is the right one
-    before anything is stored. This is the "select the specific place" step:
-    the geocoder answers with an address, which is the only way to tell "Nourish
-    Kitchen" the cafe from a street of the same name."""
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not name:
-        return jsonify({"error": "name is required"}), 400
-    place = _resolve_place(name, (data.get("area") or "").strip())
-    return jsonify({"name": name, "place": place,
-                    "resolved": place["lat"] is not None})
-
-
-@app.route("/workflows/log-a-place/run", methods=["POST"])
-@login_required
-@admin_required
-def log_a_place_run_route():
-    """Store the submission and hand back exactly what was stored, so the page
-    can show it rather than claiming success. Never searchable: see _log_place."""
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not name:
-        return jsonify({"error": "name is required"}), 400
-    area = (data.get("area") or "").strip()
-    # Resolved again rather than trusting the coordinates the page sends back:
-    # a second lookup is cheap, and it means what gets stored is what the
-    # geocoder actually said, not what a caller claimed it said.
-    record = _log_place(_current_parent()["id"], data, _resolve_place(name, area))
-    return jsonify({"stored": record, "searchable": False})
 
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
@@ -468,23 +410,6 @@ def _resolve_location(data):
     if address:
         return geocode(address)
     return dict(UNKNOWN_LOCATION)
-
-
-def _resolve_place(name, area=""):
-    """Coordinates and a confirmable address for a place named by a parent.
-
-    Geocoding a name is what turns a logged place from a dead record into one
-    an admin can verify: without coordinates it can never be distance-ranked.
-    But a failure here must not cost the parent their submission, so an
-    unreachable or unconfigured geocoder degrades to the unknown location and
-    the caller stores what it has. Same choice find_nearby_route makes.
-    """
-    query = f"{name}, {area}" if area else name
-    try:
-        return geocode(query)
-    except (GeocodeError, KeyError) as e:
-        print(f"Logged-place lookup skipped, storing without coordinates: {e}")
-        return dict(UNKNOWN_LOCATION)
 
 
 @app.route("/find-nearby")
@@ -713,47 +638,19 @@ def delete_trip_route(trip_id):
     return redirect(url_for("dashboard"))
 
 
-# The amenities a parent can vouch for, as (field name, label). Shared by the
-# dashboard form and the workflow page so the two cannot offer different lists.
-AMENITY_OPTIONS = [
-    ("kid_friendly", "Kid-friendly"),
-    ("has_family_room", "Family room"),
-    ("has_nursing_room", "Nursing room"),
-    ("stroller_accessible", "Stroller / step-free"),
-]
+@app.route("/log-place")
+@login_required
+def log_place_page():
+    """The Log a Place page: pin a spot, name what's there, say what it offers.
 
-
-def _log_place(parent_id, values, location):
-    """Store one parent-submitted place and return the row as stored.
-
-    Always `source="user_submitted"`, which is what keeps it out of every
-    search until an admin verifies it: db.VERIFIED_SOURCES excludes it. The
-    coordinates are stored anyway, so the submission is complete enough to
-    verify rather than needing to be chased up later.
+    Parent-facing rather than an admin test page, and the Log a place workflow
+    card points here: a test surface that exercises the page a parent uses
+    cannot drift away from it.
     """
-    record = {
-        # Stripped here rather than trusting each caller to have done it.
-        "name": (values.get("name") or "").strip(),
-        "venue_type": values.get("venue_type") or None,
-        "neighbourhood": (values.get("neighbourhood")
-                          or location["neighbourhood"] or None),
-        "city": location["city"] or None,
-        "lat": location["lat"],
-        "lng": location["lng"],
-        "formatted_address": location["formatted_address"],
-        "amenities": [key for key, _ in AMENITY_OPTIONS if values.get(key)],
-    }
-    add_venue(
-        record["name"],
-        source="user_submitted",
-        parent_id=parent_id,
-        venue_type=record["venue_type"],
-        neighbourhood=record["neighbourhood"],
-        city=record["city"],
-        lat=record["lat"],
-        lng=record["lng"],
-        **{key: bool(values.get(key)) for key, _ in AMENITY_OPTIONS})
-    return record
+    # No key_set flag: it read os.environ, which is fixed when the process
+    # starts, so a key added to .env afterwards left the page claiming there
+    # was none. The search route reports that accurately when asked.
+    return render_template("log_a_place.html", amenity_options=AMENITY_OPTIONS)
 
 
 @app.route("/log-place", methods=["POST"])
@@ -761,12 +658,94 @@ def _log_place(parent_id, values, location):
 def log_place():
     """Log a kid-friendly place, family room, or nursing room."""
     parent = _current_parent()
+    try:
+        log_a_place.run(parent["id"], request.form)
+    except ValueError as e:
+        flash(str(e).capitalize() + ".")
+        return redirect(url_for("log_place_page"))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/log-place/area", methods=["POST"])
+@login_required
+def log_place_area_route():
+    """Coordinates to a readable area, so dropping a pin can say where it
+    landed rather than showing a pair of decimals. Server-side on purpose: the
+    browser's map needs no key, and the geocoding key stays out of it."""
+    data = request.get_json(silent=True) or {}
+    if data.get("lat") is None or data.get("lng") is None:
+        return jsonify({"error": "lat and lng are required"}), 400
+    try:
+        location = reverse_geocode(data["lat"], data["lng"])
+    except (GeocodeError, KeyError) as e:
+        print(f"Logged-place area lookup failed: {e}")
+        return jsonify({"error": "Couldn't name that spot."}), 502
+    return jsonify({"area": location["formatted_address"] or location["city"],
+                    "city": location["city"],
+                    "neighbourhood": location["neighbourhood"]})
+
+
+@app.route("/log-place/search", methods=["POST"])
+@login_required
+def log_place_search_route():
+    """Find a place by name, so the pin can be dropped on the right one.
+
+    Biased toward wherever the map is currently looking, so "the library"
+    resolves to a nearby one rather than a famous namesake. Server-side, so the
+    Google key stays out of the browser even though the map itself needs none.
+    """
+    data = request.get_json(silent=True) or {}
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+    try:
+        places = search_places(query, lat=data.get("lat"), lng=data.get("lng"))
+    except KeyError:
+        return jsonify({"error": "Searching by name needs a Google Maps API key."}), 503
+    except PlaceSearchError as e:
+        print(f"Place search failed: {e}")
+        return jsonify({"error": "Couldn't search for that right now."}), 502
+    return jsonify({"query": query, "places": places})
+
+
+def _owns_place(parent_id, place_id):
+    """Whether this place is one of the parent's own submissions. Reuses the
+    query the dashboard already runs, which filters on both parent_id and
+    user_submitted, so a curated row can never match."""
+    return place_id in {p["id"] for p in get_logged_venues_for_parent(parent_id)}
+
+
+@app.route("/edit-place/<int:place_id>", methods=["POST"])
+@login_required
+def edit_place_route(place_id):
+    """Correct one of the logged-in parent's own logged places."""
+    parent = _current_parent()
+    if not _owns_place(parent["id"], place_id):
+        flash("Place not found.")
+        return redirect(url_for("dashboard"))
     name = request.form.get("name", "").strip()
     if not name:
         flash("A place needs a name.")
         return redirect(url_for("dashboard"))
-    area = request.form.get("neighbourhood", "").strip()
-    _log_place(parent["id"], request.form, _resolve_place(name, area))
+    update_venue(
+        place_id, parent["id"],
+        name=name,
+        type=request.form.get("venue_type", "").strip() or None,
+        neighbourhood=request.form.get("neighbourhood", "").strip() or None,
+        notes=request.form.get("notes", "").strip() or None,
+        **{key: int(bool(request.form.get(key))) for key, _ in AMENITY_OPTIONS})
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/delete-place/<int:place_id>", methods=["POST"])
+@login_required
+def delete_place_route(place_id):
+    """Remove one of the logged-in parent's own logged places."""
+    parent = _current_parent()
+    if not _owns_place(parent["id"], place_id):
+        flash("Place not found.")
+        return redirect(url_for("dashboard"))
+    delete_venue(place_id, parent["id"])
     return redirect(url_for("dashboard"))
 
 
