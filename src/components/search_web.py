@@ -1,7 +1,11 @@
 """Web Search component: live results from the Tavily Search API.
 
-Self-contained, one file per component (see /components). No other module
-imports from this one -- it's only reached via app.py's /search-web routes.
+Self-contained, one file per component (see /components). One job: run a query
+and hand back results. It knows nothing about venues, needs, or trips.
+
+components/find_nearby.py imports it and escalates to it when the curated venue
+table has nothing for a need. The dependency only runs that way round, which is
+what keeps this module reusable: it never learns why it was called.
 
 Tavily, not Brave: Brave killed its free tier in Feb 2026 (the "identity
 verification" card is now an active billing instrument, charged past $5 of

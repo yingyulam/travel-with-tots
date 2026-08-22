@@ -20,7 +20,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">User in-trip input</h3>
       <p class="meta">/trip page</p>
-      <p>Situation buttons and optional notes on the trip page ("it's raining", "running behind", "change the theme"...).</p>
+      <p>Situation buttons on the trip page ("Nap happened here", "Need to stay here longer", "Change the theme"...), a typed duration for the two that need one, and a free-text note sent with every replan.</p>
     </div>
   </div>
 </section>
@@ -82,7 +82,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Web Search</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>Live results from the Tavily Search API (src/components/search_web.py). Not yet wired in as a fallback for the venue DB, just its own standalone test page for now.</p>
+      <p>Live results from the Tavily Search API (src/components/search_web.py). Find nearby stops escalates to it when the curated venue table has nothing for a need, normalising its results into the same shape a venue has so a caller renders one list either way. The standalone page below stays for trying queries directly.</p>
       <a class="cta-secondary" href="{{ url_for('search_web_page') }}">Try it</a>
     </div>
     <div class="plan-option">
