@@ -193,24 +193,15 @@ def _as_form_data(extracted: dict) -> MultiDict:
     return data
 
 
-def _found_fields(extracted: dict) -> list:
-    """Which fields the description actually supplied. Everything else fell
-    back to a default, and the UI needs to say so: a form quietly filled with
-    guesses is worse than a form the parent can see is incomplete.
-
-    A value dropped for being outside its vocabulary does not count as found,
-    since it never reached the form either.
-    """
-    found = []
-    for field, value in extracted.items():
-        if value in (None, "", [], False):
-            continue
-        if isinstance(value, list):
-            if any(_allowed(field, item) for item in value):
-                found.append(field)
-        elif _allowed(field, value):
-            found.append(field)
-    return sorted(found)
+def _found_fields(data: MultiDict) -> list:
+    """Which fields the description actually supplied, read off the form data
+    itself rather than recomputed from the reply. That way "found" cannot
+    disagree with what was really filled in, and the UI can honestly separate
+    these from fields that fell back to a default."""
+    # nap_start/nap_duration are how read_form takes naps; report them as the
+    # one "naps" field a reader recognises. Not nap_notes, which is its own.
+    paired = {"nap_start", "nap_duration"}
+    return sorted({"naps" if key in paired else key for key in data})
 
 
 def extract_form(description: str, model: str = DEFAULT_MODEL) -> dict:
@@ -245,9 +236,10 @@ def extract_form(description: str, model: str = DEFAULT_MODEL) -> dict:
     if not isinstance(extracted, dict):
         raise FormExtractionError("Expected a JSON object of form fields.")
 
+    data = _as_form_data(extracted)
     return {
-        "form": read_form(_as_form_data(extracted)),
-        "found": _found_fields(extracted),
+        "form": read_form(data),
+        "found": _found_fields(data),
         "model": model,
         "response_time": round(elapsed, 3),
     }
