@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Form Extractor{% endblock %}
+{% block heading %}Form Extractor{% endblock %}
+{% block tagline %}Describe a day in your own words, get the planning form filled in.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the Form Extractor component. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <label class="field field-full">
+    <span>Describe the day</span>
+    <textarea id="extract-description" rows="5"
+              placeholder="e.g. We're in Kitsilano on Saturday with our 18-month-old. Up around 7, bed by 7:30. She naps after lunch for about an hour and a half, and wakes if we move her out of the stroller. Two or three places is plenty, and she hates loud crowded rooms. We'll be walking with the stroller."></textarea>
+  </label>
+  <button type="button" class="cta" id="extract-run">▶ Run</button>
+
+  <p id="extract-heading" class="meta">No description read yet.</p>
+  <p class="field-hint">Fields the description actually mentioned are marked
+    <span class="badge">from your words</span>; everything else fell back to the
+    form's own default <span class="badge badge-pending">default</span>, so you
+    can see what was understood rather than just a filled form.</p>
+  <div id="extract-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='extract-form.js') }}"></script>
+{% endblock %}

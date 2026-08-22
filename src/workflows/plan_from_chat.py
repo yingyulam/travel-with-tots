@@ -1,11 +1,11 @@
 """Plan-from-chat workflow: describe the day instead of filling in the form.
 
 Declaration only for now -- when this is implemented, the run function belongs
-in this file. Unlike the other two, this one needs a component that does not
-exist yet: something that turns a parent's description into the form's
-structured fields. Note that free prose already reaches the planner through
-extra_notes, so an extractor earns its place on the fields prose cannot set --
-wake-up and bedtime, stop count, naps, destination, dining, transit, features.
+in this file. Every component in the chain now exists: the Form Extractor
+(src/components/extract_form.py) turns a description into the form's structured
+fields, and hands them to the planner the /plan form already uses. What remains
+is the chaining itself, plus letting the parent review the extracted form
+before a plan is built from it.
 """
 
 WORKFLOW = {
@@ -20,7 +20,7 @@ WORKFLOW = {
     ),
     "steps": [
         {"component": "AI Agent (OpenRouter)", "built": True},
-        {"component": "Form extraction", "built": False},
+        {"component": "Form extractor", "built": True},
         {"component": "Plan trips (adjustment)", "built": True},
     ],
 }

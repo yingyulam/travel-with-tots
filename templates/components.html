@@ -63,6 +63,12 @@
       <a class="cta-secondary" href="{{ url_for('replan_trip_page') }}">Try it</a>
     </div>
     <div class="plan-option">
+      <h3 class="plan-option-title">Form extractor</h3>
+      <div class="badges"><span class="badge">AI-backed</span></div>
+      <p>src/components/extract_form.py: reads a parent's description of their day into the planning form, so they can say it in their own words instead of filling in boxes. The model only proposes; every value goes through the same read_form the /plan route uses, so the clamps and caps are enforced by the real validator. Anything the description does not mention is reported as a default rather than guessed at.</p>
+      <a class="cta-secondary" href="{{ url_for('extract_form_page') }}">Try it</a>
+    </div>
+    <div class="plan-option">
       <h3 class="plan-option-title">Find nearby stops</h3>
       <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
       <p>src/components/find_nearby.py: ranks venues by real straight-line distance from your location, then matches your need (restaurant, nursing room, quiet spot...) using the same interactions.find_nearby() the trip page already used. Venues without coordinates fall back to same-neighbourhood-first. Falls back to a live web search when the venue table has nothing. Intentionally not AI, since there's no judgment call to make.</p>

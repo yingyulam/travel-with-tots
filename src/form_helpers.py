@@ -16,6 +16,18 @@ MAX_NAPS = 4
 STOP_COUNT_FORM_MIN = 1
 STOP_COUNT_FORM_MAX = 6
 
+# The form's fixed vocabularies, shared with the template so the form and the
+# plan stay in sync. They live here rather than in app.py because they are form
+# vocabulary, and because components need them too: anything importing app.py
+# would be circular, since app.py imports the components.
+TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
+DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
+TRANSIT_NAP_OPTIONS = [
+    ("yes", "Yes -- naps well in a stroller, car, or bus"),
+    ("sometimes", "Sometimes -- depends on the situation"),
+    ("no", "No -- needs a proper place to nap"),
+]
+
 # Sensible defaults so the form is usable on first load.
 DEFAULTS = {
     "wake_up": "07:00",

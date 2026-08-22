@@ -33,6 +33,7 @@ from src.agents import (
     ask_website_chatbot,
     reload_website_chatbot_prompt,
 )
+from src.components.extract_form import FormExtractionError, extract_form
 from src.components.find_nearby import find_nearby as find_nearby_component
 from src.components.geocode import GeocodeError, geocode, reverse_geocode
 from src.components.plan_trip import plan_trip
@@ -59,11 +60,14 @@ from src.db import (
 )
 from src.form_helpers import (
     DEFAULTS,
+    DINING_OPTIONS,
     MAX_AGE_YEARS,
     MAX_MONTHS,
     MAX_NAPS,
     STOP_COUNT_FORM_MIN,
     STOP_COUNT_FORM_MAX,
+    TRANSIT_NAP_OPTIONS,
+    TRANSIT_OPTIONS,
     clamp_int,
     read_form,
     resolve_plan_child,
@@ -90,21 +94,15 @@ init_db()
 # polls /rag/status and shows a progress animation until this finishes.
 rag.init_index_async()
 
-# Transit choices and feature checkboxes, defined once and shared with the
-# template so the form and the plan stay in sync.
-TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
-DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
+# Choice lists the template renders. The vocabularies themselves live in
+# src/form_helpers.py (see TRANSIT_OPTIONS and friends); these two are derived
+# from data the app already owns.
 THEME_OPTIONS = [t["label"] for t in THEMES]
-TRANSIT_NAP_OPTIONS = [
-    ("yes", "Yes -- naps well in a stroller, car, or bus"),
-    ("sometimes", "Sometimes -- depends on the situation"),
-    ("no", "No -- needs a proper place to nap"),
-]
+FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 
 # How many times a parent can say "something's off" and get the plan
 # adjusted again before we stop offering it and point at in-trip replanning.
 MAX_REVISE_ROUNDS = 2
-FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 
 
 def _current_parent():
@@ -309,6 +307,38 @@ def agent_chat_route():
 
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+
+
+@app.route("/extract-form")
+@login_required
+@admin_required
+def extract_form_page():
+    """The Form Extractor component's own page -- a description in, a form out."""
+    return render_template("extract_form.html")
+
+
+@app.route("/extract-form/run", methods=["POST"])
+@login_required
+@admin_required
+def extract_form_run_route():
+    """Read a description into a planning form, as JSON. Reports which fields
+    the description actually supplied so the page can separate those from
+    fields that fell back to a default."""
+    data = request.get_json(silent=True) or {}
+    description = (data.get("description") or "").strip()
+    if not description:
+        return jsonify({"error": "description is required"}), 400
+    try:
+        result = extract_form(description)
+    except KeyError:
+        return jsonify({"error": "The form extractor isn't configured yet."}), 500
+    except requests.exceptions.RequestException as e:
+        print(f"Form extraction call failed: {e}")
+        return jsonify({"error": "The form extractor is unavailable right now. Please try again."}), 502
+    except FormExtractionError as e:
+        print(f"Form extraction returned an unusable reply: {e}")
+        return jsonify({"error": "Couldn't read a form out of that description."}), 502
+    return jsonify(result)
 
 
 @app.route("/search-web")

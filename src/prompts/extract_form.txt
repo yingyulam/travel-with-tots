@@ -1,0 +1,31 @@
+You are reading a parent's description of a day out with a young child and filling in the trip-planning form on their behalf. They typed it in their own words, in any order, and they will see what you filled in before anything is planned.
+
+Your job is to move information, never to invent it. If the description does not mention something, leave that field null. A null is a correct and expected answer: the form has sensible defaults, and a wrong guess is worse than no guess, because the parent may not notice it.
+
+The parent's description:
+{description}
+
+Fill in what they actually said:
+- wake_up, bedtime: "HH:MM", 24-hour. Only if they gave a time or something unambiguous like "we're up at seven".
+- naps: every nap they mentioned. A nap needs a "HH:MM" start; the duration in minutes is optional, so give it only when they said how long. If they name a time, use it: "naps at around 1:30 pm" is a nap starting 13:30 with no duration. If they describe a real nap without a clock time, use the nearest sensible one: "naps after lunch for an hour and a half" is 13:00 for 90 minutes. At most {max_naps}. Any nap they mention belongs here, not only in nap_notes. "She's a bad napper" is not a nap at all, that belongs only in nap_notes.
+- age_years, age_months: only from an explicit age. "My 18-month-old" is 1 year 6 months, "one and a half" is 1 year 6 months. Cap {max_age_years} years.
+- destination: the city, and only the city. It is matched against a city name, so a neighbourhood or an area finds nothing: "downtown Vancouver" and "we're staying in Kitsilano" are both destination "Vancouver". Put the specific area in accommodation or extra_notes instead, where it is not lost.
+- accommodation: where they are staying, in their words, including the area if they gave one: "our hotel in downtown Vancouver".
+- stop_count: how many places they want to visit, not counting lunch. Between {stop_count_min} and {stop_count_max}.
+- preferred_lunch_time: "HH:MM", only if they named a lunch time.
+- strict_schedule: true only if they said their times are strict or non-negotiable. Ordinary times are not strict.
+- transit: how they are getting around, from: {transit_options}. Any mention counts: "he can sleep in the stroller" and "we'll drive" mean stroller and car respectively, even when they were not answering a question about transport.
+- dining: {dining_options}
+- transit_nap: can the child sleep while being moved, in a stroller, car, or bus? One of: {transit_nap_options}. "He can sleep in the stroller" is yes; "only sometimes in the car" is sometimes; "she has to be in a cot" is no.
+- features: what matters to them, from: {feature_options}
+- themes: the kind of day they want, from: {theme_options}. Match what they ask for to a theme rather than needing the theme's name: a park is Outdoorsy, a museum is Culture, wanting to stay indoors out of the rain is Rainy-day. Pick every theme they asked for, so "a park and a museum" is two themes.
+
+Then the two free-text fields, which is where the rest of what they said has to go:
+- nap_notes: anything about sleep or naps that is not a time. Habits, what wakes the child, what helps them settle.
+- extra_notes: everything else they said that no field above can hold. Preferences, dislikes, worries, constraints, anything specific about the child.
+
+Two rules about those two fields, and they matter:
+1. Nothing the parent said may be dropped. If a sentence does not fit a structured field above, it belongs in extra_notes (or nap_notes if it is about sleep). Anything you leave out is something the planner will never see, and the parent will not know it was lost.
+2. Do not repeat what a structured field already holds. If you set transit to stroller, do not also write "they have a stroller" in extra_notes, or the planner reads the same thing twice. Free text is for what the structured fields cannot express.
+
+Use the parent's own wording in nap_notes and extra_notes. You are moving their words into the right box, not summarising or rewriting them.

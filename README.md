@@ -220,6 +220,34 @@ tier has no such trap.
   ever read from `os.environ`, never logged, printed, or sent back to the
   browser once saved.
 
+## Form Extractor
+
+An admin-only, isolated test page (`/extract-form`, linked from `/components`)
+for reading a parent's own words into the planning form, so they can describe
+their day instead of filling in boxes. `src/components/extract_form.py` is
+self-contained, one file for the whole component.
+
+The model proposes and the real validator decides: every value it returns goes
+through the same `form_helpers.read_form` the `/plan` route uses, so the
+clamps, the five-years-zero-months age cap, and the four-nap ceiling are
+enforced once, in one place. A model answering `stop_count: 40` yields `6`
+rather than reaching the planner. Values outside a fixed vocabulary (transit,
+dining, features, themes, transit_nap) are dropped rather than passed on.
+
+It reports which fields the description actually supplied, and the page marks
+everything else as a default. That is deliberate: a form quietly filled with
+guesses is worse than a form you can see is incomplete, because nobody checks
+a field they think came from what they wrote.
+
+Free text is a first-class part of the job, not an afterthought. Anything a
+parent said that no structured field can hold goes into `extra_notes`, and
+anything about sleep goes into `nap_notes`, both of which already render into
+the planner's prompt. Prose a structured field already captured is *not*
+repeated there, so the planner never reads the same constraint twice.
+
+Not yet wired into `/plan` or the chatbot: that chaining is the
+`plan_from_chat` workflow's job (see `/workflows`).
+
 ## Find Nearby
 
 "Find a kid-friendly place near us, right now", available both on its own
@@ -337,6 +365,7 @@ travel-with-tots/
 │   ├── components/
 │   │   ├── plan_trip.py           # Plan Trips component: rule-based draft + AI smoothing
 │   │   ├── replan_trip.py         # Replan a Trip component: rule-based replan + AI smoothing
+│   │   ├── extract_form.py        # Form Extractor component: a description into the planning form
 │   │   ├── find_nearby.py         # Find Nearby component: location-narrowed venues, search fallback
 │   │   ├── geocode.py             # Geocode component: coordinates/address to city + neighbourhood
 │   │   └── search_web.py          # Web Search component: Tavily Search API
@@ -348,6 +377,7 @@ travel-with-tots/
 │   │   └── plan_from_chat.py      # describe a day in chat, get a plan back
 │   └── prompts/
 │       ├── website_chatbot.txt    # chatbot system prompt
+│       ├── extract_form.txt       # form extractor system prompt
 │       ├── plan_adjust.txt        # AI plan adjuster system prompt
 │       └── replan_adjust.txt      # AI replan adjuster system prompt
 ├── templates/
@@ -367,6 +397,7 @@ travel-with-tots/
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
 │   ├── replan_trip.html           # admin: isolated Replan a Trip test page (/replan-trip)
 │   ├── find_nearby.html           # admin: isolated Find Nearby test page (/find-nearby)
+│   ├── extract_form.html          # admin: isolated Form Extractor test page (/extract-form)
 │   ├── _chatbot_widget.html       # floating chat widget, included on every page
 │   ├── _nav.html                  # avatar/login + sidebar, included on every page
 │   ├── _stop_preview.html         # shared stop_line() macro (plan.html + dashboard.html)
@@ -381,6 +412,7 @@ travel-with-tots/
 │   ├── plan-trip.js               # Plan Trips test page's run behaviour
 │   ├── replan-trip.js             # Replan a Trip test page's run behaviour
 │   ├── find-nearby.js             # Find Nearby test page's geolocation + run behaviour
+│   ├── extract-form.js            # Form Extractor test page's run behaviour
 │   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
@@ -394,6 +426,7 @@ travel-with-tots/
 │   ├── test_components_plan_trip.py    # unit tests for the Plan Trips component
 │   ├── test_components_replan_trip.py  # unit tests for the Replan a Trip component
 │   ├── test_components_find_nearby.py  # unit tests for Find Nearby + Geocode
+│   ├── test_components_extract_form.py # unit tests for the Form Extractor
 │   ├── test_form_helpers.py       # unit tests for form parsing/child resolution
 │   ├── test_interactions.py       # unit tests for replan()/find_nearby()
 │   ├── test_dates.py              # unit tests for compute_age
@@ -452,6 +485,7 @@ transactional.
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |
 | `/find-nearby`, `/find-nearby/run`, `/find-nearby/key` | GET, POST | Admin: isolated Find Nearby test page, resolve a location + find places, save the Maps key |
+| `/extract-form`, `/extract-form/run` | GET, POST | Admin: isolated Form Extractor test page, a description in, a filled form out |
 
 ## Data model
 
