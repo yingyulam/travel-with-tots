@@ -5,11 +5,18 @@ from unittest import mock
 import requests
 
 from src.components.extract_form import (
+    EXTRACTED_FORM_PROPERTIES,
     EXTRACTED_FORM_RESPONSE_FORMAT,
     FormExtractionError,
     extract_form,
 )
-from src.form_helpers import DEFAULTS, MAX_AGE_YEARS, MAX_NAPS, STOP_COUNT_FORM_MAX
+from src.form_helpers import (
+    ASSUMED_NAP_DURATION_MIN,
+    DEFAULTS,
+    MAX_AGE_YEARS,
+    MAX_NAPS,
+    STOP_COUNT_FORM_MAX,
+)
 
 EXTRACTABLE_FIELDS = (
     "wake_up", "bedtime", "age_years", "age_months", "destination",
@@ -83,6 +90,30 @@ class ExtractFormTest(unittest.TestCase):
             {"start": "16:00", "duration_min": 30},
         ])
 
+    def test_an_unstated_duration_becomes_the_assumed_one(self):
+        # The schema used to require duration_min as a plain integer, so the
+        # model had to invent a number to answer at all: 15 minutes one run
+        # and an hour the next, from a description that gave neither. Null now
+        # means "they didn't say", and the assumed length is applied here
+        # rather than guessed by the model.
+        result, _ = _run(_reply(naps=[{"start": "13:00", "duration_min": None}]))
+        self.assertEqual(result["form"]["naps"],
+                         [{"start": "13:00", "duration_min": ASSUMED_NAP_DURATION_MIN}])
+
+    def test_a_stated_duration_still_wins(self):
+        result, _ = _run(_reply(naps=[{"start": "13:00", "duration_min": 90}]))
+        self.assertEqual(result["form"]["naps"][0]["duration_min"], 90)
+
+    def test_a_nap_is_still_reported_as_found_without_a_duration(self):
+        # The parent did mention a nap, so it must not read as a default.
+        result, _ = _run(_reply(naps=[{"start": "13:00", "duration_min": None}]))
+        self.assertIn("naps", result["found"])
+
+    def test_the_schema_lets_the_model_say_it_does_not_know(self):
+        duration = (EXTRACTED_FORM_PROPERTIES["naps"]["items"]
+                    ["properties"]["duration_min"])
+        self.assertIn("null", duration["type"])
+
     def test_too_many_naps_are_capped(self):
         many = [{"start": f"{9 + i}:00", "duration_min": 30}
                 for i in range(MAX_NAPS + 3)]
@@ -152,7 +183,10 @@ class ExtractionRegressionTest(unittest.TestCase):
         # drops the guidance would silently reintroduce the bugs above.
         with open("src/prompts/extract_form.txt") as f:
             prompt = f.read()
-        self.assertIn("the duration in minutes is optional", prompt)
+        # Stronger than "optional": the schema now allows null, and the
+        # instruction has to forbid picking a number, because a model that
+        # invents one produces a plausible wrong nap rather than a blank.
+        self.assertIn("never a number you picked yourself", prompt)
         self.assertIn("only the city", prompt)
         self.assertIn("a park is Outdoorsy", prompt)
 

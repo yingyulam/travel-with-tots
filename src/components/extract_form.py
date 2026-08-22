@@ -52,10 +52,11 @@ _EXTRACT_FORM_TEMPLATE = None
 # costs about $0.0003 a call, which buys latency a parent will wait through and
 # a result that does not change between identical requests.
 #
-# Known gap, in both models: when a parent names a nap time but no duration,
-# the model invents one rather than omitting it as the prompt asks. read_form
-# supplies a default anyway, but an invented 15 minutes and an invented hour
-# shape very different days.
+# Both models used to invent a nap's length, because the schema required
+# duration_min as a plain integer and strict mode left no way to say "they
+# didn't say". It is nullable now and the assumption lives in
+# form_helpers.ASSUMED_NAP_DURATION_MIN, which is deterministic work that was
+# never the model's to do.
 EXTRACTOR_MODEL = "openai/gpt-4o-mini"
 
 DINING_KEYS = [key for key, _ in DINING_OPTIONS]
@@ -105,7 +106,11 @@ EXTRACTED_FORM_PROPERTIES = {
             "type": "object",
             "properties": {
                 "start": {"type": "string"},
-                "duration_min": {"type": "integer"},
+                # Nullable, so "they didn't say how long" is expressible. As a
+                # plain integer the model had to invent a number to satisfy
+                # strict mode, which is what it did: 15 minutes one run and an
+                # hour the next, from a description that gave neither.
+                "duration_min": _nullable("integer"),
             },
             "required": ["start", "duration_min"],
             "additionalProperties": False,
@@ -210,7 +215,11 @@ def _as_form_data(extracted: dict) -> MultiDict:
     for nap in (extracted.get("naps") or [])[:MAX_NAPS]:
         if nap.get("start"):
             data.add("nap_start", nap["start"])
-            data.add("nap_duration", str(nap.get("duration_min", "")))
+            # Blank when they didn't say how long, so read_form applies the
+            # assumed length. Kept as a paired entry rather than omitted
+            # because read_form zips the two lists positionally.
+            duration = nap.get("duration_min")
+            data.add("nap_duration", "" if duration is None else str(duration))
     return data
 
 

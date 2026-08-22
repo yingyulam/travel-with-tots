@@ -281,10 +281,12 @@ free-tier ceiling, where the reasoning consumed the whole reply and the content
 came back empty. At about $0.0003 a call, the paid model buys latency a parent
 will wait through and a result that does not change between identical requests.
 
-One known gap in both: given a nap time but no duration, the model invents a
-duration instead of omitting it as the prompt asks. `read_form` supplies a
-default regardless, but an invented 15 minutes and an invented hour shape very
-different days.
+Naps are the field this component has to get right, and it used to invent their
+length: the schema required `duration_min` as a plain integer, so a model under
+strict mode had to supply a number even when the parent gave none, producing 15
+minutes one run and an hour the next. It is nullable now, so "they didn't say"
+is expressible, and the assumed hour comes from
+`form_helpers.ASSUMED_NAP_DURATION_MIN` instead of from the model's guess.
 
 ## Find Nearby
 

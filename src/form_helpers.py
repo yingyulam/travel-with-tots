@@ -3,12 +3,20 @@ the raw form dict app.py's routes already parse, no Flask dependency."""
 
 from .dates import compute_age
 from .db import get_children
-from .itinerary import STOP_DURATION_MIN
 
 # Age is capped at this many years, 0 months.
 MAX_AGE_YEARS = 5
 MAX_MONTHS = 11
 MAX_NAPS = 4
+
+# Assumed nap length when a parent gives a nap time but not how long it runs,
+# which is the common case both in the form and in a described day. Held here
+# rather than reusing itinerary.STOP_DURATION_MIN["nap"]: that one is how long
+# a nap stop occupies the schedule, this one is a guess about the child, and
+# there is no reason the two must move together.
+ASSUMED_NAP_DURATION_MIN = 60
+NAP_DURATION_MIN_MINUTES = 15
+NAP_DURATION_MAX_MINUTES = 180
 
 # Sanity bounds on the raw "how many places" form input -- the realistic
 # range for a given child's age is enforced downstream by
@@ -86,7 +94,9 @@ def read_form(form):
             continue
         naps.append({
             "start": start,
-            "duration_min": clamp_int(duration, 15, 180, STOP_DURATION_MIN["nap"]),
+            "duration_min": clamp_int(duration, NAP_DURATION_MIN_MINUTES,
+                                       NAP_DURATION_MAX_MINUTES,
+                                       ASSUMED_NAP_DURATION_MIN),
         })
     values = {
         "wake_up": form.get("wake_up") or DEFAULTS["wake_up"],

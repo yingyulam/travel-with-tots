@@ -2,9 +2,12 @@ import unittest
 from unittest import mock
 
 from src.form_helpers import (
+    ASSUMED_NAP_DURATION_MIN,
     DEFAULTS,
     MAX_AGE_YEARS,
     MAX_NAPS,
+    NAP_DURATION_MAX_MINUTES,
+    NAP_DURATION_MIN_MINUTES,
     clamp_int,
     read_form,
     resolve_plan_child,
@@ -60,6 +63,19 @@ class ReadFormTest(unittest.TestCase):
         result = read_form(_Form(nap_start=["", "9:00"], nap_duration=["30", "45"]))
         self.assertEqual(len(result["naps"]), 1)
         self.assertEqual(result["naps"][0]["start"], "9:00")
+
+    def test_a_blank_nap_duration_becomes_the_assumed_one(self):
+        # The manual form's duration input has no default value, so a parent
+        # can add a nap row with a time and leave the length empty.
+        result = read_form(_Form(nap_start=["13:00"], nap_duration=[""]))
+        self.assertEqual(result["naps"],
+                         [{"start": "13:00", "duration_min": ASSUMED_NAP_DURATION_MIN}])
+
+    def test_a_nap_duration_is_clamped_to_its_bounds(self):
+        result = read_form(_Form(nap_start=["9:00", "13:00"],
+                                 nap_duration=["1", "600"]))
+        self.assertEqual([nap["duration_min"] for nap in result["naps"]],
+                         [NAP_DURATION_MIN_MINUTES, NAP_DURATION_MAX_MINUTES])
 
     def test_checkbox_lists_pass_through(self):
         result = read_form(_Form(features=["kid_friendly", "stroller_accessible"]))
