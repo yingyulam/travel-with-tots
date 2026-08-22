@@ -94,8 +94,8 @@ Each stop shows its time, name, type, neighbourhood, feature badges, and an
 **In-trip interactions:**
 
 - Situation buttons (`Nap happened here`, `Need to stay here longer`, `Skip
-  next stop`, `Finished this stop early`, `It's raining`, `Change the theme`,
-  `Anything else`) call `replan(plan, situation, current_time)`, which keeps
+  next stop`, `Finished this stop early`, `It's raining`, `Change the theme`)
+  call `replan(plan, situation, current_time)`, which keeps
   current/past stops fixed and re-decides the rest of the day. The result is a
   **new** version on the `Trip`; the original is never overwritten.
 - The two duration situations take either a preset or a **typed number of
@@ -103,8 +103,10 @@ Each stop shows its time, name, type, neighbourhood, feature badges, and an
   in one place so no caller can shift the day backwards or wrap it past
   midnight.
 - A panel-level **free-text box** rides along with every replan, not just some
-  of them, and `Anything else` is the note-only route: the rule-based pass
-  leaves the remaining stops alone and the AI adjuster acts on the words.
+  of them, and has its own **Replan** button for going on the note alone. That
+  route leaves the remaining stops' times untouched and lets the AI adjuster act
+  on the words. It is deliberately not also a chip: a button and a box for the
+  same request is one control too many.
 - **"Need something now?"** (kid-friendly restaurant, family room, changing
   table, nursing room, quiet spot, other) calls `find_nearby(need)`, which
   returns 1-2 matching venues.

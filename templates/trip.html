@@ -43,11 +43,17 @@
       <button type="button" class="tap-btn" data-situation="{{ key }}">{{ label }}</button>
       {% endfor %}
     </div>
-    <label class="field replan-note-field">
-      <span>Anything else we should know? <em>(optional)</em></span>
-      <input type="text" id="replan-note-text"
-             placeholder="e.g. we're leaving now, somewhere indoors nearby">
-    </label>
+    <div class="replan-note-field">
+      <label class="replan-note-label" for="replan-note-text">
+        Anything else we should know? <em>(optional)</em></label>
+      <div class="need-other-row">
+        <input type="text" id="replan-note-text"
+               placeholder="e.g. we're leaving now, somewhere indoors nearby">
+        <button type="button" class="tap-btn" id="replan-note-go">Replan</button>
+      </div>
+      <p class="field-hint">Sent along with whichever option you pick above, or
+        tap Replan to go on this alone.</p>
+    </div>
     <div class="nap-prompt" id="nap-prompt" hidden>
       <div id="nap-ask">
         <p>Your child fell asleep, want to stay at this stop longer while they nap?</p>
@@ -411,6 +417,24 @@
     replanConfirmText.textContent = `${label}. Want to replan?`;
     replanConfirm.hidden = false;
   }
+  // Submitting the note is its own replan, with no situation chip involved.
+  // It skips the confirm step the chips use: typing a sentence and pressing
+  // Replan is already deliberate, whereas a chip is one stray tap.
+  const replanNoteGo = document.getElementById("replan-note-go");
+  replanNoteGo.addEventListener("click", () => {
+    const note = replanNoteText.value.trim();
+    if (!note) {
+      status.hidden = false;
+      status.textContent = "Type what you need first, or pick an option above.";
+      return;
+    }
+    hidePrompts();
+    runReplan("something_else", null, null, note);
+  });
+  replanNoteText.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") replanNoteGo.click();
+  });
+
   document.getElementById("replan-confirm-no").addEventListener("click", hidePrompts);
   document.getElementById("replan-confirm-yes").addEventListener("click", () => {
     const note = replanNoteText.value.trim();

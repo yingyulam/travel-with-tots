@@ -775,8 +775,16 @@ textarea:focus {
   margin: 0.85rem 0 0.25rem;
 }
 
-.replan-note-field input {
-  width: 100%;
+.replan-note-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--navy);
+}
+
+.replan-note-label em {
+  font-weight: 400;
+  color: #7a8899;
 }
 
 /* A typed duration beside the preset chips. Mirrors .need-other-row, the

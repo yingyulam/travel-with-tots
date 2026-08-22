@@ -371,6 +371,12 @@ class ReplanSomethingElseTest(unittest.TestCase):
         self.assertEqual([s["venue"]["name"] for s in result["stops"]],
                          ["Here Now", "Later Park"])
 
-    def test_it_is_an_offered_option(self):
-        from src.interactions import SITUATION_LABELS
+    def test_it_has_a_label_but_is_not_a_button(self):
+        # Submitted from the free-text box, not tapped, so it must stay out of
+        # the chip row while keeping a label: the AI prompt and the replan
+        # blurb both look it up, and a missing entry would echo the raw key.
+        from src.interactions import (
+            NOTE_ONLY_SITUATION, SITUATION_LABELS, SITUATION_OPTIONS)
         self.assertEqual(SITUATION_LABELS["something_else"], "Anything else")
+        self.assertNotIn("something_else", dict(SITUATION_OPTIONS))
+        self.assertEqual(NOTE_ONLY_SITUATION[0], "something_else")

@@ -101,13 +101,14 @@ happened here" (an unplanned nap ate into the schedule), "Need to stay
 here longer" (they are not ready to move on yet), "Skip next stop" (drop
 the very next planned stop and move on), "Finished this stop early"
 (there's now spare time before the next stop was supposed to start),
-"It's raining", "Change the theme", or "Anything else". For the two
-situations involving a duration, the parent either taps a preset or
-types the exact number of minutes, and the app shifts the remaining
-schedule accordingly. A free-text box sits alongside the buttons and is
-sent with every re-plan, so a parent can add "somewhere indoors nearby"
-to any of them; "Anything else" is for when the words are the whole
-request and no button fits. If a situation frees up time in the day, the app
+"It's raining", or "Change the theme". For the two situations
+involving a duration, the parent either taps a preset or types the exact
+number of minutes, and the app shifts the remaining schedule
+accordingly. A free-text box sits alongside the buttons and is sent with
+every re-plan, so a parent can add "somewhere indoors nearby" to any of
+them. The box also has its own Replan button, for when the words are the
+whole request and no button fits: that leaves the remaining stops' times
+alone and just acts on what was typed. If a situation frees up time in the day, the app
 will try to fill it with a real venue that matches the trip's chosen
 features and isn't already elsewhere in the plan, rather than just
 leaving a gap. The original plan a parent started with is never mutated

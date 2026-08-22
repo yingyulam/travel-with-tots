@@ -11,12 +11,11 @@ from .filters import filter_by_features
 from .form_helpers import clamp_int
 from .itinerary import THEMES, stop_duration, venue_open_for
 
-# Situation buttons shown on a chosen plan: (key, label). The "running_behind"
+# Situations a parent taps on a chosen plan: (key, label). The "running_behind"
 # key is deliberately no longer its label: the option was "Running behind", and
 # renaming the key would break any stored plan label or in-flight request for
 # nothing, since the behaviour is the same either way (slide the rest of the day
-# later). "something_else" carries only the parent's own words -- see the
-# fall-through in _apply_situation.
+# later).
 SITUATION_OPTIONS = [
     ("nap_happened", "Nap happened here"),
     ("running_behind", "Need to stay here longer"),
@@ -24,9 +23,16 @@ SITUATION_OPTIONS = [
     ("finished_early", "Finished this stop early"),
     ("weather_rain", "It's raining"),
     ("change_theme", "Change the theme"),
-    ("something_else", "Anything else"),
 ]
-SITUATION_LABELS = dict(SITUATION_OPTIONS)
+
+# The note-only situation, carrying just the parent's own words (see the
+# fall-through in _apply_situation). Deliberately not a button: it is submitted
+# from the free-text box itself, because a chip and a textbox for the same
+# request meant two controls where one would do, and the box had no submit of
+# its own. It still needs a label for the AI prompt and the replan blurb.
+NOTE_ONLY_SITUATION = ("something_else", "Anything else")
+
+SITUATION_LABELS = dict(SITUATION_OPTIONS + [NOTE_ONLY_SITUATION])
 
 # "Need something now?" buttons: (key, label). "other" reveals a text box.
 NEED_OPTIONS = [
