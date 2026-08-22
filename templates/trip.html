@@ -191,10 +191,43 @@
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
+  // Everything below builds nodes rather than HTML strings. The plan this page
+  // renders arrives in the request body (POST /trip takes it verbatim, and
+  // Plan.from_dict does not validate it), so venue names, reasons and the blurb
+  // are caller-chosen text. Concatenating them into innerHTML ran them as
+  // markup. Same reason static/find-nearby.js renders the identical venue shape
+  // this way, and the AI-written reasons render correctly now too: a model
+  // emitting "<" or "&" used to break the page with no attacker involved.
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  // A link target has to be checked, not escaped: as an attribute it could
+  // break out, and as a property it could still be "javascript:". Anything
+  // that isn't plain http(s) loses its link rather than being rendered.
+  function safeUrl(url) {
+    return /^https?:\/\//i.test(String(url || "").trim()) ? url : null;
+  }
+
+  function mapsLink(url, label) {
+    const href = safeUrl(url);
+    if (!href) return null;
+    const link = el("a", "maps-link", label);
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener";
+    return link;
+  }
+
   function badges(v) {
-    const parts = FEATURES.filter(([key]) => v[key]).map(([, label]) => `<span class="badge">${label}</span>`);
-    if (v.nap_friendly) parts.push(`<span class="badge badge-nap">Nap-friendly</span>`);
-    return parts.join("");
+    const box = el("div", "badges");
+    FEATURES.filter(([key]) => v[key])
+      .forEach(([, label]) => box.appendChild(el("span", "badge", label)));
+    if (v.nap_friendly) box.appendChild(el("span", "badge badge-nap", "Nap-friendly"));
+    return box;
   }
 
   // The venue data grounding a stop's "reason" -- rule-based venues use
@@ -206,9 +239,13 @@
     const hours = (open && close) ? `Open ${open}-${close}` : "Hours unknown";
     const age = (v.min_age_months != null && v.max_age_months != null)
       ? ` · Ages ${v.min_age_months}-${v.max_age_months} months` : "";
-    return `<div class="twt-citation-detail-meta">${v.neighbourhood}${age}</div>
-            <p>${hours}</p>
-            <div class="badges">${badges(v)}</div>`;
+    const detail = el("div", "twt-citation-detail stop-why-detail");
+    detail.hidden = true;
+    detail.append(
+      el("div", "twt-citation-detail-meta", `${v.neighbourhood}${age}`),
+      el("p", null, hours),
+      badges(v));
+    return detail;
   }
 
   // Which stop is "now": the latest stop that has already started.
@@ -220,42 +257,61 @@
     return idx;
   }
 
-  function renderStop(stop, state) {
+  // The "Why" button and its detail panel must stay adjacent siblings: the
+  // delegated handler below finds the panel with btn.nextElementSibling.
+  function whyBlock(v) {
+    const btn = el("button", "twt-citation stop-why-btn", "ⓘ Why");
+    btn.type = "button";
+    btn.setAttribute("aria-expanded", "false");
+    return [btn, stopWhyDetail(v)];
+  }
+
+  function stopBody(stop) {
     const v = stop.venue;
-    let body;
     if (stop.kind === "meal" && v) {
       // A lunch break to fit in, deliberately lighter than a real stop.
-      body = `<div class="stop-body meal-body">
-           <h3>🍽 Lunch break${stop.duration ? " · ⏱ " + stop.duration : ""}</h3>
-           <p class="meta">${v.name} · ${v.neighbourhood}</p>
-           <p class="reason">${stop.reason}</p>
-           <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
-           <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
-           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-         </div>`;
-    } else if (v) {
-      body = `<div class="stop-body">
-           <h3>${v.name}${stop.adjusted ? ' <span class="badge">✨ adjusted</span>' : ''}</h3>
-           <p class="meta">${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}</p>
-           <div class="badges">${badges(v)}</div>
-           <p class="reason">💡 ${stop.reason}</p>
-           <button type="button" class="twt-citation stop-why-btn" aria-expanded="false">ⓘ Why</button>
-           <div class="twt-citation-detail stop-why-detail" hidden>${stopWhyDetail(v)}</div>
-           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>
-         </div>`;
-    } else {
-      body = `<div class="stop-body empty-body">
-           <h3>${stop.kind === "leave" ? "🚗 Leave by " + stop.time
-                : stop.kind === "bonus" ? "✨ Free time, add a stop"
-                : "No matching venue"}</h3>
-           <p class="reason">${stop.reason}</p>
-         </div>`;
+      const body = el("div", "stop-body meal-body");
+      body.append(
+        el("h3", null, "🍽 Lunch break" + (stop.duration ? " · ⏱ " + stop.duration : "")),
+        el("p", "meta", `${v.name} · ${v.neighbourhood}`),
+        el("p", "reason", stop.reason),
+        ...whyBlock(v));
+      const link = mapsLink(v.maps_url, "📍 Open in Google Maps");
+      if (link) body.appendChild(link);
+      return body;
     }
-    const tag = state ? `<span class="state-tag ${state}">${state === "now" ? "Now" : "Done"}</span>` : "";
-    return `<li class="stop ${stop.kind} ${state}">
-              <div class="stop-time">${stop.time}${tag}</div>
-              ${body}
-            </li>`;
+    if (v) {
+      const body = el("div", "stop-body");
+      const heading = el("h3", null, v.name);
+      if (stop.adjusted) {
+        heading.append(" ", el("span", "badge", "✨ adjusted"));
+      }
+      body.append(
+        heading,
+        el("p", "meta", `${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}`),
+        badges(v),
+        el("p", "reason", `💡 ${stop.reason}`),
+        ...whyBlock(v));
+      const link = mapsLink(v.maps_url, "📍 Open in Google Maps");
+      if (link) body.appendChild(link);
+      return body;
+    }
+    const body = el("div", "stop-body empty-body");
+    const heading = stop.kind === "leave" ? "🚗 Leave by " + stop.time
+      : stop.kind === "bonus" ? "✨ Free time, add a stop"
+      : "No matching venue";
+    body.append(el("h3", null, heading), el("p", "reason", stop.reason));
+    return body;
+  }
+
+  function renderStop(stop, state) {
+    const item = el("li", `stop ${stop.kind} ${state}`);
+    const time = el("div", "stop-time", stop.time);
+    if (state) {
+      time.appendChild(el("span", `state-tag ${state}`, state === "now" ? "Now" : "Done"));
+    }
+    item.append(time, stopBody(stop));
+    return item;
   }
 
   // Which stop a replan is anchored to, in words. Same nowIndex the timeline
@@ -284,11 +340,12 @@
   function renderTimeline() {
     const plan = PLANS[active];
     const nowI = nowIndex(plan.stops);
-    const items = plan.stops.map((s, i) => {
+    const list = el("ol", "timeline");
+    plan.stops.forEach((s, i) => {
       const state = i < nowI ? "done" : i === nowI ? "now" : "";
-      return renderStop(s, state);
-    }).join("");
-    host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
+      list.appendChild(renderStop(s, state));
+    });
+    host.replaceChildren(el("p", "plan-blurb", plan.blurb), list);
     renderCurrentStop();
   }
 
@@ -297,11 +354,13 @@
   // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole.
   const SLOT_LABELS = ["Original", "Updated"];
   function renderTabs() {
-    picker.innerHTML = SLOT_LABELS
-      .map((label, i) => PLANS[i]
-        ? `<button type="button" class="plan-tab ${i === active ? "is-active" : ""}" data-index="${i}">${label}</button>`
-        : "")
-      .join("");
+    picker.replaceChildren(...SLOT_LABELS.flatMap((label, i) => {
+      if (!PLANS[i]) return [];
+      const tab = el("button", `plan-tab ${i === active ? "is-active" : ""}`, label);
+      tab.type = "button";
+      tab.dataset.index = i;
+      return [tab];
+    }));
     picker.querySelectorAll(".plan-tab").forEach((tab) => {
       tab.addEventListener("click", () => {
         active = Number(tab.dataset.index);
@@ -313,8 +372,8 @@
 
   timeField.addEventListener("input", renderTimeline);
 
-  // Delegated so it keeps working after renderTimeline() rebuilds
-  // host.innerHTML wholesale (time change, tab switch, re-plan).
+  // Delegated so it keeps working after renderTimeline() replaces the whole
+  // timeline (time change, tab switch, re-plan).
   host.addEventListener("click", (e) => {
     const btn = e.target.closest(".stop-why-btn");
     if (!btn) return;
@@ -553,8 +612,24 @@
     );
   });
 
+  // Same shape static/find-nearby.js renders, built the same way. Worth the
+  // care here even beyond the plan data: when data.source is "search" these
+  // venues are Tavily results, so the name and reason are third-party text.
+  function needCard(v, source) {
+    const card = el("div", "need-card");
+    const distance = v.distance_km != null ? `${v.distance_km} km away` : "";
+    card.append(
+      el("h4", null, v.name),
+      el("p", "meta", [v.type, v.neighbourhood, distance].filter(Boolean).join(" · ")),
+      badges(v));
+    const link = mapsLink(
+      v.maps_url, source === "search" ? "🔗 Open result" : "📍 Open in Google Maps");
+    if (link) card.appendChild(link);
+    return card;
+  }
+
   async function runNeed(need) {
-    needResults.innerHTML = "<p class='need-loading'>Finding…</p>";
+    needResults.replaceChildren(el("p", "need-loading", "Finding…"));
     try {
       const res = await fetch("/find_nearby", {
         method: "POST",
@@ -564,25 +639,18 @@
       const data = await res.json();
       const when = nowDisplay();
       if (!data.venues.length) {
-        needResults.innerHTML = `<p class="need-when">Requested at ${when}</p><p class="empty-body">No match found nearby.</p>`;
+        needResults.replaceChildren(
+          el("p", "need-when", `Requested at ${when}`),
+          el("p", "empty-body", "No match found nearby."));
         return;
       }
       const where = data.location && data.location.formatted_address
         ? ` near ${data.location.formatted_address}` : "";
-      const cards = data.venues.map((v) => {
-        const distance = v.distance_km != null ? `${v.distance_km} km away` : "";
-        const meta = [v.type, v.neighbourhood, distance].filter(Boolean).join(" · ");
-        const linkLabel = data.source === "search" ? "🔗 Open result" : "📍 Open in Google Maps";
-        return `<div class="need-card">
-           <h4>${v.name}</h4>
-           <p class="meta">${meta}</p>
-           <div class="badges">${badges(v)}</div>
-           <a class="maps-link" href="${v.maps_url}" target="_blank" rel="noopener">${linkLabel}</a>
-         </div>`;
-      }).join("");
-      needResults.innerHTML = `<p class="need-when">Requested at ${when}${where}</p>${cards}`;
+      needResults.replaceChildren(
+        el("p", "need-when", `Requested at ${when}${where}`),
+        ...data.venues.map((v) => needCard(v, data.source)));
     } catch (e) {
-      needResults.innerHTML = "<p class='empty-body'>Couldn't search right now.</p>";
+      needResults.replaceChildren(el("p", "empty-body", "Couldn't search right now."));
     }
   }
   document.getElementById("need-bar").querySelectorAll("[data-need]").forEach((btn) => {
