@@ -92,7 +92,9 @@ CREATE TABLE IF NOT EXISTS venues (
     min_age_months      INTEGER NOT NULL DEFAULT 0,
     max_age_months      INTEGER NOT NULL DEFAULT 60,
     lat                 REAL,                   -- NULL until a source supplies it
-    lng                 REAL
+    lng                 REAL,
+    notes               TEXT,                   -- what a parent said about it
+    address             TEXT                    -- what the geocoder resolved
 );
 """
 
@@ -191,6 +193,14 @@ def _ensure_columns(conn):
         with conn:
             conn.execute("ALTER TABLE venues ADD COLUMN lat REAL")
             conn.execute("ALTER TABLE venues ADD COLUMN lng REAL")
+    if "notes" not in existing:
+        with conn:
+            # What a parent says about a place in their own words, and the
+            # address the geocoder resolved. Both are for the admin who has to
+            # decide whether the submission is real: the address was previously
+            # computed and then dropped for want of anywhere to put it.
+            conn.execute("ALTER TABLE venues ADD COLUMN notes TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN address TEXT")
 
 
 def _migrate_trips_ownership(conn):
@@ -409,7 +419,8 @@ def delete_trip(trip_id, parent_id):
 def add_venue(name, *, source, venue_type=None, neighbourhood=None,
               kid_friendly=False, has_family_room=False,
               has_nursing_room=False, stroller_accessible=False,
-              parent_id=None, city=None, lat=None, lng=None):
+              parent_id=None, city=None, lat=None, lng=None,
+              notes=None, address=None):
     """Insert a venue. `city`, `lat` and `lng` are optional so a submission
     still survives a geocoder that is unreachable or unconfigured, but
     supplying them is what makes the row verifiable later: without coordinates
@@ -424,11 +435,49 @@ def add_venue(name, *, source, venue_type=None, neighbourhood=None,
     return _write(
         "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
         "has_family_room, has_nursing_room, stroller_accessible, source, "
-        "parent_id, city, lat, lng) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "parent_id, city, lat, lng, notes, address) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (name, venue_type, neighbourhood, int(kid_friendly), int(has_family_room),
          int(has_nursing_room), int(stroller_accessible), source, parent_id,
-         city, lat, lng))
+         city, lat, lng, notes, address))
+
+
+# The fields a parent may change on their own submission. Deliberately excludes
+# source, parent_id and the coordinates: source is the verification gate, and
+# letting an edit rewrite it would turn "correct my typo" into "publish this".
+EDITABLE_VENUE_FIELDS = ("name", "type", "neighbourhood", "notes",
+                         "kid_friendly", "has_family_room",
+                         "has_nursing_room", "stroller_accessible")
+
+
+def update_venue(venue_id, parent_id, **fields):
+    """Update one of this parent's own submissions.
+
+    Ownership and the gate are both enforced in the SQL rather than left to the
+    caller: venues.parent_id is nullable, so a query keyed on id alone would
+    happily rewrite a curated seed row. The source filter means a submission
+    that has since been verified is no longer the parent's to edit.
+
+    Unknown or non-editable field names raise rather than being ignored, so a
+    typo fails loudly instead of silently dropping an edit.
+    """
+    unknown = set(fields) - set(EDITABLE_VENUE_FIELDS)
+    if unknown:
+        raise ValueError(f"not editable: {', '.join(sorted(unknown))}")
+    if not fields:
+        return
+    assignments = ", ".join(f"{name} = ?" for name in fields)
+    _write(
+        f"UPDATE venues SET {assignments} "
+        "WHERE id = ? AND parent_id = ? AND source = 'user_submitted'",
+        (*fields.values(), venue_id, parent_id))
+
+
+def delete_venue(venue_id, parent_id):
+    """Remove one of this parent's own submissions. Same guards as
+    update_venue, and for the same reason."""
+    _write("DELETE FROM venues WHERE id = ? AND parent_id = ? "
+           "AND source = 'user_submitted'", (venue_id, parent_id))
 
 
 def get_parent_by_email(email):
