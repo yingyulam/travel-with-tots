@@ -424,7 +424,7 @@ travel-with-tots/
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan/replan)
 │   ├── workflows/                 # one file per workflow, each chaining components
 │   │   ├── nap_time_rescue.py     # replan around a long nap, substitute closed stops
-│   │   ├── answer_with_web_fallback.py  # knowledge base, then live web search
+│   │   ├── find_nearby_place.py   # ask in chat for somewhere nearby, web fallback
 │   │   └── plan_from_chat.py      # describe a day in chat, get the form filled
 │   └── prompts/
 │       ├── website_chatbot.txt    # chatbot system prompt

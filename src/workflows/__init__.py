@@ -12,7 +12,7 @@ already exist (the chat bubble and the /trip situation buttons), while scheduled
 has no mechanism in the app at all.
 """
 
-from .answer_with_web_fallback import WORKFLOW as _answer_with_web_fallback
+from .find_nearby_place import WORKFLOW as _find_nearby_place
 from .nap_time_rescue import WORKFLOW as _nap_time_rescue
 from .plan_from_chat import WORKFLOW as _plan_from_chat
 
@@ -25,7 +25,7 @@ TRIGGERS = (
 
 WORKFLOWS = (
     _nap_time_rescue,
-    _answer_with_web_fallback,
+    _find_nearby_place,
     _plan_from_chat,
 )
 
