@@ -189,6 +189,12 @@ class ExtractionRegressionTest(unittest.TestCase):
         self.assertIn("never a number you picked yourself", prompt)
         self.assertIn("only the city", prompt)
         self.assertIn("a park is Outdoorsy", prompt)
+        # Known unfixed: rule 1 ("nothing may be dropped") beats rule 2 in
+        # practice, so a clause already captured by stop_count, themes and
+        # features is copied into extra_notes as well. Rewording rule 2 to
+        # quote the offending sentence made it worse, not better: the model
+        # echoed the quoted string back and started duplicating transit too.
+        self.assertIn("Do not repeat what a structured field already holds", prompt)
 
 
 class VocabularyGuardTest(unittest.TestCase):

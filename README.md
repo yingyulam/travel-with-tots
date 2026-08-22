@@ -35,8 +35,9 @@ source .venv/bin/activate
 # 2. install dependencies
 pip install -r requirements.txt
 
-# 3. add your OpenRouter API key
+# 3. set a session secret and your OpenRouter API key
 cp .env.example .env
+python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))" >> .env
 # then edit .env and set OPENROUTER_API_KEY
 
 # 4. run the app

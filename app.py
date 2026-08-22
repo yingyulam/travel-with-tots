@@ -84,7 +84,22 @@ from src.results import get_results, get_stats, save_result
 from src.workflows import workflows_by_trigger
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
+# Signs the session cookie, which holds only session["parent_id"]. A known key
+# therefore means anyone can mint a cookie naming any parent, admin included,
+# with no password: authentication bypass rather than mere tampering. It used
+# to fall back to a literal committed to this repo, so following the documented
+# setup (cp .env.example .env, which never mentioned SECRET_KEY) shipped that
+# known key. No fallback now, and no default worth having: one that works is
+# one an attacker also has.
+try:
+    app.secret_key = os.environ["SECRET_KEY"]
+except KeyError:
+    raise RuntimeError(
+        "SECRET_KEY is not set. It signs session cookies, so there is no safe "
+        "default. Generate one and add it to .env:\n"
+        "  python3 -c \"import secrets; print('SECRET_KEY=' + secrets.token_hex(32))\" >> .env"
+    ) from None
 
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
 init_db()
