@@ -5,7 +5,7 @@ import requests
 from langchain_core.messages import AIMessage, ToolMessage
 
 from src.components.extract_form import FormExtractionError
-from src.llms import (
+from src.agent import (
     TOOLS,
     answer_faq_tool,
     extract_form_tool,
@@ -27,7 +27,7 @@ class ToolArtifactTest(unittest.TestCase):
 
     def test_extractor_result_survives_as_a_dict(self):
         extracted = {"form": {"destination": "Vancouver"}, "found": ["destination"]}
-        with mock.patch("src.llms.extract_form", return_value=extracted):
+        with mock.patch("src.agent.extract_form", return_value=extracted):
             message = extract_form_tool.invoke(
                 {"args": {"description": "a day in Vancouver"}, "id": "1",
                  "name": "extract_form_tool", "type": "tool_call"})
@@ -40,7 +40,7 @@ class ToolArtifactTest(unittest.TestCase):
         answer = {"reply": "Tap Save this plan.", "sources": [{"index": 1}],
                   "model": "m", "response_time": 1.0,
                   "input_tokens": 10, "output_tokens": 5}
-        with mock.patch("src.llms.ask_website_chatbot", return_value=answer):
+        with mock.patch("src.agent.ask_website_chatbot", return_value=answer):
             message = answer_faq_tool.invoke(
                 {"args": {"question": "how do I save a plan?"}, "id": "1",
                  "name": "answer_faq_tool", "type": "tool_call"})
@@ -63,13 +63,13 @@ class ToolErrorHandlingTest(unittest.TestCase):
                       requests.exceptions.RequestException("down"),
                       KeyError("OPENROUTER_API_KEY")):
             with self.subTest(error=type(error).__name__):
-                with mock.patch("src.llms.extract_form", side_effect=error):
+                with mock.patch("src.agent.extract_form", side_effect=error):
                     message = self._invoke_extractor()
                 self.assertIn("Couldn't read a form", message.content)
                 self.assertEqual(message.artifact, {})
 
     def test_faq_failure_becomes_a_readable_result(self):
-        with mock.patch("src.llms.ask_website_chatbot",
+        with mock.patch("src.agent.ask_website_chatbot",
                         side_effect=requests.exceptions.RequestException("down")):
             message = answer_faq_tool.invoke(
                 {"args": {"question": "x"}, "id": "1",
@@ -85,7 +85,7 @@ class RunAgentContractTest(unittest.TestCase):
     def _run(self, reply="ok", tool_messages=(), model=None):
         agent = mock.Mock()
         agent.invoke.return_value = _fake_result(reply, tool_messages)
-        with mock.patch("src.llms._build_agent", return_value=agent) as build:
+        with mock.patch("src.agent._build_agent", return_value=agent) as build:
             result = run_agent("hello", model=model) if model else run_agent("hello")
         return result, build
 
@@ -148,7 +148,7 @@ class ChatBubbleContractTest(unittest.TestCase):
         agent = mock.Mock()
         agent.invoke.return_value = _fake_result(
             "Tap Save this plan. [Source 1]", (faq,))
-        with mock.patch("src.llms._build_agent", return_value=agent), \
+        with mock.patch("src.agent._build_agent", return_value=agent), \
              mock.patch("src.rag.get_status", return_value={"state": "ready"}):
             return self.client.post("/chatbot", json={"message": message,
                                                       "model": "openrouter/free"})

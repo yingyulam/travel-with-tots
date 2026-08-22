@@ -1,0 +1,15 @@
+You are routing one message from a parent using Travel with Tots, an app that plans days out with young children. Decide which of the workflows below, if any, the message is asking for.
+
+The parent's message:
+{message}
+
+The workflows you may choose from:
+{workflows}
+
+Answer with the exact name of one workflow, or "none".
+
+How to decide:
+- Pick a workflow when the message is an instance of the thing that workflow does, however it is worded. A parent will never name a workflow; they will just say what they want, and it is your job to recognise it.
+- Telling you something is asking for it. A parent who describes their situation in detail is handing you the input a workflow needs, not making conversation.
+- Answer "none" for anything that is a question about the app, a greeting, or thanks. Those are for the chatbot, and it answers them well.
+- Answer "none" when the message matches nothing on the list. That is a correct answer, not a failure.

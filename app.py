@@ -82,7 +82,7 @@ from src.interactions import (
     replan,
 )
 from src.itinerary import THEMES
-from src.llms import run_agent
+from src.agent import handle_message
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
 from src.workflows import log_a_place, workflows_by_trigger
@@ -1069,11 +1069,14 @@ def find_nearby_route():
 def chatbot_route():
     """One turn of the chat bubble, as JSON.
 
-    The bubble is the AI Agent's interface: the agent decides whether to answer
-    from the knowledge base, read a described day into the planning form, plan a
-    day, or find somewhere nearby. Answering questions is now one of its tools
-    rather than a separate code path, so there is a single implementation behind
-    both this route and the admin agent page."""
+    The bubble is the AI Agent's interface. An intent classifier looks first for
+    a workflow the message is asking for and runs it; anything else falls
+    through to the tool-calling agent, which answers from the knowledge base,
+    reads a described day into the form, plans a day, or finds somewhere nearby.
+
+    The routing lives in agent.handle_message rather than here, so a Telegram
+    handler can reuse it. The reply carries "workflow", the name that ran or
+    None, which the widget shows as a badge."""
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
     if not message:
@@ -1089,7 +1092,8 @@ def chatbot_route():
         return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
 
     try:
-        result = run_agent(message, history=data.get("history") or [], model=model)
+        result = handle_message(message, history=data.get("history") or [],
+                                model=model)
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:

@@ -19,6 +19,33 @@ which is why `static/plan-from-chat.js` tells them apart.
 The filename says "plan" for history's sake; the workflow ends at the form.
 """
 
+from ..components.extract_form import extract_form
+
+
+def run(message: str) -> dict:
+    """Read a described day into the planning form.
+
+    Returns {"reply", "form", "found"}. `reply` is what the parent reads, so it
+    names the fields that came from their own words: a form they cannot see is
+    not an answer.
+
+    This existed before, was deleted as dead code, and is back because the
+    intent router now calls it. That is the whole difference: it has a caller.
+    """
+    result = extract_form(message)
+    found = result["found"]
+    if found:
+        reply = ("I've filled in the planning form from that: "
+                 + ", ".join(name.replace("_", " ") for name in found)
+                 + ". Everything else is at its default, so check it before "
+                   "building the day.")
+    else:
+        reply = ("I couldn't pull any planning details out of that. Try "
+                 "mentioning where you are, your child's age, and the times "
+                 "your day starts and ends.")
+    return {"reply": reply, "form": result["form"], "found": found}
+
+
 WORKFLOW = {
     "name": "Fill the form from a chat message",
     # Not 💬: the trigger group heading already carries that.

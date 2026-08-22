@@ -25,6 +25,7 @@ data/rag_config.json
 
 # Chatbot ratings (runtime data)
 data/results.json
+data/intents.jsonl
 
 # Environment variables
 .env

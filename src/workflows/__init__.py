@@ -12,9 +12,7 @@ already exist (the chat bubble and the /trip situation buttons), while scheduled
 has no mechanism in the app at all.
 """
 
-from .log_a_place import WORKFLOW as _log_a_place
-from .nap_time_rescue import WORKFLOW as _nap_time_rescue
-from .plan_from_chat import WORKFLOW as _plan_from_chat
+from . import log_a_place, nap_time_rescue, plan_from_chat
 
 # Display order and label for each trigger, so /workflows can group by it.
 TRIGGERS = (
@@ -23,11 +21,30 @@ TRIGGERS = (
     ("scheduled", "⏱️ Scheduled"),
 )
 
-WORKFLOWS = (
-    _nap_time_rescue,
-    _log_a_place,
-    _plan_from_chat,
-)
+# The modules, in display order, rather than just their declarations: the intent
+# router needs each module's `run` as well as its `WORKFLOW`. Registered by hand
+# rather than discovered, so the order is explicit and a broken import is loud.
+_MODULES = (nap_time_rescue, log_a_place, plan_from_chat)
+
+WORKFLOWS = tuple(module.WORKFLOW for module in _MODULES)
+
+
+def runnable_message_workflows():
+    """(workflow, run) pairs a chat message could actually trigger.
+
+    Both halves of the filter matter. `trigger == "message"` excludes the ones
+    started by something else, like the /trip situation buttons. Requiring a
+    `run` excludes the declaration-only ones: offering the classifier a
+    workflow with nothing behind it means it will confidently pick something
+    that then cannot be executed, which is worse than answering as the chatbot.
+    """
+    pairs = []
+    for module in _MODULES:
+        workflow = module.WORKFLOW
+        run = getattr(module, "run", None)
+        if workflow["trigger"] == "message" and callable(run):
+            pairs.append((workflow, run))
+    return pairs
 
 
 def workflows_by_trigger():

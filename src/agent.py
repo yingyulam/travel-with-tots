@@ -25,6 +25,8 @@ from .agents import DEFAULT_MODEL, ask_website_chatbot
 from .components.extract_form import FormExtractionError, extract_form
 from .components.plan_trip import plan_trip
 from .data_loader import VENUES
+from .intent import classify_intent, log_decision
+from .workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -112,6 +114,59 @@ def _build_agent(model: str):
         model=model,
     )
     return create_react_agent(chat, TOOLS, prompt=SYSTEM_PROMPT)
+
+
+def handle_message(message: str, history: list[dict] | None = None,
+                   model: str = DEFAULT_MODEL) -> dict:
+    """One turn, routed: a workflow if the message asks for one, else the agent.
+
+    This is the entry point for any surface that carries a message. It takes a
+    plain string rather than a request, so a Telegram handler can call the same
+    function the website chat does.
+
+    Two routers coexist here, deliberately rather than accidentally. The
+    classifier owns workflows and runs first; the tool-calling agent below owns
+    everything else and is unchanged. The one message both could handle is a
+    described day, and the classifier wins because it runs first.
+
+    The reply always carries "workflow": the name that ran, or None. None rather
+    than an absent key, so a caller can tell "no workflow matched" from "this
+    response predates routing".
+    """
+    offered = runnable_message_workflows()
+    chosen = classify_intent(message, [workflow for workflow, _ in offered])
+    run = next((r for w, r in offered if w["name"] == chosen), None)
+
+    if run is not None:
+        try:
+            result = run(message)
+        except TOOL_ERRORS as e:
+            # A workflow that fails must not cost the parent their turn, so it
+            # falls through to the agent. Logged as not-run, so the trace shows
+            # the routing was right even where the execution was not.
+            print(f"Workflow {chosen!r} failed, answering as the chatbot: {e}")
+            log_decision(message, chosen, ran=False)
+        else:
+            log_decision(message, chosen, ran=True)
+            # The widget's keys, so a workflow reply renders like any other.
+            # The usage fields are genuinely unknown here: they come from the
+            # FAQ tool, which did not run.
+            return {
+                "reply": result["reply"],
+                "sources": [],
+                "model": model,
+                "response_time": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "tool_calls": [],
+                "workflow": chosen,
+                "workflow_result": result,
+            }
+    else:
+        log_decision(message, None, ran=False)
+
+    return {**run_agent(message, history=history, model=model),
+            "workflow": None}
 
 
 def _artifact_of(name: str, tool_messages: list) -> dict:

@@ -137,7 +137,7 @@ document.addEventListener("click", (e) => {
       return el;
     }
 
-    function renderAssistantReply(bubbleEl, text, sources, feedbackContext) {
+    function renderAssistantReply(bubbleEl, text, sources, feedbackContext, workflow) {
       bubbleEl.innerHTML = "";
       const textSpan = document.createElement("span");
       textSpan.className = "twt-chatbot-msg-text";
@@ -197,6 +197,17 @@ document.addEventListener("click", (e) => {
         });
       });
 
+      // Which workflow the intent router picked, if any. Shown rather than
+      // logged only, so you can tell at a glance whether a reply came from a
+      // workflow or from the agent answering directly.
+      const routed = document.createElement("div");
+      routed.className = "twt-routed";
+      const badge = document.createElement("span");
+      badge.className = "twt-badge";
+      badge.textContent = workflow ? `⚙️ ${workflow}` : "💬 no workflow";
+      routed.appendChild(badge);
+      bubbleEl.appendChild(routed);
+
       if (feedbackContext) {
         bubbleEl.appendChild(buildFeedbackRow({ ...feedbackContext, response: text, kind: "chatbot" }));
       }
@@ -234,7 +245,7 @@ document.addEventListener("click", (e) => {
           response_time: data.response_time,
           input_tokens: data.input_tokens,
           output_tokens: data.output_tokens,
-        });
+        }, data.workflow);
         history.push({ role: "user", content: message });
         history.push({ role: "assistant", content: data.reply });
 

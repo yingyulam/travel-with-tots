@@ -321,6 +321,12 @@
   white-space: pre-wrap;
 }
 
+/* The intent router's decision, under a reply. Its own row so the badge sits
+   below the text rather than inline with it, like the feedback row does. */
+.twt-routed {
+  margin-top: 6px;
+}
+
 /* Small labeled pill, e.g. a model name badge on the Results page. */
 
 .twt-badge {
