@@ -9,6 +9,8 @@ Never touch the stops already done today (shown below for context only) -- they 
 Trip context:
 - Situation just now: {situation_label}
 - Current time: {current_time}
+- What they asked for: {duration_asked}
+- Theme: {theme_asked}
 - Destination: {destination}
 - Child's age: {age_months} months
 - Bedtime: {bedtime}
@@ -33,6 +35,7 @@ Rules:
 - Never invent a venue_id, a venue name, or any venue detail not present in the candidate list above.
 - An edit may change the venue ("new_venue_id"), the time ("new_time"), or both, but never what kind of stop it is: a meal stays a meal, a nap stays a nap, an activity stays an activity. A replacement venue for a meal stop must be somewhere a meal is possible; a replacement for a nap stop must be genuinely nap-friendly.
 - Keep every nudge grounded: moving a stop by tens of minutes to smooth the flow is normal and expected; moving it by hours is not, that's a different afternoon, not an adjustment.
+- Never move a stop to a time at or before the current time above. That time has already passed, so the stop would land among the ones already done.
 - A venue must actually be open at whatever time you place a stop.
 - Every "new_venue_id" you use must be distinct, and must not duplicate a venue already elsewhere in the day (done or remaining).
 - Give each edit a short, one-sentence "reason" that names the actual problem it fixes or the actual note it's applying.

@@ -676,6 +676,15 @@ textarea:focus {
   margin-bottom: 0.6rem;
 }
 
+/* Which stop a replan is anchored to, beside the panel heading. Lighter than
+   the heading because it is the answer to "where am I", not the question. */
+.panel-anchor {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #55637a;
+  white-space: nowrap;
+}
+
 /* Armed-or-not banner on the fill-the-form-from-chat page. Colour carries the state so
    it reads at a glance instead of hiding in a line of grey text. The two
    armed states borrow the badge palette: amber for waiting, green for live. */
@@ -760,9 +769,27 @@ textarea:focus {
   transition: all 0.15s ease;
 }
 
-.replan-note-input {
-  flex: 1 1 220px;
-  border-radius: 999px;
+/* The replan note is a panel-level field now rather than a flex child of
+   .chips, so it needs its own width: the old rule was only flex sizing. */
+.replan-note-field {
+  margin: 0.85rem 0 0.25rem;
+}
+
+.replan-note-field input {
+  width: 100%;
+}
+
+/* A typed duration beside the preset chips. Mirrors .need-other-row, the
+   page's existing "type something, then act" control. */
+.custom-mins-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.6rem;
+}
+
+.custom-mins-row input {
+  width: 11rem;
 }
 
 .tap-btn:hover {

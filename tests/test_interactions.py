@@ -167,3 +167,210 @@ class ReplanThemeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReplanMinutesClampTest(unittest.TestCase):
+    """A parent-typed duration reaches arithmetic with no guard of its own.
+    Presets could only ever send a sane number; the custom textbox can send
+    anything, so every one of these used to be reachable."""
+
+    def setUp(self):
+        self.plan = {
+            "label": "Outdoorsy", "blurb": "A day out.",
+            "stops": [
+                {"time": "1:00 PM", "kind": "activity",
+                 "venue": _venue("Here Now"), "reason": "current"},
+                {"time": "3:00 PM", "kind": "activity",
+                 "venue": _venue("Later Park"), "reason": "ahead"},
+            ],
+        }
+
+    def _ahead(self, minutes, situation="running_behind"):
+        result = replan(self.plan, situation, "13:30", minutes=minutes)
+        return [s["time"] for s in result["stops"]]
+
+    def test_text_does_not_raise(self):
+        # int("abc") used to escape replan_trip's except clause as a 500.
+        self.assertEqual(self._ahead("abc"), ["1:00 PM", "3:45 PM"])
+
+    def test_a_negative_does_not_run_the_day_backwards(self):
+        times = self._ahead(-90)
+        self.assertEqual(times[0], "1:00 PM")
+        self.assertEqual(times[1], "3:05 PM")
+
+    def test_a_huge_value_does_not_wrap_past_midnight(self):
+        # _minutes_to_display does minutes %= 24 * 60, so an unclamped value
+        # reappeared in the small hours and re-sorted ahead of the kept stops.
+        times = self._ahead(100000)
+        self.assertEqual(times[0], "1:00 PM")
+        self.assertTrue(times[1].endswith("PM"), times[1])
+
+    def test_zero_clamps_up_rather_than_becoming_the_default(self):
+        # `if minutes else DEFAULT` turned a typed 0 into a 45-minute shift.
+        self.assertEqual(self._ahead(0), ["1:00 PM", "3:05 PM"])
+
+    def test_none_still_means_the_situations_default(self):
+        self.assertEqual(self._ahead(None), ["1:00 PM", "3:45 PM"])
+
+    def test_a_string_number_is_accepted(self):
+        # JSON from the browser can arrive as a string.
+        self.assertEqual(self._ahead("30"), ["1:00 PM", "3:30 PM"])
+
+
+class ReplanNapHappenedTest(unittest.TestCase):
+    def setUp(self):
+        self.plan = {
+            "label": "Outdoorsy", "blurb": "A day out.",
+            "stops": [
+                {"time": "1:00 PM", "kind": "activity",
+                 "venue": _venue("Here Now"), "reason": "current"},
+                {"time": "2:00 PM", "kind": "nap",
+                 "venue": _venue("Quiet Corner", nap_friendly=True),
+                 "reason": "scheduled nap"},
+                {"time": "4:00 PM", "kind": "activity",
+                 "venue": _venue("Later Park"), "reason": "ahead"},
+            ],
+        }
+
+    def test_the_current_stop_records_the_nap(self):
+        result = replan(self.plan, "nap_happened", "13:30", minutes=60)
+        self.assertIn("Nap happened here", result["stops"][0]["reason"])
+        self.assertIn("60 min", result["stops"][0]["reason"])
+
+    def test_the_scheduled_nap_is_cancelled(self):
+        result = replan(self.plan, "nap_happened", "13:30", minutes=60)
+        self.assertNotIn("nap", [s["kind"] for s in result["stops"]])
+
+    def test_stops_shift_only_as_far_as_the_nap_needs(self):
+        # Nap from 1:00 runs to 2:30, so the 4:00 stop already clears it and
+        # must not move. Contrast running_behind, which slides everything.
+        result = replan(self.plan, "nap_happened", "13:30", minutes=90)
+        self.assertEqual(result["stops"][-1]["time"], "4:00 PM")
+
+    def test_a_long_nap_pushes_the_rest_later(self):
+        result = replan(self.plan, "nap_happened", "13:30", minutes=240)
+        self.assertEqual(result["stops"][-1]["time"], "5:00 PM")
+
+    def test_stops_past_bedtime_are_dropped(self):
+        result = replan(self.plan, "nap_happened", "13:30", minutes=240,
+                        bedtime="17:00")
+        self.assertEqual([s["time"] for s in result["stops"]], ["1:00 PM"])
+
+    def test_kept_stops_come_back_untouched(self):
+        # This branch used to run the kept stops through _enforce_hours too, so
+        # a stop that had already happened could be venue-swapped or dropped,
+        # contradicting the function's own "earlier stops kept as-is".
+        closed = _venue("Here Now", open="09:00", close="10:00")
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "1:00 PM", "kind": "activity", "venue": closed,
+             "reason": "already happened"},
+        ]}
+        result = replan(plan, "nap_happened", "13:30", minutes=60,
+                        venues=[_venue("Spare Aquarium")])
+        self.assertEqual(len(result["stops"]), 1)
+        self.assertEqual(result["stops"][0]["venue"]["name"], "Here Now")
+
+    def test_before_the_day_starts_nothing_is_invented(self):
+        result = replan(self.plan, "nap_happened", "08:00", minutes=60)
+        self.assertEqual([s["time"] for s in result["stops"]],
+                         ["1:00 PM", "4:00 PM"])
+
+
+class ReplanStayLongerTest(unittest.TestCase):
+    """"Need to stay here longer" (key: running_behind)."""
+
+    def setUp(self):
+        self.plan = {
+            "label": "Outdoorsy", "blurb": "A day out.",
+            "stops": [
+                {"time": "1:00 PM", "kind": "activity",
+                 "venue": _venue("Here Now"), "reason": "current"},
+                {"time": "3:00 PM", "kind": "activity",
+                 "venue": _venue("Later Park"), "reason": "ahead"},
+                {"time": "4:30 PM", "kind": "activity",
+                 "venue": _venue("Last Stop"), "reason": "ahead"},
+            ],
+        }
+
+    def test_every_remaining_stop_moves_by_the_delay(self):
+        result = replan(self.plan, "running_behind", "13:30", minutes=30)
+        self.assertEqual([s["time"] for s in result["stops"]],
+                         ["1:00 PM", "3:30 PM", "5:00 PM"])
+
+    def test_gaps_between_remaining_stops_are_preserved(self):
+        result = replan(self.plan, "running_behind", "13:30", minutes=45)
+        times = result["stops"]
+        self.assertEqual(times[1]["time"], "3:45 PM")
+        self.assertEqual(times[2]["time"], "5:15 PM")
+
+    def test_stops_past_bedtime_are_dropped(self):
+        result = replan(self.plan, "running_behind", "13:30", minutes=120,
+                        bedtime="18:00")
+        self.assertEqual([s["time"] for s in result["stops"]],
+                         ["1:00 PM", "5:00 PM"])
+
+    def test_the_reason_says_why_it_moved(self):
+        result = replan(self.plan, "running_behind", "13:30", minutes=30)
+        self.assertIn("Pushed later", result["stops"][1]["reason"])
+
+
+class ReplanFinishedEarlyTest(unittest.TestCase):
+    def setUp(self):
+        self.plan = {
+            "label": "Outdoorsy", "blurb": "A day out.",
+            "stops": [
+                {"time": "1:00 PM", "kind": "activity",
+                 "venue": _venue("Here Now"), "reason": "current"},
+                {"time": "4:00 PM", "kind": "activity",
+                 "venue": _venue("Later Park"), "reason": "ahead"},
+            ],
+        }
+        self.venues = [_venue("Here Now"), _venue("Later Park"),
+                       _venue("Spare Aquarium")]
+
+    def test_remaining_stops_move_earlier(self):
+        result = replan(self.plan, "finished_early", "13:30", venues=self.venues)
+        self.assertEqual(result["stops"][1]["time"], "1:45 PM")
+        self.assertIn("Moved up", result["stops"][1]["reason"])
+
+    def test_the_freed_slot_gets_a_real_stop(self):
+        result = replan(self.plan, "finished_early", "13:30", venues=self.venues)
+        self.assertEqual(result["stops"][-1]["time"], "4:00 PM")
+        self.assertEqual(result["stops"][-1]["venue"]["name"], "Spare Aquarium")
+
+    def test_the_extra_stop_is_not_placed_past_bedtime(self):
+        # This branch never checked bedtime, so it could invent a stop after
+        # the child was meant to be asleep.
+        result = replan(self.plan, "finished_early", "13:30",
+                        venues=self.venues, bedtime="16:00")
+        self.assertEqual([s["time"] for s in result["stops"]],
+                         ["1:00 PM", "1:45 PM"])
+
+
+class ReplanSomethingElseTest(unittest.TestCase):
+    """The note-only option. Its rule-based pass must be a no-op, or a parent
+    asking for something indoors would find the day reshuffled underneath the
+    request as well."""
+
+    def setUp(self):
+        self.plan = {
+            "label": "Outdoorsy", "blurb": "A day out.",
+            "stops": [
+                {"time": "1:00 PM", "kind": "activity",
+                 "venue": _venue("Here Now"), "reason": "current"},
+                {"time": "4:00 PM", "kind": "activity",
+                 "venue": _venue("Later Park"), "reason": "ahead"},
+            ],
+        }
+
+    def test_remaining_stops_keep_their_times(self):
+        result = replan(self.plan, "something_else", "13:30",
+                        venues=[_venue("Here Now"), _venue("Later Park")])
+        self.assertEqual([s["time"] for s in result["stops"]],
+                         ["1:00 PM", "4:00 PM"])
+        self.assertEqual([s["venue"]["name"] for s in result["stops"]],
+                         ["Here Now", "Later Park"])
+
+    def test_it_is_an_offered_option(self):
+        from src.interactions import SITUATION_LABELS
+        self.assertEqual(SITUATION_LABELS["something_else"], "Anything else")

@@ -36,12 +36,18 @@
 
   <!-- 4. Situation buttons -->
   <div class="action-panel">
-    <p class="panel-title">Something came up?</p>
+    <p class="panel-title">Do you need to change your plan?
+      <span class="panel-anchor" id="current-stop-label"></span></p>
     <div class="chips" id="situation-bar">
       {% for key, label in situation_options %}
       <button type="button" class="tap-btn" data-situation="{{ key }}">{{ label }}</button>
       {% endfor %}
     </div>
+    <label class="field replan-note-field">
+      <span>Anything else we should know? <em>(optional)</em></span>
+      <input type="text" id="replan-note-text"
+             placeholder="e.g. we're leaving now, somewhere indoors nearby">
+    </label>
     <div class="nap-prompt" id="nap-prompt" hidden>
       <div id="nap-ask">
         <p>Your child fell asleep, want to stay at this stop longer while they nap?</p>
@@ -58,15 +64,25 @@
           <button type="button" class="tap-btn" data-mins="90">1.5 hours</button>
           <button type="button" class="tap-btn" data-mins="120">2 hours</button>
         </div>
+        <div class="custom-mins-row">
+          <input type="number" id="nap-custom-mins" min="{{ min_replan_minutes }}"
+                 max="{{ max_replan_minutes }}" step="5" placeholder="or type minutes">
+          <button type="button" class="tap-btn" id="nap-custom-go">Use this</button>
+        </div>
       </div>
     </div>
     <div class="nap-prompt" id="behind-prompt" hidden>
-      <p>How far behind are you running?</p>
+      <p>How much longer do you need here?</p>
       <div class="chips" id="behind-length-bar">
         <button type="button" class="tap-btn" data-mins="15">15 min</button>
         <button type="button" class="tap-btn" data-mins="30">30 min</button>
         <button type="button" class="tap-btn" data-mins="45">45 min</button>
         <button type="button" class="tap-btn" data-mins="60">1 hour</button>
+      </div>
+      <div class="custom-mins-row">
+        <input type="number" id="behind-custom-mins" min="{{ min_replan_minutes }}"
+               max="{{ max_replan_minutes }}" step="5" placeholder="or type minutes">
+        <button type="button" class="tap-btn" id="behind-custom-go">Use this</button>
       </div>
     </div>
     <div class="nap-prompt" id="theme-prompt" hidden>
@@ -80,8 +96,6 @@
     <div class="nap-prompt" id="replan-confirm" hidden>
       <p id="replan-confirm-text"></p>
       <div class="chips">
-        <input type="text" id="replan-note-text" class="replan-note-input" hidden
-               placeholder="Anything specific? (optional)">
         <button type="button" class="tap-btn" id="replan-confirm-no">No, keep current plan</button>
         <button type="button" class="tap-btn" id="replan-confirm-yes">Yes, replan</button>
       </div>
@@ -139,6 +153,9 @@
   const host = document.getElementById("timeline-host");
   const timeField = document.getElementById("current-time");
   const status = document.getElementById("replan-status");
+  // Declared up here with the other early handles because renderTimeline now
+  // updates it, and renderTimeline runs before the replan-panel handles below.
+  const currentStopLabel = document.getElementById("current-stop-label");
 
   // Default the current-time field to the local clock (adjustable).
   function pad(n) { return String(n).padStart(2, "0"); }
@@ -235,6 +252,29 @@
             </li>`;
   }
 
+  // Which stop a replan is anchored to, in words. Same nowIndex the timeline
+  // uses, which is the same "latest stop that has already started" rule the
+  // server applies when it splits kept from remaining -- so what this says is
+  // what the replan will actually treat as the current stop.
+  function renderCurrentStop() {
+    const plan = PLANS[active];
+    if (!timeField.value) {
+      currentStopLabel.textContent = "Set a current time to replan";
+      return;
+    }
+    const nowI = nowIndex(plan.stops);
+    if (nowI < 0) {
+      // Before the first stop there is no "here" to nap at or stay longer in,
+      // and the server would have nothing to anchor to either.
+      currentStopLabel.textContent = "Your day hasn't started yet";
+      return;
+    }
+    const stop = plan.stops[nowI];
+    const name = stop.venue ? stop.venue.name
+      : stop.kind === "meal" ? "your lunch stop" : "your current stop";
+    currentStopLabel.textContent = `You're at ${name}`;
+  }
+
   function renderTimeline() {
     const plan = PLANS[active];
     const nowI = nowIndex(plan.stops);
@@ -243,6 +283,7 @@
       return renderStop(s, state);
     }).join("");
     host.innerHTML = `<p class="plan-blurb">${plan.blurb}</p><ol class="timeline">${items}</ol>`;
+    renderCurrentStop();
   }
 
   // Fixed slots: Original (0, never changes), Updated (1, rule-based
@@ -302,7 +343,9 @@
           transit: tripData.transit,
           dining: tripData.dining,
           bedtime: tripData.bedtime,
-          minutes: minutes || null,
+          // Not `minutes || null`: that turned a typed 0 into "no answer",
+          // which the server then read as its 45 or 90 minute default.
+          minutes: (minutes === null || minutes === undefined) ? null : minutes,
           theme: theme || null,
           nap_notes: tripData.nap_notes,
           extra_notes: tripData.extra_notes,
@@ -313,6 +356,7 @@
       if (!res.ok) throw new Error(newPlan.error || "Something went wrong.");
       PLANS[1] = newPlan;
       active = 1;
+      replanNoteText.value = "";
       renderTabs();
       renderTimeline();
       const time = newPlan.from_time || nowDisplay();
@@ -341,8 +385,9 @@
     behindPrompt.hidden = true;
     themePrompt.hidden = true;
     replanConfirm.hidden = true;
-    replanNoteText.hidden = true;
-    replanNoteText.value = "";
+    // The note is a panel-level field now, not part of any prompt, so it is
+    // deliberately not cleared here: typing a note and then picking a duration
+    // used to wipe what was just typed. It clears after a replan succeeds.
   }
 
   // Label lookup for the confirm prompt, built from the chips already on
@@ -351,9 +396,6 @@
   document.querySelectorAll("#situation-bar [data-situation]").forEach((btn) => {
     SITUATION_LABELS_JS[btn.dataset.situation] = btn.textContent.trim();
   });
-
-  // Situations vague enough as buttons alone that a free-text note helps.
-  const NOTE_ELIGIBLE_SITUATIONS = new Set(["weather_rain", "change_theme"]);
 
   // Nothing re-plans until the parent confirms and picks a method.
   let pendingSituation = null;
@@ -367,7 +409,6 @@
       ? `Change the theme to “${pendingTheme}”`
       : (SITUATION_LABELS_JS[situation] || "Something happened");
     replanConfirmText.textContent = `${label}. Want to replan?`;
-    replanNoteText.hidden = !NOTE_ELIGIBLE_SITUATIONS.has(situation);
     replanConfirm.hidden = false;
   }
   document.getElementById("replan-confirm-no").addEventListener("click", hidePrompts);
@@ -396,6 +437,28 @@
       showReplanConfirm(situation, null);
     });
   });
+
+  // A typed duration is a second route into the same confirm step as the
+  // presets. Out-of-range or non-numeric input is clamped server-side in
+  // interactions._replan_minutes, so this only has to refuse an empty box.
+  function wireCustomMinutes(inputId, buttonId, situation) {
+    const input = document.getElementById(inputId);
+    const go = document.getElementById(buttonId);
+    function submit() {
+      const mins = Number(input.value);
+      if (!input.value.trim() || Number.isNaN(mins)) {
+        status.hidden = false;
+        status.textContent = "Type how many minutes first.";
+        return;
+      }
+      hidePrompts();
+      showReplanConfirm(situation, mins);
+    }
+    go.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  }
+  wireCustomMinutes("nap-custom-mins", "nap-custom-go", "nap_happened");
+  wireCustomMinutes("behind-custom-mins", "behind-custom-go", "running_behind");
 
   // Pick a theme -> confirm before re-picking the remaining stops toward it.
   document.getElementById("theme-choice-bar").querySelectorAll("[data-theme]").forEach((btn) => {

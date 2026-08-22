@@ -8,16 +8,23 @@ location calls without changing their signatures or the UI that calls them.
 from datetime import datetime
 
 from .filters import filter_by_features
+from .form_helpers import clamp_int
 from .itinerary import THEMES, stop_duration, venue_open_for
 
-# Situation buttons shown on a chosen plan: (key, label).
+# Situation buttons shown on a chosen plan: (key, label). The "running_behind"
+# key is deliberately no longer its label: the option was "Running behind", and
+# renaming the key would break any stored plan label or in-flight request for
+# nothing, since the behaviour is the same either way (slide the rest of the day
+# later). "something_else" carries only the parent's own words -- see the
+# fall-through in _apply_situation.
 SITUATION_OPTIONS = [
     ("nap_happened", "Nap happened here"),
-    ("running_behind", "Running behind"),
+    ("running_behind", "Need to stay here longer"),
     ("skip_next", "Skip next stop"),
     ("finished_early", "Finished this stop early"),
     ("weather_rain", "It's raining"),
     ("change_theme", "Change the theme"),
+    ("something_else", "Anything else"),
 ]
 SITUATION_LABELS = dict(SITUATION_OPTIONS)
 
@@ -46,6 +53,15 @@ RUNNING_BEHIND_DELAY = 45
 FINISHED_EARLY_BUFFER = 15
 # Fallback nap length when the child's usual nap length isn't known.
 DEFAULT_NAP_LENGTH_MIN = 90
+# Bounds on a parent-typed duration. The preset chips could only ever send a
+# sane number; a free textbox can send anything, and unclamped it reaches
+# arithmetic that has no guard: a negative runs the day backwards, and anything
+# over a day wraps in _minutes_to_display so a stop reappears in the small hours
+# and sorts ahead of the stops already done. The floor is above zero because
+# every situation that reads a duration is asking "how much longer", where zero
+# is not an answer.
+MIN_REPLAN_MINUTES = 5
+MAX_REPLAN_MINUTES = 6 * 60
 # How soon after "it's raining"/"change the theme" fires the family is
 # assumed to wrap up the current stop and move on -- long enough to pay up
 # and get moving, short enough the day doesn't just drift through the rain
@@ -175,7 +191,21 @@ def _enforce_hours(stops, venues, features):
     return result
 
 
-def _apply_situation(situation, remaining, now, venues, features, used_names, theme=None):
+def _bonus_before_bedtime(start, venues, features, used, bedtime_min, **kwargs):
+    """A bonus stop at ``start``, or nothing if it would run past bedtime.
+
+    Returns a list so callers can splice it in either way. The two branches
+    that add a bonus stop used to skip the bedtime check that _shift_and_cap
+    applies to every other stop, so a day could end with an invented stop after
+    the child was meant to be asleep.
+    """
+    if not _fits_before_bedtime(start, "activity", bedtime_min):
+        return []
+    return [_bonus_stop(start, venues, features, used, **kwargs)]
+
+
+def _apply_situation(situation, remaining, now, venues, features, used_names,
+                     theme=None, bedtime_min=None):
     """Re-decide the stops still ahead. Returns a fresh list of stop dicts."""
     if situation in ("weather_rain", "change_theme"):
         # The family is assumed to wrap up the current stop and move on
@@ -187,9 +217,10 @@ def _apply_situation(situation, remaining, now, venues, features, used_names, th
         used = set(used_names)
         anchor = now + THEME_CHANGE_BUFFER_MIN
         if not remaining:
-            return [_bonus_stop(
-                anchor, venues, features, used, theme_types=theme_types,
-                reason=f"✨ A {theme or 'new'}-friendly stop for the rest of the day.")]
+            return _bonus_before_bedtime(
+                anchor, venues, features, used, bedtime_min,
+                theme_types=theme_types,
+                reason=f"✨ A {theme or 'new'}-friendly stop for the rest of the day.")
         # Meal and nap stops have their own real scheduling constraints (a
         # lunch spot, a nap window) -- pulling them earlier just because the
         # theme changed doesn't make sense, same reason _retheme_stop never
@@ -214,15 +245,16 @@ def _apply_situation(situation, remaining, now, venues, features, used_names, th
             return []
         dropped = remaining[0]
         rest = [dict(s) for s in remaining[1:]]
-        bonus = _bonus_stop(_display_to_minutes(dropped["time"]), venues, features, used_names)
-        return [bonus] + rest
+        bonus = _bonus_before_bedtime(_display_to_minutes(dropped["time"]),
+                                       venues, features, used_names, bedtime_min)
+        return bonus + rest
 
     if situation == "finished_early":
         # This stop wrapped up early. Keep going, just sooner: pull the rest of
         # the day earlier to use the freed time, and -- if the freed time opens a
         # slot -- fit a real extra stop into it.
         if not remaining:
-            return [_bonus_stop(now, venues, features, used_names)]
+            return _bonus_before_bedtime(now, venues, features, used_names, bedtime_min)
         starts = [_display_to_minutes(s["time"]) for s in remaining]
         shift = max(0, starts[0] - (now + FINISHED_EARLY_BUFFER))
         out = []
@@ -234,12 +266,35 @@ def _apply_situation(situation, remaining, now, venues, features, used_names, th
         out[0]["reason"] = "Moved up after finishing early. " + out[0]["reason"]
         if shift > 0:
             # The old last slot is now free -- fit an extra stop into it.
-            out.append(_bonus_stop(starts[-1], venues, features, used_names))
+            out += _bonus_before_bedtime(starts[-1], venues, features,
+                                          used_names, bedtime_min)
         return out
 
-    # "nap_happened" and "running_behind" are handled specially in replan()
-    # (they need the bedtime to cap the day), so they never reach here.
+    # "something_else" lands here, and so does anything unrecognised: keep the
+    # rest of the day exactly as planned and let the AI adjuster act on whatever
+    # the parent typed. "nap_happened" and "running_behind" never reach here,
+    # being handled in replan() where the bedtime cap lives.
     return [dict(s) for s in remaining]
+
+
+def _replan_minutes(minutes, default):
+    """A parent-typed duration in minutes, or ``default`` when they gave none.
+
+    Presets could only ever send a sane number, so nothing used to check this.
+    A free textbox can send anything, so everything unusable lands on the
+    default or the nearest bound here rather than reaching arithmetic that has
+    no guard of its own. Note zero clamps up to the floor instead of falling
+    back: someone who types 0 means "no extra time", which is far closer to the
+    floor than to a 45 or 90 minute default they never asked for.
+    """
+    if minutes is None or minutes == "":
+        return default
+    return clamp_int(minutes, MIN_REPLAN_MINUTES, MAX_REPLAN_MINUTES, default)
+
+
+def _fits_before_bedtime(start, kind, bedtime_min):
+    """Whether a stop of ``kind`` starting at ``start`` ends before bedtime."""
+    return bedtime_min is None or start + stop_duration(kind) <= bedtime_min
 
 
 def _shift_and_cap(stops, shift, bedtime_min):
@@ -248,7 +303,7 @@ def _shift_and_cap(stops, shift, bedtime_min):
     out = []
     for stop in stops:
         start = _display_to_minutes(stop["time"]) + shift
-        if bedtime_min is not None and start + stop_duration(stop["kind"]) > bedtime_min:
+        if not _fits_before_bedtime(start, stop["kind"], bedtime_min):
             continue
         moved = dict(stop)
         moved["time"] = _minutes_to_display(start)
@@ -268,13 +323,21 @@ def _running_behind(remaining, delay, bedtime_min):
 def _nap_here(kept, remaining, bedtime_min, nap_length):
     """Child fell asleep at the current stop: extend that stop by ``nap_length``,
     push the remaining stops later to start after it, cancel any separately
-    scheduled nap, and drop stops that would then run past bedtime."""
+    scheduled nap, and drop stops that would then run past bedtime.
+
+    Returns ``(kept, remaining)`` rather than one list, so the caller can
+    re-check opening hours on the stops ahead without exposing the stops that
+    already happened to being swapped or dropped.
+    """
     kept = [dict(s) for s in kept]
     # The scheduled nap is redundant now the nap has happened here.
     remaining = [s for s in remaining if s["kind"] != "nap"]
 
     if not kept:
-        return kept + [dict(s) for s in remaining]
+        # Nothing has started yet, so there is no "here" to nap at. Cancelling
+        # the scheduled nap is still right (they are asleep now), but there is
+        # no current stop to extend and nothing to shift around it.
+        return kept, [dict(s) for s in remaining]
 
     current = kept[-1]
     extended_end = _display_to_minutes(current["time"]) + nap_length
@@ -287,7 +350,7 @@ def _nap_here(kept, remaining, bedtime_min, nap_length):
         # preserving the gaps between the rest.
         shift = max(0, extended_end - _display_to_minutes(remaining[0]["time"]))
         out = _shift_and_cap(remaining, shift, bedtime_min)
-    return kept + out
+    return kept, out
 
 
 def replan(plan, situation, current_time, venues=None, features=None,
@@ -301,7 +364,8 @@ def replan(plan, situation, current_time, venues=None, features=None,
     situation fill freed time with a real, feature-matched venue that isn't
     already in the day. ``bedtime`` ('HH:MM') caps the day; ``minutes`` is the
     parent-entered duration -- the nap length for "nap happened here", the
-    delay for "running behind". ``theme`` is the parent-picked target theme
+    delay for "running behind" -- clamped here rather than trusted, since it
+    now comes from a free textbox as well as from presets. ``theme`` is the parent-picked target theme
     for "change_theme" (ignored otherwise -- "weather_rain" always targets
     "Rainy-day").
 
@@ -327,12 +391,16 @@ def replan(plan, situation, current_time, venues=None, features=None,
 
     if situation == "nap_happened":
         # Extend the current stop for the nap and shift/cap the rest of the day.
-        length = int(minutes) if minutes else DEFAULT_NAP_LENGTH_MIN
-        new_stops = _enforce_hours(
-            _nap_here(kept, remaining, bedtime_min, length), venues, features)
+        length = _replan_minutes(minutes, DEFAULT_NAP_LENGTH_MIN)
+        nap_kept, nap_remaining = _nap_here(kept, remaining, bedtime_min, length)
+        # Only the stops ahead get their hours re-checked. Running the kept
+        # stops through _enforce_hours too would let a stop that already
+        # happened be venue-swapped or dropped, which contradicts this
+        # function's own promise that earlier stops are kept as-is.
+        new_stops = nap_kept + _enforce_hours(nap_remaining, venues, features)
     elif situation == "running_behind":
         # Slide the rest of the day later by the delay, capped at bedtime.
-        delay = int(minutes) if minutes else RUNNING_BEHIND_DELAY
+        delay = _replan_minutes(minutes, RUNNING_BEHIND_DELAY)
         new_stops = kept + _enforce_hours(
             _running_behind(remaining, delay, bedtime_min), venues, features)
     else:
@@ -340,7 +408,8 @@ def replan(plan, situation, current_time, venues=None, features=None,
         # opening); re-decide only the stops ahead so their venues still fit.
         effective_theme = "Rainy-day" if situation == "weather_rain" else theme
         new_remaining = _enforce_hours(
-            _apply_situation(situation, remaining, now, venues, features, used_names, effective_theme),
+            _apply_situation(situation, remaining, now, venues, features,
+                             used_names, effective_theme, bedtime_min),
             venues, features)
         new_stops = kept + new_remaining
     new_stops.sort(key=lambda s: _display_to_minutes(s["time"]))

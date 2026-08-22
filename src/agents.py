@@ -447,6 +447,16 @@ def _validate_plan_edits(edits, draft_stops: list, by_id: dict, ctx: dict):
                 new_min = display_to_min(new_time)
             except (ValueError, IndexError):
                 return None, f"{new_time!r} isn't a recognizable time."
+            # The replan path knows what time it is; the planning path does
+            # not, hence the .get. Without this the model could move the next
+            # stop to before now, and the re-sort in _apply_plan_edits would
+            # then file it among the stops already done.
+            if ctx.get("current_time"):
+                now_min = hhmm_to_min(ctx["current_time"])
+                if new_min <= now_min:
+                    return None, (
+                        f"{name!r} moved to {new_time}, which is at or before the "
+                        f"current time {min_to_display(now_min)}.")
             original_min = display_to_min(target["time"])
             if abs(new_min - original_min) > MAX_ADJUST_NUDGE_MIN:
                 return None, (
@@ -624,6 +634,32 @@ def reload_replan_adjust_prompt() -> None:
     _REPLAN_ADJUST_TEMPLATE = None
 
 
+# What the parent actually asked for, in words, for the two situations that
+# carry a number or a theme. Neither reached the adjuster before: it was told
+# "nap happened here" without being told the nap was three hours, so it was free
+# to nudge stops back inside its 60-minute allowance and undo the request; and
+# for a theme change it never learned the target theme, so a "better fit" swap
+# could put an outdoor venue back into a day rethemed for rain.
+def _duration_asked(situation: str, minutes) -> str:
+    if situation == "nap_happened" and minutes:
+        return f"The nap is expected to last about {minutes} minutes."
+    if situation == "running_behind" and minutes:
+        return (f"They are staying about {minutes} minutes longer than planned, "
+                "and the draft has already slid the rest of the day to match. "
+                "Do not pull stops back to their original times.")
+    return "They did not give a duration."
+
+
+def _theme_asked(situation: str, theme) -> str:
+    if situation == "weather_rain":
+        return ("It started raining, so the rest of the day has been rethemed for "
+                "indoors. Any venue you swap in must work in the rain.")
+    if situation == "change_theme" and theme:
+        return (f"They asked for a \u201c{theme}\u201d day, and the draft has been "
+                "rethemed to match. Any venue you swap in must fit that theme.")
+    return "No theme change was asked for."
+
+
 def _format_stops_for_prompt(stops: list) -> str:
     """Compact, human-readable rendering of a stop list for prompt context
     (kept or originally-planned remaining stops) -- distinct from
@@ -665,6 +701,8 @@ class ReplanningAgent:
             .replace("{dining}", ctx["dining"] or "none")
             .replace("{nap_notes}", ctx.get("nap_notes") or "none")
             .replace("{extra_notes}", ctx.get("extra_notes") or "none")
+            .replace("{duration_asked}", _duration_asked(situation, ctx.get("minutes")))
+            .replace("{theme_asked}", _theme_asked(situation, ctx.get("theme")))
             .replace("{kept_stops}", _format_stops_for_prompt(kept))
             .replace("{remaining_stops}", _format_draft_stops_for_prompt(remaining))
             .replace("{candidate_venues}", _format_venue_candidates(candidates))
@@ -673,7 +711,8 @@ class ReplanningAgent:
 
     def adjust_replan(self, draft_plan, *, current_time, destination, age_months,
                        features=None, transit=None, dining=None, bedtime=None,
-                       nap_notes="", extra_notes="", situation=""):
+                       nap_notes="", extra_notes="", situation="",
+                       minutes=None, theme=None):
         """Given an already-valid rule-based replan draft, proposes a short
         list of edits (never a full regeneration) to the stops still ahead
         of `current_time`, mirroring PlanningAgent.adjust_plan() for the
@@ -706,6 +745,7 @@ class ReplanningAgent:
         ctx = dict(destination=destination, age_months=age_months,
                    current_time=current_time, bedtime=bedtime, dining=dining,
                    nap_notes=nap_notes, extra_notes=extra_notes, transit=transit,
+                   minutes=minutes, theme=theme,
                    strict_schedule=False,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),

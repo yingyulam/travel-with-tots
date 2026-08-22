@@ -94,14 +94,20 @@ time, since nap schedules and stamina differ per child.
 Re-planning never throws away the whole day and starts over. It keeps
 every stop that's already happened, and the stop currently in progress,
 exactly as they were; only the stops still ahead on the clock get
-re-decided. A parent picks one of four situations to describe what's
-going on: "Nap happened here" (an unplanned nap ate into the schedule),
-"Running behind" (the family is simply behind on timing), "Skip next
-stop" (drop the very next planned stop and move on), or "Finished this
-stop early" (there's now spare time before the next stop was supposed to
-start). For situations involving a time change, the parent enters how
-many minutes were gained or lost, and the app shifts the remaining
-schedule accordingly. If a situation frees up time in the day, the app
+re-decided. The panel names the stop it is
+anchored to, so a parent can see what "here" refers to before choosing.
+A parent picks one of these situations to describe what's going on: "Nap
+happened here" (an unplanned nap ate into the schedule), "Need to stay
+here longer" (they are not ready to move on yet), "Skip next stop" (drop
+the very next planned stop and move on), "Finished this stop early"
+(there's now spare time before the next stop was supposed to start),
+"It's raining", "Change the theme", or "Anything else". For the two
+situations involving a duration, the parent either taps a preset or
+types the exact number of minutes, and the app shifts the remaining
+schedule accordingly. A free-text box sits alongside the buttons and is
+sent with every re-plan, so a parent can add "somewhere indoors nearby"
+to any of them; "Anything else" is for when the words are the whole
+request and no button fits. If a situation frees up time in the day, the app
 will try to fill it with a real venue that matches the trip's chosen
 features and isn't already elsewhere in the plan, rather than just
 leaving a gap. The original plan a parent started with is never mutated

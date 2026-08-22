@@ -81,7 +81,8 @@ Renders the chosen `Trip`, top to bottom:
 
 1. Header: destination, transit mode, adjustable **current time**.
 2. **Live timeline**: current stop marked *now*, past stops marked *done*.
-3. **"Something came up?"** situation buttons.
+3. **"Do you need to change your plan?"** situation buttons, headed by the
+   stop the replan is anchored to ("You're at Science World").
 4. **"Need something now?"** find-nearby panel.
 5. **Version switcher** between the original plan and any re-planned versions.
 6. **"Save this plan"** (fresh trip, child picked): saves whichever version
@@ -92,11 +93,18 @@ Each stop shows its time, name, type, neighbourhood, feature badges, and an
 
 **In-trip interactions:**
 
-- Situation buttons (`Nap happened here`, `Running behind`, `Skip next stop`,
-  `Finished this stop early`) call `replan(plan, situation, current_time)`,
-  which keeps current/past stops fixed and re-decides the rest of the day.
-  The result is a **new** version on the `Trip`; the original is never
-  overwritten.
+- Situation buttons (`Nap happened here`, `Need to stay here longer`, `Skip
+  next stop`, `Finished this stop early`, `It's raining`, `Change the theme`,
+  `Anything else`) call `replan(plan, situation, current_time)`, which keeps
+  current/past stops fixed and re-decides the rest of the day. The result is a
+  **new** version on the `Trip`; the original is never overwritten.
+- The two duration situations take either a preset or a **typed number of
+  minutes**, clamped server-side to `MIN_REPLAN_MINUTES`..`MAX_REPLAN_MINUTES`
+  in one place so no caller can shift the day backwards or wrap it past
+  midnight.
+- A panel-level **free-text box** rides along with every replan, not just some
+  of them, and `Anything else` is the note-only route: the rule-based pass
+  leaves the remaining stops alone and the AI adjuster acts on the words.
 - **"Need something now?"** (kid-friendly restaurant, family room, changing
   table, nursing room, quiet spot, other) calls `find_nearby(need)`, which
   returns 1-2 matching venues.

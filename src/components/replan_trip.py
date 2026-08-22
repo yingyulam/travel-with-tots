@@ -31,6 +31,10 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
             age_months=age_months, features=features or [], transit=transit or [],
             dining=dining, bedtime=bedtime, nap_notes=nap_notes,
             extra_notes=extra_notes, situation=situation,
+            # Also to the AI pass, not just the rule-based one: without these
+            # it cannot tell a three-hour nap from a twenty-minute one, or know
+            # which theme the draft was rebuilt for.
+            minutes=minutes, theme=theme,
         )
         draft["stops"] = adjustment["stops"]
     except (ReplanningAgentError, requests.exceptions.RequestException, KeyError) as e:

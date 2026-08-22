@@ -72,6 +72,8 @@ from src.form_helpers import (
     resolve_plan_child,
 )
 from src.interactions import (
+    MAX_REPLAN_MINUTES,
+    MIN_REPLAN_MINUTES,
     NEED_OPTIONS,
     SITUATION_OPTIONS,
     find_nearby,
@@ -770,6 +772,10 @@ def _render_trip(trip, saved=False, trip_form=None):
         feature_options=FEATURE_OPTIONS,
         situation_options=SITUATION_OPTIONS,
         need_options=NEED_OPTIONS,
+        # The custom-duration inputs' min/max come from the same constants the
+        # server clamps to, so the browser and the clamp cannot disagree.
+        min_replan_minutes=MIN_REPLAN_MINUTES,
+        max_replan_minutes=MAX_REPLAN_MINUTES,
     )
 
 

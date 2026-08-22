@@ -196,3 +196,100 @@ class ReplanAdjustRouteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReplanContextTest(unittest.TestCase):
+    """What the adjuster is told. It used to be given the situation's label but
+    neither the duration nor the theme, so it could quietly undo the parent's
+    explicit request while staying inside its own nudge allowance."""
+
+    def setUp(self):
+        self.agent = ReplanningAgent()
+        self.candidates = [_venue(7, "New Museum", type="museum")]
+        self.draft = {
+            "stops": [
+                _draft_stop("10:00 AM", "activity", _draft_venue("Old Park"), reason="kept"),
+                _draft_stop("2:00 PM", "activity", _draft_venue("Afternoon Stop"), reason="ahead"),
+            ],
+        }
+
+    def _prompt(self, **kwargs):
+        captured = {}
+
+        def fake_call(messages, model, response_format=None):
+            captured["prompt"] = messages[0]["content"]
+            return '{"edits": []}', {}, 1.0
+
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter", side_effect=fake_call):
+            self.agent.adjust_replan(
+                self.draft, current_time="13:00", destination="Vancouver",
+                age_months=30, **kwargs)
+        return captured["prompt"]
+
+    def test_a_nap_length_reaches_the_prompt(self):
+        prompt = self._prompt(situation="nap_happened", minutes=180)
+        self.assertIn("180 minutes", prompt)
+
+    def test_a_stay_longer_tells_it_not_to_pull_stops_back(self):
+        prompt = self._prompt(situation="running_behind", minutes=90)
+        self.assertIn("90 minutes", prompt)
+        self.assertIn("Do not pull stops back", prompt)
+
+    def test_the_target_theme_reaches_the_prompt(self):
+        prompt = self._prompt(situation="change_theme", theme="Rainy-day")
+        self.assertIn("Rainy-day", prompt)
+
+    def test_rain_says_the_venue_must_work_indoors(self):
+        prompt = self._prompt(situation="weather_rain")
+        self.assertIn("rain", prompt.lower())
+
+    def test_no_duration_is_stated_plainly(self):
+        prompt = self._prompt(situation="skip_next")
+        self.assertIn("did not give a duration", prompt)
+
+    def test_the_note_only_situation_carries_no_theme_or_duration(self):
+        prompt = self._prompt(situation="something_else")
+        self.assertIn("did not give a duration", prompt)
+        self.assertIn("No theme change", prompt)
+
+
+class ReplanPastTimeGuardTest(unittest.TestCase):
+    """An edit may not move a stop to a time already gone. _apply_plan_edits
+    re-sorts by time, so a stop nudged before `now` would be filed among the
+    stops already done, where the page renders it as finished."""
+
+    def setUp(self):
+        self.agent = ReplanningAgent()
+        self.candidates = [_venue(7, "New Museum", type="museum")]
+        self.draft = {
+            "stops": [
+                _draft_stop("10:00 AM", "activity", _draft_venue("Old Park"), reason="kept"),
+                _draft_stop("1:30 PM", "activity", _draft_venue("Afternoon Stop"), reason="ahead"),
+            ],
+        }
+
+    def _run(self, new_time):
+        reply = ('{"edits": [{"current_venue_name": "Afternoon Stop", '
+                 f'"new_venue_id": 7, "new_time": "{new_time}", "reason": "r"}}]}}')
+        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.agents._call_openrouter",
+                        return_value=(reply, {}, 1.0)):
+            return self.agent.adjust_replan(
+                self.draft, current_time="13:00", destination="Vancouver",
+                age_months=30, situation="skip_next")
+
+    def test_a_time_before_now_is_rejected(self):
+        # 12:45 is inside the 60-minute nudge allowance from 1:30 PM, so only
+        # the current-time check can catch it.
+        with self.assertRaises(ReplanningAgentError):
+            self._run("12:45 PM")
+
+    def test_a_time_at_now_is_rejected(self):
+        with self.assertRaises(ReplanningAgentError):
+            self._run("1:00 PM")
+
+    def test_a_time_after_now_is_allowed(self):
+        result = self._run("1:45 PM")
+        touched = next(s for s in result["stops"] if s["venue"]["name"] == "New Museum")
+        self.assertEqual(touched["time"], "1:45 PM")
