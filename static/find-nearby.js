@@ -77,52 +77,25 @@ document.addEventListener("DOMContentLoaded", () => {
         + "below to search by address instead.";
   }
 
+  // The asking, and its guards, live in geolocate.js so the log-a-place page
+  // shares them rather than re-learning why the button looked dead.
   useLocationBtn.addEventListener("click", () => {
-    // Geolocation only works in a secure context: https, or a localhost
-    // origin. The app binds 0.0.0.0, so reaching it by LAN address silently
-    // fails -- and Chrome reports that as a plain permission denial, which
-    // sends you hunting through browser settings for no reason. Say what is
-    // actually wrong instead.
-    if (window.isSecureContext === false) {
-      locationStatus.textContent =
-        "Browsers only share a location over https or on localhost, and this "
-        + `page was opened at ${window.location.hostname}. Open it at `
-        + `http://localhost:${window.location.port || 80} instead.`;
-      return;
-    }
-    if (!navigator.geolocation) {
-      locationStatus.textContent = `This browser can't share a location. ${fallbackAdvice()}`;
-      return;
-    }
     useLocationBtn.disabled = true;
-    locationStatus.textContent = "Asking your browser for your location…";
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        location = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
+    requestCoordinates({
+      fallbackAdvice,
+      onStatus: (text) => {
+        locationStatus.textContent = text;
+        // Re-enable on anything that isn't the in-flight message, so a refusal
+        // doesn't leave the button stuck.
+        if (!text.startsWith("Asking")) useLocationBtn.disabled = false;
+      },
+      onCoords: (coords) => {
+        location = coords;
         locationStatus.textContent =
-          `Using your location (${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}). Pick a need below.`;
+          `Using your location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}). Pick a need below.`;
         useLocationBtn.disabled = false;
       },
-      (error) => {
-        // Without an explicit timeout this callback may never fire at all --
-        // a desktop with OS location services switched off can leave the
-        // request pending indefinitely, which reads as a dead button.
-        const reason =
-          error.code === error.PERMISSION_DENIED
-            ? "Location sharing was blocked. Check the location permission for "
-              + "this site in your browser's address bar or settings."
-            : error.code === error.TIMEOUT
-              ? "Your browser took too long to answer. On a desktop, check that "
-                + "location services are enabled for it in your system settings."
-              : "Your device couldn't determine a location.";
-        locationStatus.textContent = `${reason} ${fallbackAdvice()}`;
-        useLocationBtn.disabled = false;
-      },
-      { timeout: 10000, maximumAge: 60000 },
-    );
+    });
   });
 
   setLocationBtn.addEventListener("click", () => {

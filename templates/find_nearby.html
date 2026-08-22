@@ -62,5 +62,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='geolocate.js') }}"></script>
 <script src="{{ url_for('static', filename='find-nearby.js') }}"></script>
 {% endblock %}
