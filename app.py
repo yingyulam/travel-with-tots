@@ -78,6 +78,7 @@ from src.itinerary import THEMES
 from src.llms import run_agent
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
+from src.workflows import workflows_by_trigger
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -269,6 +270,14 @@ def save_prompt():
 def components():
     """Architecture inventory: what's real, deterministic, or still planned."""
     return render_template("components.html")
+
+
+@app.route("/workflows")
+@login_required
+@admin_required
+def workflows():
+    """End-to-end use cases, each a chain of the components above."""
+    return render_template("workflows.html", trigger_groups=workflows_by_trigger())
 
 
 @app.route("/agent")

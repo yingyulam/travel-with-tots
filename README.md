@@ -118,13 +118,15 @@ Every page's top-right corner shows login status (a "Log in" button, or an
 avatar when signed in). Signed-in users get a collapsible sidebar with
 navigation to every page, including admin-only pages when applicable.
 
-Admin accounts (`is_admin` flag on `parents`) get three extra pages:
+Admin accounts (`is_admin` flag on `parents`) get extra pages:
 
 | Page         | Purpose                                                                 |
 | ------------ | ------------------------------------------------------------------------ |
 | `/settings`  | Edit the chatbot's knowledge base and system prompt from the browser; saving the knowledge base re-indexes it in the background. |
 | `/chunks`    | Inspect how the knowledge base was chunked; re-run chunking at a different size. |
 | `/results`   | Browse rated chatbot responses and AI-generated plans, each in its own session ("Chatbox" / "Generated Plan") with its own stats, auto-refreshing. |
+| `/components` | Inventory of the app's building blocks, each with its own isolated test page. |
+| `/workflows` | End-to-end use cases, each one a chain of those components. |
 
 ## AI chatbot
 
@@ -340,6 +342,10 @@ travel-with-tots/
 │   │   └── search_web.py          # Web Search component: Tavily Search API
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan/replan)
+│   ├── workflows/                 # one file per workflow, each chaining components
+│   │   ├── nap_time_rescue.py     # replan around a long nap, substitute closed stops
+│   │   ├── answer_with_web_fallback.py  # knowledge base, then live web search
+│   │   └── plan_from_chat.py      # describe a day in chat, get a plan back
 │   └── prompts/
 │       ├── website_chatbot.txt    # chatbot system prompt
 │       ├── plan_adjust.txt        # AI plan adjuster system prompt
@@ -355,6 +361,7 @@ travel-with-tots/
 │   ├── chunks.html                # admin: view and re-run chunking
 │   ├── results.html               # admin: browse ratings, stats per session
 │   ├── components.html            # admin: inventory of the app's components
+│   ├── workflows.html             # admin: use cases chaining those components
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
@@ -391,6 +398,7 @@ travel-with-tots/
 │   ├── test_interactions.py       # unit tests for replan()/find_nearby()
 │   ├── test_dates.py              # unit tests for compute_age
 │   ├── test_geo.py                # unit tests for haversine distance
+│   ├── test_workflows.py          # unit tests for workflow declarations + page
 │   ├── test_db.py                 # unit tests for get_candidate_venues
 │   └── test_results.py            # unit tests for results.py's kind-filtering and stats
 ├── requirements.txt
@@ -438,6 +446,7 @@ transactional.
 | `/results`                      | GET      | Admin: browse rated chatbot responses + generated plans, stats per session |
 | `/results/data`                 | GET      | Admin: poll-able per-session stats + results, for auto-refresh  |
 | `/components`                   | GET      | Admin: inventory of components, each with its own test page     |
+| `/workflows`                    | GET      | Admin: end-to-end use cases, each a chain of components         |
 | `/agent`, `/agent/chat`         | GET, POST | Admin: isolated AI Agent test page + chat (JSON in/out)         |
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |

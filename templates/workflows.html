@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Workflows{% endblock %}
+{% block heading %}Workflows{% endblock %}
+{% block tagline %}End-to-end automations built from components.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">A workflow chains components together. Each one is already built and tested on its own page, so a workflow adds sequencing rather than new risk. <a href="{{ url_for('components') }}">See the components →</a></p>
+  <p class="meta">None of these run yet: the cards below name the chain each one would follow. Amber chips mark a step with nothing behind it yet.</p>
+</section>
+
+{% for label, workflows in trigger_groups %}
+<section class="card">
+  <h2>{{ label }}</h2>
+  <div class="plan-grid">
+    {% for workflow in workflows %}
+    <div class="plan-option">
+      <h3 class="plan-option-title">{{ workflow.emoji }} {{ workflow.name }}</h3>
+      <p>{{ workflow.description }}</p>
+      <div class="badges">
+        {% for step in workflow.steps %}
+        <span class="badge{% if not step.built %} badge-pending{% endif %}">{{ step.component }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}
