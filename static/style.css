@@ -676,6 +676,58 @@ textarea:focus {
   margin-bottom: 0.6rem;
 }
 
+/* Armed-or-not banner on the Plan from chat page. Colour carries the state so
+   it reads at a glance instead of hiding in a line of grey text. The two
+   armed states borrow the badge palette: amber for waiting, green for live. */
+.watch-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.9rem 0 0.7rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border-left: 4px solid #9aa7b8;
+  background: var(--surface);
+  color: #55637a;
+  font-weight: 600;
+}
+
+.watch-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.watch-status[data-state="once"] {
+  border-left-color: #96690b;
+  background: #fdf0d5;
+  color: #96690b;
+}
+
+.watch-status[data-state="many"] {
+  border-left-color: #1e7a3d;
+  background: #e3f5e8;
+  color: #1e7a3d;
+}
+
+/* Only the armed states pulse, so motion means "something is expected". */
+.watch-status:not([data-state="off"]) .watch-dot {
+  animation: watch-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes watch-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.75); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .watch-status .watch-dot {
+    animation: none;
+  }
+}
+
 .revise-progress {
   color: var(--navy);
   font-weight: 600;
@@ -922,6 +974,24 @@ textarea:focus {
   font-size: 0.9rem;
   font-style: italic;
   margin: 0.35rem 0;
+}
+
+/* An agent reply split into one block per line, so each stop stands alone. */
+.reply-blocks {
+  margin: 0.6rem 0 0.4rem;
+}
+
+.reply-title {
+  color: var(--ink);
+  font-weight: 600;
+  margin: 0.6rem 0 0.4rem;
+}
+
+.reply-line {
+  color: #55637a;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 0 0.6rem;
 }
 
 .maps-link {

@@ -237,6 +237,14 @@ document.addEventListener("click", (e) => {
         });
         history.push({ role: "user", content: message });
         history.push({ role: "assistant", content: data.reply });
+
+        // One event per reply, so a page can watch what the agent actually did
+        // with a message without a second chat of its own. The agent test page
+        // and the Plan-from-chat workflow page both listen for this; ordinary
+        // pages have no listener and are unaffected.
+        document.dispatchEvent(new CustomEvent("twt:chat-reply", {
+          detail: { message, ...data },
+        }));
       } catch (err) {
         placeholder.className = "twt-chatbot-msg error";
         placeholder.textContent = err.message || "The chatbot is unavailable right now.";

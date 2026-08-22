@@ -19,7 +19,7 @@ import os
 
 from werkzeug.datastructures import MultiDict
 
-from ..agents import DEFAULT_MODEL, _call_openrouter, _parse_json_reply
+from ..agents import _call_openrouter, _parse_json_reply
 from ..data_loader import FEATURE_LABELS
 from ..form_helpers import (
     DINING_OPTIONS,
@@ -36,6 +36,15 @@ from ..itinerary import THEMES
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 EXTRACT_FORM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "extract_form.txt")
 _EXTRACT_FORM_TEMPLATE = None
+
+# Pinned rather than using agents.DEFAULT_MODEL, which is OpenRouter's free
+# auto-router. The router advertises structured outputs but picks a different
+# model per request, and measured live it honoured the schema only about half
+# the time, failing outright on the rest. It is faster when it works, but this
+# component's failure mode is "no form at all", so a slower model that always
+# answers beats a fast one that sometimes cannot. Everything else keeps using
+# the router.
+EXTRACTOR_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 DINING_KEYS = [key for key, _ in DINING_OPTIONS]
 TRANSIT_NAP_KEYS = [key for key, _ in TRANSIT_NAP_OPTIONS]
@@ -204,7 +213,7 @@ def _found_fields(data: MultiDict) -> list:
     return sorted({"naps" if key in paired else key for key in data})
 
 
-def extract_form(description: str, model: str = DEFAULT_MODEL) -> dict:
+def extract_form(description: str, model: str = EXTRACTOR_MODEL) -> dict:
     """Read a parent's description into a validated planning form.
 
     Returns {"form", "found", "model", "response_time"}. `form` is ready to

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Plan from chat{% endblock %}
+{% block heading %}Plan from chat{% endblock %}
+{% block tagline %}Describe a day in the chat bubble, watch it become the planning form.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Test page for the Plan from chat workflow. Type in the bubble in the corner, which is the agent, and the form it extracted appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+
+  <p class="field-hint">The chain is: your message goes to the AI agent, the agent calls the form extractor, and the filled form shows below for you to check before any plan is built from it. Pick the model in the bubble's own dropdown. Extraction can take a while on a free model, so a turn may sit waiting for a minute or so.</p>
+
+  <div class="action-panel">
+    <p class="panel-title">Watch the chat</p>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="plan-from-chat-run">▶ Run once</button>
+      <button type="button" class="cta-secondary" id="plan-from-chat-listen">👂 Listen</button>
+    </div>
+    <p class="watch-status" id="plan-from-chat-status" data-state="off" role="status" aria-live="polite">
+      <span class="watch-dot" aria-hidden="true"></span>
+      <span id="plan-from-chat-status-text">Not watching</span>
+    </p>
+    <p class="field-hint">Run handles the next message you send, then stops. Listen keeps handling each message until you stop it. Either way, one result per message.</p>
+  </div>
+
+  <p class="field-hint">Fields the description mentioned are marked <span class="badge">from your words</span>; the rest fell back to the form's own <span class="badge badge-pending">default</span>.</p>
+  <div id="plan-from-chat-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='plan-from-chat.js') }}"></script>
+{% endblock %}

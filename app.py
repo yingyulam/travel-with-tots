@@ -30,7 +30,6 @@ from src.agents import (
     ALLOWED_CHAT_MODELS,
     DEFAULT_MODEL,
     WEBSITE_CHATBOT_PROMPT_PATH,
-    ask_website_chatbot,
     reload_website_chatbot_prompt,
 )
 from src.components.extract_form import FormExtractionError, extract_form
@@ -282,28 +281,20 @@ def workflows():
 @login_required
 @admin_required
 def agent_page():
-    """The AI Agent's own chat page -- isolated from the site-wide chatbot
-    widget so it can be tested on its own before (if ever) replacing it."""
+    """The AI Agent's test page. Deliberately has no chat of its own: it uses
+    the real bubble every page carries, and adds a panel showing what the agent
+    actually did with each message, so what's tested here is what a parent gets.
+    There is no /agent/chat any more -- that was a second implementation."""
     return render_template("ai_agent.html")
 
 
-@app.route("/agent/chat", methods=["POST"])
+@app.route("/workflows/plan-from-chat")
 @login_required
 @admin_required
-def agent_chat_route():
-    """One turn of the AI Agent (tool-calling, via LangGraph), as JSON."""
-    data = request.get_json(silent=True) or {}
-    message = (data.get("message") or "").strip()
-    if not message:
-        return jsonify({"error": "message is required"}), 400
-    try:
-        result = run_agent(message, history=data.get("history") or [])
-    except KeyError:
-        return jsonify({"error": "The AI Agent isn't configured yet."}), 500
-    except openai.OpenAIError as e:
-        print(f"AI Agent call failed: {e}")
-        return jsonify({"error": "The AI Agent is unavailable right now. Please try again."}), 502
-    return jsonify(result)
+def plan_from_chat_page():
+    """The Plan from chat workflow's test page: describe a day in the bubble,
+    watch the agent turn it into the planning form."""
+    return render_template("plan_from_chat.html")
 
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
@@ -904,7 +895,13 @@ def find_nearby_route():
 
 @app.route("/chatbot", methods=["POST"])
 def chatbot_route():
-    """Answer a question about how the website works, as JSON."""
+    """One turn of the chat bubble, as JSON.
+
+    The bubble is the AI Agent's interface: the agent decides whether to answer
+    from the knowledge base, read a described day into the planning form, plan a
+    day, or find somewhere nearby. Answering questions is now one of its tools
+    rather than a separate code path, so there is a single implementation behind
+    both this route and the admin agent page."""
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
     if not message:
@@ -914,14 +911,17 @@ def chatbot_route():
     if model not in ALLOWED_CHAT_MODELS:
         model = DEFAULT_MODEL
 
+    # The FAQ tool reads from the index, so the agent is only fully useful once
+    # it's built. Kept as a hard gate rather than a warning, same as before.
     if rag.get_status()["state"] != "ready":
         return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
 
     try:
-        result = ask_website_chatbot(message, model=model, history=data.get("history") or [])
+        result = run_agent(message, history=data.get("history") or [], model=model)
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
-    except requests.exceptions.RequestException:
+    except (openai.OpenAIError, requests.exceptions.RequestException) as e:
+        print(f"Chat turn failed: {e}")
         return jsonify({"error": "The chatbot is unavailable right now. Please try again."}), 502
 
     return jsonify(result)

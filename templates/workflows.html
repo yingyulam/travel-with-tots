@@ -22,6 +22,9 @@
         <span class="badge{% if not step.built %} badge-pending{% endif %}">{{ step.component }}</span>
         {% endfor %}
       </div>
+      {% if workflow.page %}
+      <a class="cta-secondary" href="{{ url_for(workflow.page) }}">Try it</a>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

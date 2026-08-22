@@ -158,21 +158,31 @@ next time; "End chat" clears it on purpose.
 
 ## AI Agent
 
-An admin-only, isolated test page (`/agent`, linked from `/components`) for
-a genuine tool-calling agent, built with
+**The chat bubble is this agent's interface.** A message from the bubble goes
+to a tool-calling agent built with
 [LangGraph](https://langchain-ai.github.io/langgraph/)'s `create_react_agent`
-over an OpenRouter-backed model (`src/llms.py`). Unlike the chatbot above
-(which only ever answers a question), this agent decides *what to do*: given
-a free-text message, it picks between two tools -- planning a full day trip,
-or finding a nearby kid-friendly place -- or just replies directly if
-neither fits. Each tool is a thin wrapper around code that already powers
-the rest of the site (the rule-based planner + `PlanningAgent`'s AI
-adjustment, and `find_nearby`), not new planning logic.
+over an OpenRouter-backed model (`src/llms.py`), which decides *what to do*
+with it. It picks between four tools, each a thin wrapper around code that
+already powers the rest of the site rather than new logic:
 
-It's deliberately isolated: the site-wide chat bubble is untouched and still
-only answers FAQ questions. This page exists to test the tool-calling agent
-on its own before deciding whether it should ever replace or extend the main
-chatbot.
+| Tool | Wraps | For |
+| --- | --- | --- |
+| `answer_faq_tool` | `ask_website_chatbot` | questions about the site, with `[Source N]` citations |
+| `extract_form_tool` | the Form Extractor | a described day, turned into the planning form |
+| `plan_trip_tool` | the Plan Trips component | building an actual itinerary |
+| `find_nearby_tool` | `find_nearby` | somewhere kid-friendly right now |
+
+Answering questions is now one tool among several rather than a separate code
+path, so there is a single implementation behind the bubble and the admin test
+page. Each tool hands back both a short line for the model and the real
+structured result for the caller, because LangGraph otherwise JSON-stringifies
+a returned dict and the caller only gets text.
+
+The test page at `/agent` therefore has **no chat of its own**: it watches real
+bubble traffic and shows which tool ran, what it returned, and the tokens and
+timing. What is tested is what a parent gets. Its model dropdown is the
+bubble's, which makes it the place to check whether a given model can call
+tools at all.
 
 **Getting an OpenRouter API key** (also needed for the chatbot and AI
 planner above -- one key covers all of it):
@@ -245,8 +255,15 @@ anything about sleep goes into `nap_notes`, both of which already render into
 the planner's prompt. Prose a structured field already captured is *not*
 repeated there, so the planner never reads the same constraint twice.
 
-Not yet wired into `/plan` or the chatbot: that chaining is the
-`plan_from_chat` workflow's job (see `/workflows`).
+Reachable from the chat bubble: describing a day there has the agent call this
+component, which is the `plan_from_chat` workflow (see `/workflows`). Not wired
+into `/plan`'s form itself yet.
+
+It pins its own model rather than using the app default, which is OpenRouter's
+free auto-router. The router advertises structured outputs but picks a
+different model per request, and measured live it honoured the schema only
+about half the time. It is faster when it works, but this component's failure
+mode is "no form at all", so a slower model that always answers wins.
 
 ## Find Nearby
 
@@ -392,6 +409,7 @@ travel-with-tots/
 │   ├── results.html               # admin: browse ratings, stats per session
 │   ├── components.html            # admin: inventory of the app's components
 │   ├── workflows.html             # admin: use cases chaining those components
+│   ├── plan_from_chat.html        # admin: Plan from chat workflow test page
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
@@ -413,6 +431,7 @@ travel-with-tots/
 │   ├── replan-trip.js             # Replan a Trip test page's run behaviour
 │   ├── find-nearby.js             # Find Nearby test page's geolocation + run behaviour
 │   ├── extract-form.js            # Form Extractor test page's run behaviour
+│   ├── plan-from-chat.js          # Plan from chat page: watches chat replies
 │   ├── stop-render.js             # shared stop-list rendering for plan-trip.js/replan-trip.js
 │   ├── rag-status.js              # shared polling helper for indexing progress
 │   ├── chunks.js                  # Chunks page re-run behaviour
@@ -432,6 +451,8 @@ travel-with-tots/
 │   ├── test_dates.py              # unit tests for compute_age
 │   ├── test_geo.py                # unit tests for haversine distance
 │   ├── test_workflows.py          # unit tests for workflow declarations + page
+│   ├── test_llms.py               # unit tests for the agent's tools + chat contract
+│   ├── test_workflow_plan_from_chat.py # unit tests for the Plan from chat workflow
 │   ├── test_db.py                 # unit tests for get_candidate_venues
 │   └── test_results.py            # unit tests for results.py's kind-filtering and stats
 ├── requirements.txt
@@ -480,7 +501,8 @@ transactional.
 | `/results/data`                 | GET      | Admin: poll-able per-session stats + results, for auto-refresh  |
 | `/components`                   | GET      | Admin: inventory of components, each with its own test page     |
 | `/workflows`                    | GET      | Admin: end-to-end use cases, each a chain of components         |
-| `/agent`, `/agent/chat`         | GET, POST | Admin: isolated AI Agent test page + chat (JSON in/out)         |
+| `/agent`                        | GET      | Admin: AI Agent test page, watches real chat-bubble traffic      |
+| `/workflows/plan-from-chat`     | GET      | Admin: Plan from chat workflow test page                        |
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |

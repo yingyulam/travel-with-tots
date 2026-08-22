@@ -31,7 +31,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">AI Agent (OpenRouter)</h3>
       <div class="badges"><span class="badge">LLM</span></div>
-      <p>A LangGraph tool-calling agent with 2 tools so far (plan a trip, find a nearby place). Isolated on its own test page for now -- the site's chat bubble is untouched and still just answers FAQ questions.</p>
+      <p>A LangGraph tool-calling agent with 4 tools (answer from the knowledge base, read a described day into the planning form, plan a trip, find a nearby place). This is what the site's chat bubble talks to, so answering questions is now one of its tools rather than a separate code path. Its test page watches real bubble traffic instead of having a chat of its own.</p>
       <a class="cta-secondary" href="{{ url_for('agent_page') }}">Try it</a>
     </div>
     <div class="plan-option">

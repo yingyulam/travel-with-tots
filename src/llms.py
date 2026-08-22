@@ -1,34 +1,78 @@
 """AI Agent: a LangGraph tool-calling agent over OpenRouter.
 
-Isolated from the site-wide FAQ chatbot (src/agents.py's ask_website_chatbot)
-while it's still being tested -- see the "AI Agent" card on /components. Its
-tools are thin wrappers around other components (plan_trip) and existing
-logic (interactions.find_nearby); nothing there changes.
+This is what the site's chat bubble talks to. Its tools are thin wrappers
+around components that already exist and are tested on their own pages, so a
+message can be answered from the knowledge base, turned into a planning form,
+planned into a day, or used to find somewhere nearby, all through one
+implementation rather than two.
+
+Every tool hands back both a short line for the model to read and the real
+structured result for the caller (see `_artifact_of`), because LangGraph
+otherwise JSON-stringifies a returned dict into the tool message and the
+caller can only get a blob of text back.
 """
 
 import os
 
+import requests
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
 from . import interactions
+from .agents import DEFAULT_MODEL, ask_website_chatbot
+from .components.extract_form import FormExtractionError, extract_form
 from .components.plan_trip import plan_trip
 from .data_loader import VENUES
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# Scoped to just this agent (not agents.py's shared DEFAULT_MODEL, used by the
-# chatbot/planner/replanner) -- picked to dodge google/gemma-4-26b-a4b-it:free's
-# shared-pool rate limiting, still a free model.
-AGENT_MODEL = "openai/gpt-oss-20b:free"
 
 SYSTEM_PROMPT = (
-    "You are Travel with Tots' trip-planning assistant. You can plan a day "
-    "trip or find a nearby kid-friendly place using the tools you're given. "
-    "If asked anything outside that, say so plainly and point the parent at "
-    "the chat bubble in the corner of the site for general questions."
+    "You are Travel with Tots' assistant, answering in the chat bubble on the "
+    "site. Use your tools rather than your own knowledge:\n"
+    "- answer_faq_tool for any question about how the site works or what it "
+    "can do. Pass the parent's question through unchanged, and reply with what "
+    "it gives you, keeping its [Source N] markers exactly as they are.\n"
+    "- extract_form_tool when a parent describes a day out they want, so their "
+    "words become the planning form. Pass their whole description.\n"
+    "- plan_trip_tool when they want an actual itinerary built.\n"
+    "- find_nearby_tool when they need somewhere nearby right now.\n"
+    "Use exactly one tool per message. Keep replies short and plain."
 )
+
+# Errors a tool must swallow: the chat route only catches KeyError and
+# OpenAIError, so anything else raised inside a tool escapes as a 500.
+TOOL_ERRORS = (FormExtractionError, requests.exceptions.RequestException, KeyError)
+
+
+@tool(response_format="content_and_artifact")
+def answer_faq_tool(question: str) -> tuple[str, dict]:
+    """Answer a question about the Travel with Tots website from its knowledge
+    base, with [Source N] citations. Use for anything about how the site works,
+    what it can do, or how to use a feature."""
+    try:
+        result = ask_website_chatbot(question)
+    except TOOL_ERRORS as e:
+        return f"The knowledge base is unavailable right now ({type(e).__name__}).", {}
+    return result["reply"], result
+
+
+@tool(response_format="content_and_artifact")
+def extract_form_tool(description: str) -> tuple[str, dict]:
+    """Turn a parent's description of a day out into the planning form. Use
+    when they describe what they want rather than asking a question: times,
+    a child's age, naps, a destination, how many places, preferences. Pass
+    their description through whole, in their own words."""
+    try:
+        # Deliberately not passing the agent's model through: the extractor
+        # needs structured-output support, which not every model offered in the
+        # chat widget advertises, so it keeps its own known-good default.
+        result = extract_form(description)
+    except TOOL_ERRORS as e:
+        return f"Couldn't read a form from that ({type(e).__name__}).", {}
+    found = ", ".join(result["found"]) or "nothing"
+    return f"Filled in from their words: {found}.", result
 
 
 @tool
@@ -53,31 +97,65 @@ def plan_trip_tool(destination: str, age_months: int, wake_up: str = "07:00",
                       dining=dining)
 
 
-def _build_agent():
-    model = ChatOpenAI(
+TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool]
+
+
+def _build_agent(model: str):
+    chat = ChatOpenAI(
         base_url=OPENROUTER_BASE_URL,
         api_key=os.environ["OPENROUTER_API_KEY"],
-        model=AGENT_MODEL,
+        model=model,
     )
-    return create_react_agent(model, [find_nearby_tool, plan_trip_tool], prompt=SYSTEM_PROMPT)
+    return create_react_agent(chat, TOOLS, prompt=SYSTEM_PROMPT)
 
 
-def run_agent(message: str, history: list[dict] | None = None) -> dict:
-    """Runs one turn of the AI Agent: given a free-text message and prior
-    turns ({"role", "content"} dicts, the same shape the site's chatbot
-    already uses), lets it decide whether to call a tool or just reply.
-    Returns {"reply", "model", "tool_calls"} -- tool_calls (name + raw
-    output, in call order) is the concrete proof a tool was actually
-    invoked, not just something the reply claims happened; empty if the
-    agent answered directly. Never logs or prints the API key."""
+def _artifact_of(name: str, tool_messages: list) -> dict:
+    """The structured result of the named tool, or {} if it wasn't called.
+
+    Reads `artifact` rather than `content`: a tool returning a dict has it
+    JSON-stringified into `content` by LangGraph, so the artifact is the only
+    place the real thing survives.
+    """
+    for message in tool_messages:
+        if message.name == name and isinstance(getattr(message, "artifact", None), dict):
+            return message.artifact
+    return {}
+
+
+def run_agent(message: str, history: list[dict] | None = None,
+              model: str = DEFAULT_MODEL) -> dict:
+    """Runs one turn: given a free-text message and prior turns ({"role",
+    "content"} dicts, the shape the chat widget already sends), lets the agent
+    decide which tool to call, if any.
+
+    Returns the same keys the chat widget already consumes ("reply",
+    "sources", "model", "response_time", "input_tokens", "output_tokens") so
+    citations keep rendering and a rating keeps recording model and timing,
+    plus "tool_calls" (name, text output, and structured data per call, in
+    order) as the concrete proof of what actually ran. Never logs the API key.
+    """
     messages = []
     for turn in (history or []):
         cls = HumanMessage if turn.get("role") == "user" else AIMessage
         messages.append(cls(turn.get("content", "")))
     messages.append(HumanMessage(message))
 
-    result = _build_agent().invoke({"messages": messages})
-    reply = result["messages"][-1].content
-    tool_calls = [{"name": m.name, "output": m.content}
-                  for m in result["messages"] if isinstance(m, ToolMessage)]
-    return {"reply": reply, "model": AGENT_MODEL, "tool_calls": tool_calls}
+    result = _build_agent(model).invoke({"messages": messages})
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+
+    # The FAQ tool wraps ask_website_chatbot, so when it ran its result already
+    # carries the citations and usage numbers the widget expects.
+    faq = _artifact_of("answer_faq_tool", tool_messages)
+    return {
+        "reply": result["messages"][-1].content,
+        "sources": faq.get("sources", []),
+        "model": model,
+        "response_time": faq.get("response_time"),
+        "input_tokens": faq.get("input_tokens"),
+        "output_tokens": faq.get("output_tokens"),
+        "tool_calls": [
+            {"name": m.name, "output": m.content,
+             "data": getattr(m, "artifact", None)}
+            for m in tool_messages
+        ],
+    }

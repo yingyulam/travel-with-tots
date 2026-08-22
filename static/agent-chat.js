@@ -1,87 +1,55 @@
-// Standalone AI Agent test page. Deliberately smaller than chatbot.js: no
-// citation parsing, no RAG-indexing polling -- this agent doesn't depend on
-// the knowledge base, it decides between its own tools.
+// AI Agent test page: shows what the agent did with each message sent through
+// the real chat bubble. No chat of its own, deliberately -- the bubble is the
+// agent's interface, so observing it is what tests the path a parent uses.
+// Driven by the "twt:chat-reply" event chatbot.js fires once per reply.
 document.addEventListener("DOMContentLoaded", () => {
-  const messages = document.getElementById("agent-messages");
-  const form = document.getElementById("agent-form");
-  const input = document.getElementById("agent-input");
-  const sendBtn = form.querySelector("button");
-  const runTestBtn = document.getElementById("agent-run-test");
-  const runResult = document.getElementById("agent-run-result");
+  const heading = document.getElementById("agent-heading");
+  const resultList = document.getElementById("agent-result-list");
 
-  let history = [];
-
-  function addMessage(role, text) {
-    const el = document.createElement("div");
-    el.className = "twt-chatbot-msg " + role;
-    el.textContent = text;
-    messages.appendChild(el);
-    messages.scrollTop = messages.scrollHeight;
-    return el;
+  function row(label, value) {
+    const p = document.createElement("p");
+    p.className = "meta";
+    const strong = document.createElement("strong");
+    strong.textContent = `${label}: `;
+    p.append(strong, document.createTextNode(value));
+    return p;
   }
 
-  // The concrete, debuggable proof a tool actually ran -- not just a reply
-  // that claims it did. Shown after every turn, since it's useful beyond
-  // just the "Run test" button.
-  function describeToolCalls(toolCalls) {
-    if (!toolCalls || !toolCalls.length) return "No tool was called -- the agent answered directly.";
-    return toolCalls.map((c) => `✅ Called ${c.name} → ${c.output}`).join("\n");
+  function renderTurn({ message, reply, model, tool_calls, sources }) {
+    const card = document.createElement("div");
+    card.className = "need-card";
+
+    card.appendChild(row("You said", message));
+    card.appendChild(row("Agent replied", reply || "(nothing)"));
+    card.appendChild(row("Model", model || "unknown"));
+
+    const names = (tool_calls || []).map((c) => c.name);
+    card.appendChild(row(
+      "Tools used",
+      names.length ? names.join(", ") : "none, it answered directly"));
+
+    // The structured result is the proof a tool really ran, rather than the
+    // reply merely claiming it did.
+    (tool_calls || []).forEach((call) => {
+      const summary = document.createElement("p");
+      summary.className = "reason";
+      summary.textContent = `${call.name}: ${call.output}`;
+      card.appendChild(summary);
+      if (call.data && Object.keys(call.data).length) {
+        card.appendChild(row(`${call.name} returned`, Object.keys(call.data).join(", ")));
+      }
+    });
+
+    if (sources && sources.length) {
+      card.appendChild(row("Knowledge-base sources", String(sources.length)));
+    }
+
+    // Newest first, so the latest turn is visible without scrolling.
+    resultList.prepend(card);
   }
 
-  async function sendMessage(message) {
-    addMessage("user", message);
-    const placeholder = addMessage("assistant", "Thinking…");
-    try {
-      const res = await fetch("/agent/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Something went wrong.");
-
-      placeholder.textContent = data.reply;
-      history.push({ role: "user", content: message });
-      history.push({ role: "assistant", content: data.reply });
-      return data;
-    } catch (e) {
-      placeholder.className = "twt-chatbot-msg error";
-      placeholder.textContent = e.message || "Couldn't reach the AI Agent right now.";
-      throw e;
-    }
-  }
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const message = input.value.trim();
-    if (!message) return;
-
-    input.value = "";
-    input.disabled = true;
-    sendBtn.disabled = true;
-
-    try {
-      await sendMessage(message);
-    } catch (e) {
-      // already rendered as an error bubble
-    } finally {
-      input.disabled = false;
-      sendBtn.disabled = false;
-      input.focus();
-    }
-  });
-
-  runTestBtn.addEventListener("click", async () => {
-    runTestBtn.disabled = true;
-    runResult.hidden = false;
-    runResult.textContent = "Running…";
-    try {
-      const data = await sendMessage("Find a nearby quiet spot");
-      runResult.textContent = describeToolCalls(data.tool_calls);
-    } catch (e) {
-      runResult.textContent = "Test call failed: " + (e.message || "unknown error");
-    } finally {
-      runTestBtn.disabled = false;
-    }
+  document.addEventListener("twt:chat-reply", (event) => {
+    heading.textContent = "Latest turn first.";
+    renderTurn(event.detail);
   });
 });
