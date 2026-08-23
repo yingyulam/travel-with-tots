@@ -210,8 +210,25 @@ the model's own guesses:
 
 Every reply gets a 👍/👎 rating; clicking one saves the question, answer,
 model, timestamp, response time, and token counts to `data/results.json`
-(git-ignored runtime data). Closing the widget keeps the conversation for
-next time; "End chat" clears it on purpose.
+(git-ignored runtime data).
+
+**The conversation follows you around the site.** The widget is on every page,
+so navigating used to destroy it: it is a script, and a page load starts a new
+one. The transcript is mirrored into `sessionStorage` and replayed on load, so
+closing the panel, moving to another page and reloading all keep it, and
+**"End chat" is the only thing that clears it**.
+
+It is replayed as data through the same render functions that drew it the first
+time, not as saved markup: restored HTML would arrive without its citation and
+button listeners, and putting stored text back through `innerHTML` is exactly
+the shape the trip page was rewritten to remove. So a restored answer still
+opens its sources and its buttons still work. A row of choices already clicked
+is remembered as answered and not offered again, while one never answered comes
+back live, which is what it was on the page.
+
+`sessionStorage`, not `localStorage`, because the workflow state in there
+belongs to one transcript: shared between tabs, two half-filled forms would
+answer each other's questions. The cost is that closing the tab ends the chat.
 
 ## AI Agent
 

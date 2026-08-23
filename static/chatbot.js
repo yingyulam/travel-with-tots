@@ -39,6 +39,15 @@ document.addEventListener("click", (e) => {
 
 (function () {
   const MODEL_STORAGE_KEY = "twt_chatbot_model";
+  // The conversation, so it survives navigating to another page. sessionStorage
+  // rather than localStorage: the workflow state in here belongs to one
+  // transcript, and sharing it between tabs would let two half-filled forms
+  // answer each other's questions. The cost is that closing the tab ends the
+  // chat, the same way closing the browser ends any other page's state.
+  const SESSION_STORAGE_KEY = "twt_chatbot_session";
+  // Enough for a long conversation, bounded so a transcript with citations
+  // cannot grow into the storage quota.
+  const MAX_STORED_TURNS = 40;
   const MAX_HISTORY_TURNS = 10;
   // Matches any bracket that mentions "source"/"sources" (case-insensitive,
   // any spacing) so it also catches model variations like "[source1]" or
@@ -89,14 +98,23 @@ document.addEventListener("click", (e) => {
     function greetOnce() {
       if (greeted) return;
       greeted = true;
+      const record = { kind: "greeting" };
+      turns.push(record);
       const bubbleEl = addMessage("assistant", GREETING);
-      bubbleEl.appendChild(choiceRow(SUGGESTIONS));
+      bubbleEl.appendChild(choiceRow(SUGGESTIONS, () => {
+        record.used = true;
+        save();
+      }));
       history.push({ role: "assistant", content: GREETING });
       messages.scrollTop = messages.scrollHeight;
+      save();
     }
 
     bubble.addEventListener("click", () => {
       panel.hidden = !panel.hidden;
+      // Open or closed travels with the transcript: a parent who left the panel
+      // open mid-answer should find it open on the next page, not collapsed.
+      save();
       if (panel.hidden) return;
       greetOnce();
       if (!form.hidden) input.focus();
@@ -150,17 +168,42 @@ document.addEventListener("click", (e) => {
     // every message. Same grain as history: no cookie size ceiling, no clash
     // between tabs, and it works for a visitor who is not logged in.
     let conversation = null;
+    // Everything on screen, in the order it was rendered, as data rather than
+    // markup. Saved HTML would come back without its citation and choice
+    // listeners, and restoring it would mean handing stored text to innerHTML,
+    // which is the one thing the rest of this file is careful never to do.
+    let turns = [];
+
+    function save() {
+      try {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+          open: !panel.hidden,
+          greeted,
+          planOffered,
+          conversation,
+          history,
+          turns: turns.slice(-MAX_STORED_TURNS),
+        }));
+      } catch (err) {
+        // A full or blocked store is not worth failing a message over. The
+        // chat keeps working for this page, it just will not survive the next.
+      }
+    }
 
     endBtn.addEventListener("click", () => {
       messages.innerHTML = "";
       history = [];
-      // Both must go with the transcript: a stale conversation would resume a
+      turns = [];
+      // These must go with the transcript: a stale conversation would resume a
       // half-filled form the parent can no longer see, and a stale greeted flag
       // would leave the next open unwelcomed.
       conversation = null;
       greeted = false;
       planOffered = false;
       panel.hidden = true;
+      // The only thing that clears the stored chat. Navigating away, closing
+      // the panel and reloading all deliberately keep it.
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
     });
 
     // The assistant's face. An emoji in a circle, following the login pill in
@@ -325,7 +368,9 @@ document.addEventListener("click", (e) => {
 
     // A row of one-tap answers. Clicking sends exactly the text on the button,
     // so a tapped choice and a typed one take the same path through the server.
-    function choiceRow(choices) {
+    // `onUse` records that the row is spent, so restoring the transcript after
+    // a navigation does not put an answered question back on screen.
+    function choiceRow(choices, onUse) {
       const row = document.createElement("div");
       row.className = "twt-chips";
       choices.forEach((choice) => {
@@ -335,6 +380,7 @@ document.addEventListener("click", (e) => {
         btn.textContent = choice;
         btn.addEventListener("click", () => {
           row.remove();          // one answer per question
+          if (onUse) onUse();
           send(choice);
         });
         row.appendChild(btn);
@@ -345,7 +391,7 @@ document.addEventListener("click", (e) => {
     // Buttons for whatever the assistant just offered, so a choice can be
     // clicked as well as typed. They send the same text either way, which
     // keeps one path through the server.
-    function renderFollowUps(bubbleEl, data) {
+    function renderFollowUps(bubbleEl, data, record) {
       // Any of these three means the form-filling flow is running or has just
       // finished, and no other workflow produces them. Cheaper than matching
       // the workflow by name, which would mean threading it into the template.
@@ -366,13 +412,19 @@ document.addEventListener("click", (e) => {
         bubbleEl.appendChild(row);
         return;
       }
+      // A row already clicked is not offered again. Everything else on screen
+      // comes back, including older rows never answered, because those are
+      // still live on the page itself.
+      if (record && record.used) return;
+      const used = () => { if (record) { record.used = true; save(); } };
+
       if (data.choices && data.choices.length) {
-        bubbleEl.appendChild(choiceRow(data.choices));
+        bubbleEl.appendChild(choiceRow(data.choices, used));
         return;
       }
       // Nothing else to offer, so re-offer planning. Only here, or an answer
       // would end with two competing rows of buttons.
-      if (!planOffered) bubbleEl.appendChild(choiceRow([PLAN_SUGGESTION]));
+      if (!planOffered) bubbleEl.appendChild(choiceRow([PLAN_SUGGESTION], used));
     }
 
     // One send path, whether the parent typed the message or clicked a choice
@@ -385,6 +437,7 @@ document.addEventListener("click", (e) => {
       sendBtn.disabled = true;
 
       addMessage("user", message);
+      turns.push({ kind: "user", text: message });
       const placeholder = addMessage("assistant", "Thinking…");
 
       try {
@@ -401,17 +454,24 @@ document.addEventListener("click", (e) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Something went wrong.");
 
-        renderAssistantReply(placeholder, data.reply, data.sources, {
+        const feedback = {
           question: message,
           model: data.model,
           response_time: data.response_time,
           input_tokens: data.input_tokens,
           output_tokens: data.output_tokens,
-        }, data.workflow);
+        };
+        renderAssistantReply(placeholder, data.reply, data.sources, feedback,
+          data.workflow);
         conversation = data.conversation || null;
-        renderFollowUps(placeholder, data);
+        // Recorded before the buttons are drawn, so clicking one can mark this
+        // very turn as answered.
+        const record = { kind: "reply", data, feedback };
+        turns.push(record);
+        renderFollowUps(placeholder, data, record);
         history.push({ role: "user", content: message });
         history.push({ role: "assistant", content: data.reply });
+        save();
 
         // One event per reply, so a page can watch what the agent actually did
         // with a message without a second chat of its own. The agent test page
@@ -421,8 +481,13 @@ document.addEventListener("click", (e) => {
           detail: { message, ...data },
         }));
       } catch (err) {
+        const text = err.message || "The chatbot is unavailable right now.";
         placeholder.className = "twt-chatbot-msg error";
-        placeholder.textContent = err.message || "The chatbot is unavailable right now.";
+        placeholder.textContent = text;
+        // Kept in the transcript, so a parent who navigates away does not come
+        // back to a message of theirs that appears to have gone unanswered.
+        turns.push({ kind: "error", text });
+        save();
       } finally {
         input.disabled = false;
         sendBtn.disabled = false;
@@ -434,5 +499,57 @@ document.addEventListener("click", (e) => {
       event.preventDefault();
       send(input.value.trim());
     });
+
+    // Rebuilds the transcript through the same render functions that drew it
+    // the first time, so a restored reply keeps its citations, its badge and
+    // its buttons rather than being a screenshot of one.
+    function restore() {
+      let saved = null;
+      try {
+        saved = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY));
+      } catch (err) {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+      if (!saved || !Array.isArray(saved.turns)) return;
+
+      greeted = Boolean(saved.greeted);
+      // Recomputed by the replay below rather than restored, so each turn is
+      // drawn with the flag as it stood at the time and gets back the buttons
+      // it actually had.
+      planOffered = false;
+      conversation = saved.conversation || null;
+      history = Array.isArray(saved.history) ? saved.history : [];
+      turns = saved.turns;
+
+      turns.forEach((turn) => {
+        if (turn.kind === "user") {
+          addMessage("user", turn.text);
+        } else if (turn.kind === "greeting") {
+          const bubbleEl = addMessage("assistant", GREETING);
+          if (!turn.used) {
+            bubbleEl.appendChild(choiceRow(SUGGESTIONS, () => {
+              turn.used = true;
+              save();
+            }));
+          }
+        } else if (turn.kind === "error") {
+          const bubbleEl = addMessage("assistant", turn.text);
+          bubbleEl.className = "twt-chatbot-msg error";
+        } else if (turn.kind === "reply" && turn.data) {
+          const bubbleEl = addMessage("assistant", "");
+          renderAssistantReply(bubbleEl, turn.data.reply, turn.data.sources,
+            turn.feedback, turn.data.workflow);
+          renderFollowUps(bubbleEl, turn.data, turn);
+        }
+      });
+
+      // The replay only saw the turns still stored, so an older offer trimmed
+      // by MAX_STORED_TURNS is remembered from the saved flag instead.
+      planOffered = planOffered || Boolean(saved.planOffered);
+      panel.hidden = !saved.open;
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    restore();
   });
 })();
