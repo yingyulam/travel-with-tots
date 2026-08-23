@@ -351,6 +351,19 @@ def plan_from_chat_page():
     return render_template("plan_from_chat.html")
 
 
+@app.route("/workflows/find-nearby-place")
+@login_required
+@admin_required
+def find_nearby_place_page():
+    """The Find a nearby place workflow's test page: ask the bubble for
+    somewhere you need, watch the workflow answer.
+
+    Its own page rather than the Find Nearby component's: that one calls the
+    component directly, so it exercises the search without ever running the
+    workflow the card names."""
+    return render_template("find_nearby_place.html")
+
+
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
 

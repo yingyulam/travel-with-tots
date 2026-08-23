@@ -170,8 +170,9 @@ WORKFLOW = {
     "name": "Find a nearby place",
     "emoji": "📍",
     "trigger": "message",
-    # The component's own admin page, where the same chain runs in isolation.
-    "page": "find_nearby_page",
+    # This workflow's own test page. Not the component's page, which calls
+    # find_nearby directly and so never runs the workflow this card names.
+    "page": "find_nearby_place_page",
     "description": (
         "A parent asks the chat for something they need right now and the agent "
         "hands it to Find nearby stops, which picks its own source: the curated "

@@ -485,6 +485,26 @@ LangGraph artifact, so the agent's answer renders the same cards the workflow's
 does. The trip page's no-location branch used to report `source: "curated"`
 without having consulted anything; it now reports the source it actually used.
 
+### Watching a workflow run
+
+Each workflow with a test page has the same two controls, and they mean the
+same thing on both: **▶ Run once** arms the page so the next message you send
+in the chat bubble is captured and shown, then disarms itself. **👂 Listen**
+keeps capturing until you stop it. The chat bubble stays the input on purpose,
+because then what the page shows is what a parent really gets, rather than a
+canned sample travelling a code path nobody uses.
+
+`/workflows/find-nearby-place` watches this workflow the way
+`/workflows/plan-from-chat` watches the other. Each captured turn shows what
+you said, which path answered, the reply, and every place found as a card with
+its distance and a working Maps link. It says **curated** or **web search** so
+the two sources are never confused, and a message this workflow did not handle
+is labelled with whatever did rather than rendered as an empty result.
+
+Its card used to link to the Find Nearby *component's* page, which calls the
+search directly and never runs the workflow, so "Try it" led somewhere that did
+not try it.
+
 ## Web Search
 
 Another admin-only, isolated component test page (`/search-web`, linked from
@@ -714,6 +734,7 @@ travel-with-tots/
 │   ├── components.html            # admin: inventory of the app's components
 │   ├── workflows.html             # admin: use cases chaining those components
 │   ├── plan_from_chat.html        # admin: fill-the-form-from-chat workflow test page
+│   ├── find_nearby_place.html     # admin: find-a-nearby-place workflow test page
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
@@ -816,6 +837,7 @@ transactional.
 | `/workflows`                    | GET      | Admin: end-to-end use cases, each a chain of components         |
 | `/agent`                        | GET      | Admin: AI Agent test page, watches real chat-bubble traffic      |
 | `/workflows/plan-from-chat`     | GET      | Admin: fill-the-form-from-chat workflow test page               |
+| `/workflows/find-nearby-place`  | GET      | Admin: find-a-nearby-place workflow test page                   |
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |

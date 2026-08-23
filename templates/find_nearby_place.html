@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Find a nearby place{% endblock %}
+{% block heading %}Find a nearby place{% endblock %}
+{% block tagline %}Ask the chat bubble for somewhere you need, watch the workflow answer.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Test page for the "Find a nearby place" workflow. Type in the bubble in the corner, which is the agent, and the places it found appear here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+
+  <p class="field-hint">The chain is: your message goes to the intent classifier, a match runs the workflow, the geocoder turns any shared location into a place, and Find Nearby searches the curated venues, falling back to a live web search when nothing there matches. Try "find the nearest nursing room", or "where can I change a nappy". Sharing your location in the bubble ranks the results by real distance.</p>
+
+  <div class="action-panel">
+    <p class="panel-title">Watch the chat</p>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="find-nearby-place-run">▶ Run once</button>
+      <button type="button" class="cta-secondary" id="find-nearby-place-listen">👂 Listen</button>
+    </div>
+    <p class="watch-status" id="find-nearby-place-status" data-state="off" role="status" aria-live="polite">
+      <span class="watch-dot" aria-hidden="true"></span>
+      <span id="find-nearby-place-status-text">Not watching</span>
+    </p>
+    <p class="field-hint">Run handles the next message you send, then stops. Listen keeps handling each message until you stop it. Either way, one result per message.</p>
+  </div>
+
+  <p class="field-hint">Places from the venue table are marked <span class="badge">curated</span>; ones a live search turned up are marked <span class="badge badge-pending">web search</span>, because nobody here has checked those. Each card also shows which path answered, so a message the classifier sent elsewhere cannot be misread as this workflow's.</p>
+  <div id="find-nearby-place-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='find-nearby-place.js') }}"></script>
+{% endblock %}
