@@ -572,8 +572,18 @@ document.addEventListener("click", (e) => {
       if (record && record.used) return;
       const used = () => { if (record) { record.used = true; save(); } };
 
+      // While a workflow is still open, leaving is always on offer. The label
+      // comes from the server, so the button's text and the words the server
+      // recognises cannot drift apart. Appended to the same row as any other
+      // choices, since it is one more way to answer the question just asked.
+      const leaving = data.cancel_choice ? [data.cancel_choice] : [];
+
       if (data.choices && data.choices.length) {
-        bubbleEl.appendChild(choiceRow(data.choices, used));
+        bubbleEl.appendChild(choiceRow([...data.choices, ...leaving], used));
+        return;
+      }
+      if (leaving.length) {
+        bubbleEl.appendChild(choiceRow(leaving, used));
         return;
       }
       // Nothing else to offer, so re-offer planning. Only here, or an answer

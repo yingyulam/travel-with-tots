@@ -25,7 +25,7 @@ from .components.extract_form import FormExtractionError, extract_form
 from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
 from .data_loader import SUPPORTED_CITIES
-from .intent import classify_intent, log_decision
+from .intent import CANCEL_CHOICE, classify_intent, is_cancel, log_decision
 from .workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -154,6 +154,9 @@ def handle_message(message: str, history: list[dict] | None = None,
     `context` is what the request knew that the message did not, today the
     browser's coordinates. Every workflow is handed it; most ignore it.
 
+    A message that asks to cancel ends whatever flow is running and answers
+    plainly, without reaching the workflow or the classifier at all.
+
     `conversation` is {"workflow", "state"} when a workflow is mid-flow. While
     one is, the classifier is skipped entirely: "two year old" and "yes" are
     answers to the question just asked, not new intents, and routing them would
@@ -161,6 +164,24 @@ def handle_message(message: str, history: list[dict] | None = None,
     """
     offered = runnable_message_workflows()
     in_flight = (conversation or {}).get("workflow")
+
+    if in_flight and is_cancel(message):
+        # Skipping the classifier mid-flow is what makes "yes" an answer rather
+        # than an intent, and it is also what used to make a workflow a room
+        # with no door: the only ways out were finishing it or ending the chat.
+        # Checked before dispatch, so it works for every workflow rather than
+        # each one having to remember. Logged against the workflow that was in
+        # play with ran=False, which is exactly what happened.
+        log_decision(message, in_flight, ran=False)
+        return {
+            "reply": ("No problem, I've stopped there. What else can I help "
+                      "you with?"),
+            "sources": [], "model": model, "response_time": None,
+            "input_tokens": None, "output_tokens": None, "tool_calls": [],
+            "workflow": None, "conversation": None, "choices": None,
+            "form": None, "open_form": False, "places": [], "source": None,
+            "ask_location": False, "cancelled": in_flight,
+        }
 
     if in_flight:
         chosen = in_flight
@@ -213,6 +234,11 @@ def handle_message(message: str, history: list[dict] | None = None,
                 "places": result.get("places") or [],
                 "source": result.get("source"),
                 "ask_location": result.get("ask_location", False),
+                # Offered on every turn a workflow stays open, so leaving is
+                # always one tap away. Sent from here rather than built in the
+                # widget, so the label the parent clicks and the words this
+                # side recognises are the same string.
+                "cancel_choice": CANCEL_CHOICE if next_state else None,
             }
     else:
         log_decision(message, None, ran=False)

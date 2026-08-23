@@ -19,11 +19,10 @@ are none: read_form({}) returns a perfectly plannable form. REQUIRED below is
 this conversation's own judgement about what is worth asking for.
 """
 
-import re
-
 from ..components.extract_form import extract_form
 from ..data_loader import SUPPORTED_CITIES
 from ..form_helpers import DEFAULTS
+from ..intent import matches_only
 
 # Asked for before handing the form over, in the order they are asked. Not the
 # fields plan_trip needs (it needs only destination and an age) but the ones
@@ -102,26 +101,6 @@ _NO_NAP = ("doesn't nap", "does not nap", "dont nap", "don't nap",
            "no longer nap", "stopped napping", "dropped the nap",
            "dropped her nap", "dropped his nap", "no naps", "no nap")
 
-# Dropped before matching, so "yes please" is the same answer as "yes".
-_FILLER = ("please", "thanks", "thank you")
-
-
-def _is_only(message: str, vocabulary: tuple) -> bool:
-    """True when the whole message is that one kind of answer and nothing else.
-
-    Every clause has to match, rather than the message merely starting with a
-    matching word: "yes, but make it four stops" is a correction, and accepting
-    it would hand over a form the parent had just asked to change. It is also
-    why a button's own label has to parse here, since "Yes, that's right" is
-    two affirmations rather than one.
-    """
-    text = message.lower()
-    for filler in _FILLER:
-        text = text.replace(filler, " ")
-    parts = [part.strip(" !.?") for part in re.split(r"[,.!?]| and ", text)]
-    parts = [part for part in parts if part]
-    return bool(parts) and all(part in vocabulary for part in parts)
-
 
 # Only one of the two ways is tested for. Anything that is not asking for the
 # form carries on here, which is where the parent already is, so an unclear
@@ -155,7 +134,7 @@ def _declined(message: str, field: str) -> bool:
     Two shapes: the whole message is a negative, which works for any question,
     or it says the child does not nap, which only the nap question can mean.
     """
-    if _is_only(message, _NOTHING):
+    if matches_only(message, _NOTHING):
         return True
     return field == "naps" and any(phrase in message.lower() for phrase in _NO_NAP)
 
@@ -346,14 +325,14 @@ def run(message: str, state: dict | None = None,
                           "asked_extras": False}}
 
     if stage == STAGE_EXTRAS:
-        if _is_only(message, _NOTHING):
+        if matches_only(message, _NOTHING):
             # Nothing to extract, and running the extractor on "no" would only
             # append it to the notes the parent is about to read.
             return _confirm(state)
         return _collect(message, {**state, "stage": STAGE_COLLECTING})
 
     if stage == STAGE_CONFIRMING:
-        if _is_only(message, _YES):
+        if matches_only(message, _YES):
             return {
                 "reply": ("Great. I've got everything ready on the planning "
                           "page. Open it to check the form, or generate the day "

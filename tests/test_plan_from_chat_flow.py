@@ -4,6 +4,7 @@ from unittest import mock
 from src import agent
 from src.form_helpers import DEFAULTS
 from src.data_loader import SUPPORTED_CITIES
+from src.intent import matches_only
 from src.workflows import plan_from_chat
 from src.workflows.plan_from_chat import (
     CONFIRM_CHOICE,
@@ -17,7 +18,6 @@ from src.workflows.plan_from_chat import (
     STAGE_CONFIRMING,
     STAGE_EXTRAS,
     STAGE_OFFERED,
-    _is_only,
     _NOTHING,
     _YES,
     run,
@@ -285,7 +285,7 @@ class IsYesTest(unittest.TestCase):
         for message in ("yes", "Yes!", "Yes, that's right", "yes please",
                         "sure, go ahead", "perfect, thanks", "looks good"):
             with self.subTest(message=message):
-                self.assertTrue(_is_only(message, _YES))
+                self.assertTrue(matches_only(message, _YES))
 
     def test_a_yes_with_a_change_attached_is_not_consent(self):
         # The dangerous half: accepting these would hand over a form the
@@ -293,7 +293,7 @@ class IsYesTest(unittest.TestCase):
         for message in ("yes but make it four stops", "yes, make it four stops",
                         "ok, we're in Burnaby actually", "no", "change the bedtime"):
             with self.subTest(message=message):
-                self.assertFalse(_is_only(message, _YES))
+                self.assertFalse(matches_only(message, _YES))
 
 
 class RequiredFieldsTest(unittest.TestCase):

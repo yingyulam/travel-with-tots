@@ -396,6 +396,23 @@ that the transcript survives navigation. The buttons are locked with a class
 rather than `disabled`, because disabling the submitter mid-submit can drop its
 name from the post, and "Open the form" is nothing but its name.
 
+**Leaving is always one tap away.** Every turn that keeps a workflow open
+offers a **✕ Cancel** button, and typing "cancel", "forget it" or "actually
+never mind" does the same. The check runs before the message is dispatched, so
+it works for every workflow rather than each one having to remember, and it
+reaches neither the workflow nor the classifier: a model call to be told
+"never mind" is a call worth not making. Skipping the classifier mid-flow is
+what makes "yes" an answer rather than an intent, but it also used to make a
+workflow a room with no door, where the only ways out were finishing it or
+ending the chat and losing the transcript.
+
+The words are matched against the **whole** message, so "stop by the park at 3"
+stays a description of a day. Softeners in front are dropped first, because
+walking the flow showed "actually never mind" is the obvious way to say this
+and a whole-message match had no room for the "actually". The button's label is
+sent by the server rather than written into the widget, so the text a parent
+clicks and the words the server recognises cannot drift apart.
+
 While a flow is in progress **the classifier is skipped entirely**. Mid-flow,
 "two year old" and "yes" are answers to the question just asked, not new
 intents, and routing them would derail the conversation. The state travels with
