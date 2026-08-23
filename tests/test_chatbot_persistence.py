@@ -103,5 +103,130 @@ class LinkTargetsAreCheckedTest(unittest.TestCase):
         self.assertRegex(source, r"if \(href\) \{")
 
 
+class TheInputGrowsWithTheMessageTest(unittest.TestCase):
+    """One line for a question, taller for a described day. Behaviour was
+    verified against a DOM shim; these guard what is easy to lose."""
+
+    def setUp(self):
+        with open("templates/_chatbot_widget.html") as f:
+            self.markup = f.read()
+        with open("static/chatbot.css") as f:
+            self.css = f.read()
+
+    def test_it_is_a_textarea_that_starts_at_one_row(self):
+        # A one-line input cannot grow at all, and more than one starting row
+        # would make a short question look like a form.
+        self.assertIn("<textarea", self.markup)
+        self.assertIn('rows="1"', self.markup)
+
+    def test_the_height_is_cleared_before_it_is_measured(self):
+        # Without this it can only ever grow: scrollHeight would report the
+        # box it is already in rather than the text inside it.
+        grow = re.search(r"function fitInput\(\).*?\n    \}",
+                         _source(), re.DOTALL).group(0)
+        self.assertLess(grow.index('input.style.height = "auto"'),
+                        grow.index("input.scrollHeight"))
+
+    def test_it_regrows_on_every_keystroke_and_after_sending(self):
+        source = _source()
+        self.assertIn('input.addEventListener("input", fitInput)', source)
+        # Sending empties the box, which has to shrink it back to one line.
+        send = re.search(r'input\.value = "";\n\s*fitInput\(\);', source)
+        self.assertIsNotNone(send, "the box must shrink after a message is sent")
+
+    def test_it_stops_growing_and_starts_scrolling(self):
+        # Otherwise a long paste pushes the send button off the panel.
+        box = re.search(r"\.twt-chatbot-form textarea \{.*?\}",
+                        self.css, re.DOTALL).group(0)
+        self.assertIn("max-height:", box)
+        self.assertIn("overflow-y: auto", box)
+
+    def test_it_has_no_drag_handle_of_its_own(self):
+        # The panel is already resizable; a second handle inside it that only
+        # stretched this box would fight with that one.
+        box = re.search(r"\.twt-chatbot-form textarea \{.*?\}",
+                        self.css, re.DOTALL).group(0)
+        self.assertIn("resize: none", box)
+
+
+class EnterSendsTest(unittest.TestCase):
+    """A textarea makes Enter a newline, so without this the box could only be
+    sent with the button."""
+
+    def test_enter_sends_and_shift_enter_does_not(self):
+        handler = re.search(r'input\.addEventListener\("keydown".*?\n    \}\);',
+                            _source(), re.DOTALL).group(0)
+        self.assertIn('event.key !== "Enter" || event.shiftKey', handler)
+        self.assertIn("event.preventDefault()", handler)
+        self.assertIn("send(input.value.trim())", handler)
+
+    def test_the_placeholder_says_so(self):
+        # A textarea normally means Enter is a newline, so the box has to say
+        # that it is not.
+        with open("templates/_chatbot_widget.html") as f:
+            self.assertIn("Enter to send", f.read())
+
+
+class TheParentCanResizeItTest(unittest.TestCase):
+    """A fixed panel is the wrong size for somebody. Behaviour was verified
+    against a DOM shim; these guard the parts that are easy to lose."""
+
+    def test_the_size_is_a_variable_the_stylesheet_can_default(self):
+        # Set as a custom property rather than assigned outright, so an
+        # untouched panel keeps the size the stylesheet chose and a stored one
+        # overrides it without the script knowing what the default was.
+        with open("static/chatbot.css") as f:
+            css = f.read()
+        self.assertIn("var(--twt-chat-width,", css)
+        self.assertIn("var(--twt-chat-height,", css)
+        self.assertIn('panel.style.setProperty("--twt-chat-width"', _source())
+
+    def test_it_is_clamped_at_both_ends(self):
+        source = _source()
+        # A floor, or the input row becomes unusable; a ceiling, or a size
+        # dragged on a wide screen opens off the edge of a narrow one.
+        self.assertIn("MIN_SIZE", source)
+        self.assertIn("window.innerWidth", source)
+        self.assertIn("window.innerHeight", source)
+
+    def test_a_stored_size_is_clamped_on_the_way_back_in(self):
+        # Restoring has to go through the same clamp, not straight to the
+        # style, since the window it is restored into may be smaller.
+        restore = re.search(r"function restoreSize\(\).*?\n    \}",
+                            _source(), re.DOTALL).group(0)
+        self.assertIn("applySize(", restore)
+
+    def test_the_handle_can_be_used_without_a_pointer(self):
+        # A drag-only control is unusable by keyboard, and this one is a real
+        # button so it can be tabbed to.
+        source = _source()
+        self.assertIn('resizeHandle.addEventListener("keydown"', source)
+        for key in ("ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"):
+            with self.subTest(key=key):
+                self.assertIn(key, source)
+
+    def test_the_handle_is_a_labelled_button(self):
+        with open("templates/_chatbot_widget.html") as f:
+            markup = f.read()
+        self.assertIn('class="twt-chatbot-resize"', markup)
+        self.assertIn('type="button"', markup)
+        self.assertRegex(markup, r'twt-chatbot-resize"\s+aria-label="[^"]+"')
+
+    def test_the_gesture_is_not_lost_to_scrolling(self):
+        # Without touch-action the browser claims the drag as a scroll on a
+        # touchscreen and pointermove never fires.
+        with open("static/chatbot.css") as f:
+            css = f.read()
+        handle = re.search(r"\.twt-chatbot-resize \{.*?\}", css, re.DOTALL).group(0)
+        self.assertIn("touch-action: none", handle)
+
+    def test_the_size_outlives_the_tab_but_the_chat_does_not(self):
+        # A preference, like the model, so localStorage; the transcript is
+        # sessionStorage because it dies with the conversation.
+        source = _source()
+        self.assertIn('localStorage.setItem(SIZE_STORAGE_KEY', source)
+        self.assertNotIn('sessionStorage.setItem(SIZE_STORAGE_KEY', source)
+
+
 if __name__ == "__main__":
     unittest.main()

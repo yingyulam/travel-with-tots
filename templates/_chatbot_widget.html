@@ -2,6 +2,10 @@
   <button type="button" class="twt-chatbot-bubble" aria-label="Open help chat">💬</button>
 
   <div class="twt-chatbot-panel" hidden>
+    {# Sits over the header's top-left corner. A button, not a bare div, so it
+       can be tabbed to and resized with the arrow keys. #}
+    <button type="button" class="twt-chatbot-resize"
+            aria-label="Resize the chat. Drag, or use the arrow keys. Double-click to reset."></button>
     <div class="twt-chatbot-header">
       <span>Ask about Travel with Tots</span>
       <button type="button" class="twt-chatbot-end">End chat</button>
@@ -26,7 +30,12 @@
     </div>
 
     <form class="twt-chatbot-form" hidden>
-      <input type="text" placeholder="Ask a question…" autocomplete="off">
+      {# One row to start, grown by the script as the text wraps, so a short
+         question stays small and a described day is visible while it is
+         typed. Enter sends, which the placeholder says because a textarea
+         normally means Enter is a newline. #}
+      <textarea rows="1" placeholder="Ask a question… (Enter to send)"
+                autocomplete="off"></textarea>
       <button type="submit">Send</button>
     </form>
   </div>

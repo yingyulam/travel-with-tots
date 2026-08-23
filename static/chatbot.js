@@ -83,10 +83,117 @@ document.addEventListener("click", (e) => {
     const progress = root.querySelector(".twt-progress");
     const progressLabel = progress.querySelector(".twt-progress-label");
     const form = root.querySelector(".twt-chatbot-form");
-    const input = form.querySelector("input");
+    const input = form.querySelector("textarea");
     const sendBtn = form.querySelector("button");
     const modelSelect = root.querySelector(".twt-chatbot-model-row select");
     const endBtn = root.querySelector(".twt-chatbot-end");
+    const resizeHandle = root.querySelector(".twt-chatbot-resize");
+
+    // How big the parent dragged the panel. A preference like the model, so it
+    // lives in localStorage and outlives the tab, unlike the transcript.
+    const SIZE_STORAGE_KEY = "twt_chatbot_size";
+    // Small enough to tuck away, but not so small the input row is unusable.
+    const MIN_SIZE = 280;
+    // Never wider or taller than the window it sits in, less the margin the
+    // widget already keeps. Recomputed on every use, because the window the
+    // size was stored in is not always the window it is restored into.
+    const MARGIN = 40;
+    const KEY_STEP = 40;
+
+    function maxSize() {
+      return { width: Math.max(MIN_SIZE, window.innerWidth - MARGIN),
+               height: Math.max(MIN_SIZE, window.innerHeight - MARGIN - 68) };
+    }
+
+    function applySize(width, height) {
+      const limit = maxSize();
+      const w = Math.round(Math.min(Math.max(width, MIN_SIZE), limit.width));
+      const h = Math.round(Math.min(Math.max(height, MIN_SIZE), limit.height));
+      panel.style.setProperty("--twt-chat-width", `${w}px`);
+      panel.style.setProperty("--twt-chat-height", `${h}px`);
+      return { width: w, height: h };
+    }
+
+    function storeSize(size) {
+      try {
+        localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(size));
+      } catch (err) {
+        // A blocked or full store is not worth failing a resize over.
+      }
+    }
+
+    function restoreSize() {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem(SIZE_STORAGE_KEY));
+      } catch (err) {
+        localStorage.removeItem(SIZE_STORAGE_KEY);
+      }
+      if (!saved || typeof saved.width !== "number"
+          || typeof saved.height !== "number") return;
+      applySize(saved.width, saved.height);
+    }
+
+    function resetSize() {
+      panel.style.removeProperty("--twt-chat-width");
+      panel.style.removeProperty("--twt-chat-height");
+      try {
+        localStorage.removeItem(SIZE_STORAGE_KEY);
+      } catch (err) {
+        // Same as above: the size on screen is already back to the default.
+      }
+    }
+
+    // Dragging the top-left corner outward makes the panel bigger, so the
+    // deltas are subtracted: the panel is anchored to the bottom-right and
+    // grows the way the corner moves.
+    resizeHandle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const start = panel.getBoundingClientRect();
+      panel.classList.add("resizing");
+      resizeHandle.setPointerCapture(event.pointerId);
+
+      const onMove = (move) => {
+        applySize(start.width + (startX - move.clientX),
+                  start.height + (startY - move.clientY));
+      };
+      const onUp = (up) => {
+        resizeHandle.removeEventListener("pointermove", onMove);
+        resizeHandle.removeEventListener("pointerup", onUp);
+        resizeHandle.removeEventListener("pointercancel", onUp);
+        panel.classList.remove("resizing");
+        storeSize(applySize(start.width + (startX - up.clientX),
+                            start.height + (startY - up.clientY)));
+      };
+      resizeHandle.addEventListener("pointermove", onMove);
+      resizeHandle.addEventListener("pointerup", onUp);
+      resizeHandle.addEventListener("pointercancel", onUp);
+    });
+
+    // A drag-only control is unusable without a pointer. Left and up grow, the
+    // same direction the corner would move.
+    resizeHandle.addEventListener("keydown", (event) => {
+      const step = {
+        ArrowLeft: [KEY_STEP, 0], ArrowRight: [-KEY_STEP, 0],
+        ArrowUp: [0, KEY_STEP], ArrowDown: [0, -KEY_STEP],
+      }[event.key];
+      if (!step) return;
+      event.preventDefault();
+      const now = panel.getBoundingClientRect();
+      storeSize(applySize(now.width + step[0], now.height + step[1]));
+    });
+
+    resizeHandle.addEventListener("dblclick", resetSize);
+
+    // A size stored on a big screen must not open off the edge of a small one.
+    window.addEventListener("resize", () => {
+      const now = panel.getBoundingClientRect();
+      if (!panel.hidden) applySize(now.width, now.height);
+    });
+
+    restoreSize();
 
     const savedModel = localStorage.getItem(TWT_MODEL_STORAGE_KEY);
     if (savedModel && [...modelSelect.options].some((o) => o.value === savedModel)) {
@@ -695,6 +802,7 @@ document.addEventListener("click", (e) => {
       if (!message) return;
 
       input.value = "";
+      fitInput();
       input.disabled = true;
       sendBtn.disabled = true;
 
@@ -760,6 +868,26 @@ document.addEventListener("click", (e) => {
     }
 
     form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      send(input.value.trim());
+    });
+
+    // Grow the box to whatever has been typed. The height is cleared first so
+    // scrollHeight measures the content rather than the box it is already in,
+    // which is what lets it shrink again after a deletion. CSS caps it, so
+    // past a few lines this stops growing and starts scrolling.
+    function fitInput() {
+      input.style.height = "auto";
+      input.style.height = `${input.scrollHeight}px`;
+    }
+
+    input.addEventListener("input", fitInput);
+
+    // In a textarea Enter inserts a newline and never submits, so the box
+    // would have no way to send at all except the button. Enter sends, and
+    // Shift+Enter keeps the newline for anyone writing more than a line.
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
       event.preventDefault();
       send(input.value.trim());
     });

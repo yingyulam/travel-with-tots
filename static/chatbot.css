@@ -53,8 +53,11 @@
   position: absolute;
   right: 0;
   bottom: 68px;
-  width: clamp(320px, 33vw, 640px);
-  height: clamp(600px, 45vh, 820px);
+  /* The defaults, until the parent drags the corner. Set as variables rather
+     than assigned directly, so a stored size overrides them without the
+     script having to know what the default was. */
+  width: var(--twt-chat-width, clamp(320px, 33vw, 640px));
+  height: var(--twt-chat-height, clamp(600px, 45vh, 820px));
   flex-direction: column;
   background: #fff;
   border-radius: 18px;
@@ -259,15 +262,30 @@
 
 .twt-chatbot-form:not([hidden]) {
   display: flex;
+  /* The box is three rows tall; Send belongs beside its last line, not
+     stretched down the whole side of it. */
+  align-items: flex-end;
 }
 
-.twt-chatbot-form input {
+.twt-chatbot-form textarea {
   flex: 1;
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--twt-line);
-  border-radius: 999px;
+  /* Not a pill any more: three rows of text in a 999px radius loses its
+     corners. */
+  border-radius: 14px;
+  font-family: inherit;
   font-size: 13px;
+  line-height: 1.4;
+  /* Grown by the script to fit what has been typed, and stopped here. Past
+     this it scrolls, so a long paste cannot push the send button off the
+     panel. About five lines at the line-height above. */
+  max-height: 7.4em;
+  overflow-y: auto;
+  /* No drag handle of its own: the panel is already resizable, and a second
+     one inside it that only stretched this box would fight with that.  */
+  resize: none;
 }
 
 .twt-chatbot-form button {
@@ -599,4 +617,44 @@ details[open] > .twt-result-summary .twt-result-chevron {
 .twt-chip.selected {
   background: var(--twt-blue);
   color: #fff;
+}
+
+/* Drag to resize. The top-left corner, because the panel is anchored to the
+   bottom-right of the window: that is the corner with room to move, and the
+   bottom-right one sits under the bubble. */
+.twt-chatbot-resize {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 8px 0 0 0;
+  background: transparent;
+  cursor: nwse-resize;
+  /* Without this the browser claims the gesture as a scroll on a touchscreen
+     and pointermove never fires. */
+  touch-action: none;
+  z-index: 1;
+}
+
+.twt-chatbot-resize::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-top: 2px solid rgba(255, 255, 255, 0.5);
+  border-left: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px 0 0 0;
+}
+
+.twt-chatbot-resize:hover::before,
+.twt-chatbot-resize:focus-visible::before {
+  border-color: #fff;
+}
+
+/* While dragging: the pointer owns the gesture, so nothing inside should
+   highlight as if it were being selected. */
+.twt-chatbot-panel.resizing {
+  user-select: none;
 }

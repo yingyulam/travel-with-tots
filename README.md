@@ -266,6 +266,29 @@ back live, which is what it was on the page.
 belongs to one transcript: shared between tabs, two half-filled forms would
 answer each other's questions. The cost is that closing the tab ends the chat.
 
+**The panel resizes.** Drag the grip in its **top-left** corner: that is the
+corner with room to move, since the panel is anchored to the bottom-right of
+the window and the opposite corner sits under the bubble. It can also be
+tabbed to and resized with the arrow keys, because a drag-only control is
+unusable without a pointer, and double-clicking it goes back to the default.
+
+The size is a preference rather than conversation state, so unlike the
+transcript it lives in `localStorage` and outlives the tab. It is clamped at
+both ends and clamped again on the way back in: a floor so the input row stays
+usable, and a ceiling of the current window, so a size dragged on a wide screen
+does not reopen off the edge of a narrow one.
+
+**The message box grows with the message.** One line for a question, taller as
+the text wraps, then it stops and scrolls so a long paste cannot push the Send
+button off the panel. It is a textarea rather than a one-line input, which
+means **Enter sends and Shift+Enter starts a new line**: a textarea's Enter is
+a newline by default, so without that the box could only be sent with the
+button, and the placeholder says so.
+
+The height is cleared before it is measured each time. Without that it could
+only ever grow, because `scrollHeight` reports the box it is already in rather
+than the text inside it.
+
 ## AI Agent
 
 **The chat bubble is this agent's interface.** A message from the bubble goes
