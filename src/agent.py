@@ -117,7 +117,8 @@ def _build_agent(model: str):
 
 
 def handle_message(message: str, history: list[dict] | None = None,
-                   model: str = DEFAULT_MODEL) -> dict:
+                   model: str = DEFAULT_MODEL,
+                   conversation: dict | None = None) -> dict:
     """One turn, routed: a workflow if the message asks for one, else the agent.
 
     This is the entry point for any surface that carries a message. It takes a
@@ -132,14 +133,31 @@ def handle_message(message: str, history: list[dict] | None = None,
     The reply always carries "workflow": the name that ran, or None. None rather
     than an absent key, so a caller can tell "no workflow matched" from "this
     response predates routing".
+
+    `conversation` is {"workflow", "state"} when a workflow is mid-flow. While
+    one is, the classifier is skipped entirely: "two year old" and "yes" are
+    answers to the question just asked, not new intents, and routing them would
+    derail the conversation the parent is already in.
     """
     offered = runnable_message_workflows()
-    chosen = classify_intent(message, [workflow for workflow, _ in offered])
+    in_flight = (conversation or {}).get("workflow")
+
+    if in_flight:
+        chosen = in_flight
+        # Client-supplied, so it is checked rather than trusted. A non-dict
+        # would reach the workflow as an attribute error; None just restarts.
+        state = conversation.get("state")
+        if not isinstance(state, dict):
+            state = None
+    else:
+        chosen = classify_intent(message, [workflow for workflow, _ in offered])
+        state = None
+
     run = next((r for w, r in offered if w["name"] == chosen), None)
 
     if run is not None:
         try:
-            result = run(message)
+            result = run(message, state) if in_flight else run(message)
         except TOOL_ERRORS as e:
             # A workflow that fails must not cost the parent their turn, so it
             # falls through to the agent. Logged as not-run, so the trace shows
@@ -148,6 +166,10 @@ def handle_message(message: str, history: list[dict] | None = None,
             log_decision(message, chosen, ran=False)
         else:
             log_decision(message, chosen, ran=True)
+            # A workflow that returns a state is still talking; one that returns
+            # None is finished, and the next message starts fresh at the
+            # classifier.
+            next_state = result.get("state")
             # The widget's keys, so a workflow reply renders like any other.
             # The usage fields are genuinely unknown here: they come from the
             # FAQ tool, which did not run.
@@ -161,12 +183,19 @@ def handle_message(message: str, history: list[dict] | None = None,
                 "tool_calls": [],
                 "workflow": chosen,
                 "workflow_result": result,
+                "conversation": ({"workflow": chosen, "state": next_state}
+                                 if next_state else None),
+                "choices": result.get("choices"),
+                "form": result.get("form"),
+                "open_form": result.get("open_form", False),
             }
     else:
         log_decision(message, None, ran=False)
 
+    # Falling through ends any flow: the parent has moved on, and holding stale
+    # state would silently resume it on their next message.
     return {**run_agent(message, history=history, model=model),
-            "workflow": None}
+            "workflow": None, "conversation": None}
 
 
 def _artifact_of(name: str, tool_messages: list) -> dict:

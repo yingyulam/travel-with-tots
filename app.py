@@ -832,7 +832,14 @@ def save_trip():
 
 @app.route("/plan", methods=["GET", "POST"])
 def plan():
-    """Planning page: the trip form and, after generating, comparable plans."""
+    """Planning page: the trip form and, after generating, comparable plans.
+
+    A POST carrying "prefill" fills the form in and stops there, without
+    planning. That is how the chat assistant hands over a form it collected: the
+    parent lands on the real page with their answers in place and presses
+    Generate themselves. Same read_form, same template, no second code path.
+    """
+    prefill_only = request.method == "POST" and request.form.get("prefill")
     if request.method == "POST":
         form = read_form(request.form)
     else:
@@ -844,7 +851,7 @@ def plan():
     is_revise = revise_count > 0
     revise_message, revise_error = None, False
 
-    if request.method == "POST":
+    if request.method == "POST" and not prefill_only:
         # The visible "extra_notes" box only ever holds what the parent typed
         # there; feedback from "Something's off" travels separately in
         # revise_feedback and is merged in here, just for the AI call.
@@ -1091,9 +1098,16 @@ def chatbot_route():
     if rag.get_status()["state"] != "ready":
         return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
 
+    # The widget echoes back whatever workflow state it was given, so this is
+    # client-controlled: anything that is not a dict is dropped rather than
+    # handed to a workflow, which would reach it as an attribute error.
+    conversation = data.get("conversation")
+    if not isinstance(conversation, dict):
+        conversation = None
+
     try:
         result = handle_message(message, history=data.get("history") or [],
-                                model=model)
+                                model=model, conversation=conversation)
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:

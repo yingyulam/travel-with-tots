@@ -218,7 +218,7 @@ next time; "End chat" clears it on purpose.
 **The chat bubble is this agent's interface.** A message from the bubble goes
 to a tool-calling agent built with
 [LangGraph](https://langchain-ai.github.io/langgraph/)'s `create_react_agent`
-over an OpenRouter-backed model (`src/llms.py`), which decides *what to do*
+over an OpenRouter-backed model (`src/agent.py`), which decides *what to do*
 with it. It picks between four tools, each a thin wrapper around code that
 already powers the rest of the site rather than new logic:
 
@@ -261,8 +261,79 @@ planner above -- one key covers all of it):
   needs credit added under
   [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits).
 - Never commit `.env` or paste a real key into a prompt, screenshot, or
-  commit message -- `_call_openrouter`/`src/llms.py` only ever read it from
+  commit message -- `call_openrouter`/`src/agent.py` only ever read it from
   `os.environ`, and it's never logged or printed.
+
+## Intent routing
+
+Before the agent sees a message, a small classifier (`src/intent.py`) checks it
+against the workflows a chat message could actually trigger, and returns one
+name or `none`. A match runs that workflow; everything else falls through to
+the tool-calling agent above, unchanged. The classifier is a cheap pinned model
+with a strict enum schema, and its answer is re-checked against the offered
+names, so a hallucinated workflow becomes `none` rather than a crash.
+
+Every decision is appended to `data/intents.jsonl` (git-ignored) and the reply
+carries the name that ran, which the bubble shows as a badge: `⚙️ <workflow>`
+or `💬 no workflow`. Two routers coexist deliberately: the classifier owns
+workflows and runs first, the agent owns everything else.
+
+A workflow that raises does not cost the parent their turn. It is logged as
+routed-but-not-run and the message falls through to the agent, so the trace can
+show routing that was right where execution was not.
+
+## Filling the form by talking
+
+Saying "plan a trip" in the bubble starts a conversation rather than a single
+extraction. The assistant offers the two ways to plan, and if the parent picks
+chat it asks for **destination, age, wake-up and bedtime**, one question per
+turn, until it has all four.
+
+**The extractor runs on every message**, not once. Each turn it reads whatever
+was just said and merges it into the form built up so far. The merge is the part
+that matters: `extract_form` returns a *complete* form plus a `found` list of
+what that message actually supplied, so only fields in `found` may overwrite.
+A plain dict merge would let the second answer reset the first one's
+destination back to its default.
+
+**Notes are the exception: they accumulate rather than replace.** Every other
+field holds one value a later answer corrects, but a note is something a parent
+adds to, and "she needs a highchair" does not retract "she hates loud places".
+Since the extractor reads one message at a time and cannot know what was said
+earlier, `nap_notes` and `extra_notes` are appended to, with a repeat of
+something already in there dropped. The fragments come back sentence-shaped, so
+joining them reads as prose without reformatting. `accommodation` is free text
+too but is deliberately left out: it is a value, and saying where you are
+staying twice is a correction.
+
+Once the four are there, the whole form is shown split into what came from the
+parent's words and what is riding on a default, values included, so nothing
+reaches the planner unseen. Anything other than "yes" is treated as a
+correction and goes back to collecting, so "make it four stops" edits the form
+rather than ending the conversation. Nothing is handed over before they confirm.
+
+**The chatbot never generates the day.** The confirmed form is POSTed to
+`/plan`, which plans it exactly as it always has: either prefilled for checking
+(a `prefill` marker tells the route to fill the boxes and stop) or straight to
+Generate. That keeps one planner rather than two: a generated plan is 2.5-4.5KB
+and would not survive Flask's ~4KB session cookie, the AI adjuster is not
+deterministic so the chat and the page would show different days, and generating
+here would mean duplicating a sixteen-argument call.
+
+While a flow is in progress **the classifier is skipped entirely**. Mid-flow,
+"two year old" and "yes" are answers to the question just asked, not new
+intents, and routing them would derail the conversation. The state travels with
+the transcript in the browser, the same grain as the chat history: no cookie
+ceiling, no clash between tabs, works for a visitor who is not logged in, and
+it dies with "End chat" rather than outliving it.
+
+The widget carries the flow: an avatar beside each assistant message, a greeting
+on first open with **"What's Travel with Tots?"** and **"Plan a trip"** as
+one-tap openers, and offered choices rendered as buttons that send the same text
+a parent would have typed, so both take one path through the server. "Plan a
+trip" stays on offer under each answer until the form-filling flow has actually
+run, since planning is what most parents come for and a greeting-only chip
+scrolls away after a question or two.
 
 ## Web Search
 
@@ -319,11 +390,10 @@ anything about sleep goes into `nap_notes`, both of which already render into
 the planner's prompt. Prose a structured field already captured is *not*
 repeated there, so the planner never reads the same constraint twice.
 
-Reachable from the chat bubble: describing a day there has the agent call this
-component, which is the "Fill the form from a chat message" workflow (see
-`/workflows`). That chain ends at the filled form on purpose, so one description
-never becomes a finished itinerary without the parent seeing what was read from
-it. Not wired into `/plan`'s form itself yet.
+Reachable from the chat bubble: this component is what the "Fill the form from
+a chat message" workflow calls on every turn (see `/workflows`). That chain ends
+at the filled form on purpose, so a description never becomes a finished
+itinerary without the parent seeing what was read from it.
 
 It pins its own model rather than using the app default, which is OpenRouter's
 free auto-router: the router advertises structured outputs but picks a
@@ -458,23 +528,26 @@ travel-with-tots/
 │   ├── itinerary.py               # generate_plans: rule-based candidate Plan objects
 │   ├── interactions.py            # replan() + find_nearby() in-trip logic
 │   ├── agents.py                  # chatbot + AI plan/replan adjuster logic, routed through OpenRouter
-│   ├── llms.py                    # AI Agent: LangGraph tool-calling agent over OpenRouter
+│   ├── agent.py                   # AI Agent: intent routing + LangGraph tool-calling over OpenRouter
+│   ├── intent.py                  # intent classifier: a message to a workflow name, or none
 │   ├── components/
 │   │   ├── plan_trip.py           # Plan Trips component: rule-based draft + AI smoothing
 │   │   ├── replan_trip.py         # Replan a Trip component: rule-based replan + AI smoothing
 │   │   ├── extract_form.py        # Form Extractor component: a description into the planning form
 │   │   ├── find_nearby.py         # Find Nearby component: location-narrowed venues, search fallback
 │   │   ├── geocode.py             # Geocode component: coordinates/address to city + neighbourhood
+│   │   ├── place_search.py        # Place Search component: Google Places text search
 │   │   └── search_web.py          # Web Search component: Tavily Search API
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan/replan)
 │   ├── workflows/                 # one file per workflow, each chaining components
 │   │   ├── nap_time_rescue.py     # replan around a long nap, substitute closed stops
-│   │   ├── find_nearby_place.py   # ask in chat for somewhere nearby, web fallback
-│   │   └── plan_from_chat.py      # describe a day in chat, get the form filled
+│   │   ├── log_a_place.py         # log a place from the map, held for admin verification
+│   │   └── plan_from_chat.py      # fill the planning form over a few chat messages
 │   └── prompts/
 │       ├── website_chatbot.txt    # chatbot system prompt
 │       ├── extract_form.txt       # form extractor system prompt
+│       ├── intent.txt             # intent classifier system prompt
 │       ├── plan_adjust.txt        # AI plan adjuster system prompt
 │       └── replan_adjust.txt      # AI replan adjuster system prompt
 ├── templates/

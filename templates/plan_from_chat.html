@@ -5,9 +5,9 @@
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the "Fill the form from a chat message" workflow. Type in the bubble in the corner, which is the agent, and the form it extracted appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+  <p class="meta">Test page for the "Fill the form from a chat message" workflow. Type in the bubble in the corner, which is the agent, and the form as it stands after each message appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
 
-  <p class="field-hint">The chain is: your message goes to the AI agent, the agent calls the form extractor, and the filled form shows below for you to check. It stops there on purpose. Building the day from the form is a separate step, so one description does not become a finished itinerary. Pick the model in the bubble's own dropdown. Extraction can take a while on a free model, so a turn may sit waiting for a minute or so.</p>
+  <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the form-filling conversation, and the extractor runs on every message after that, merging what it reads into the form below. It stops at the confirmed form on purpose. Building the day is the planning page's job, so one description does not become a finished itinerary. Say "plan a trip" to start, then answer over a few messages and watch the form fill in. Pick the model in the bubble's own dropdown.</p>
 
   <div class="action-panel">
     <p class="panel-title">Watch the chat</p>
@@ -22,7 +22,7 @@
     <p class="field-hint">Run handles the next message you send, then stops. Listen keeps handling each message until you stop it. Either way, one result per message.</p>
   </div>
 
-  <p class="field-hint">Fields the description mentioned are marked <span class="badge">from your words</span>; the rest fell back to the form's own <span class="badge badge-pending">default</span>.</p>
+  <p class="field-hint">Fields you have supplied so far are marked <span class="badge">from your words</span>; the rest are still on the form's own <span class="badge badge-pending">default</span>. Each card also shows which path answered, so a message the classifier sent elsewhere cannot be misread as this workflow's.</p>
   <div id="plan-from-chat-result-list"></div>
 </section>
 {% endblock %}

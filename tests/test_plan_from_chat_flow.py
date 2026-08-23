@@ -1,0 +1,358 @@
+import unittest
+from unittest import mock
+
+from src import agent
+from src.form_helpers import DEFAULTS
+from src.workflows import plan_from_chat
+from src.workflows.plan_from_chat import (
+    CONFIRM_CHOICE,
+    REQUIRED,
+    STAGE_COLLECTING,
+    STAGE_CONFIRMING,
+    STAGE_OFFERED,
+    _is_yes,
+    run,
+)
+
+WORKFLOW_NAME = "Fill the form from a chat message"
+
+
+def _extraction(**supplied):
+    """What extract_form returns: a complete form, plus the fields this
+    particular message actually supplied."""
+    form = dict(DEFAULTS)
+    form.update(supplied)
+    return {"form": form, "found": sorted(supplied), "model": "m",
+            "response_time": 1.0}
+
+
+def _turn(message, state, **supplied):
+    with mock.patch.object(plan_from_chat, "extract_form",
+                           return_value=_extraction(**supplied)):
+        return run(message, state)
+
+
+class OfferTest(unittest.TestCase):
+    def test_starting_offers_two_ways_and_does_not_extract(self):
+        # Nothing has been said yet worth extracting, and calling the model
+        # here would be a wasted call on every "I want to plan a day".
+        with mock.patch.object(plan_from_chat, "extract_form") as extract:
+            result = run("I want to plan a day")
+        extract.assert_not_called()
+        self.assertEqual(result["state"]["stage"], STAGE_OFFERED)
+        self.assertEqual(len(result["choices"]), 2)
+
+    def test_choosing_the_form_ends_the_flow(self):
+        result = run("fill out the form myself", {"stage": STAGE_OFFERED})
+        self.assertIsNone(result["state"])
+        self.assertTrue(result["open_form"])
+
+    def test_choosing_chat_starts_collecting_by_asking(self):
+        result = run("plan through chat", {"stage": STAGE_OFFERED})
+        self.assertEqual(result["state"]["stage"], STAGE_COLLECTING)
+        self.assertIn("city", result["reply"].lower())
+
+    def test_you_do_it_is_not_read_as_the_form(self):
+        # "yourself" contains "you", so matching on the chat words first sent
+        # this to the form. The form words are tested for instead.
+        result = run("you do it for me", {"stage": STAGE_OFFERED})
+        self.assertEqual(result["state"]["stage"], STAGE_COLLECTING)
+
+    def test_fill_it_out_yourself_is_read_as_the_form(self):
+        result = run("I'll fill it out myself", {"stage": STAGE_OFFERED})
+        self.assertTrue(result["open_form"])
+
+
+class KeepsPromptingTest(unittest.TestCase):
+    """The point of the flow: the extractor runs on every message, and the
+    assistant keeps asking until it has what it needs."""
+
+    def test_a_partial_answer_asks_for_the_next_thing(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        result = _turn("Vancouver", state, destination="Vancouver")
+        self.assertEqual(result["state"]["stage"], STAGE_COLLECTING)
+        self.assertIn("old", result["reply"].lower())  # asks for the age next
+
+    def test_three_turns_reach_confirmation(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("Vancouver", state, destination="Vancouver")["state"]
+        state = _turn("she's two", state, age_years="2")["state"]
+        result = _turn("up at 7, bed at 7:30", state,
+                       wake_up="07:00", bedtime="19:30")
+        self.assertEqual(result["state"]["stage"], STAGE_CONFIRMING)
+
+    def test_the_extractor_runs_on_every_collecting_turn(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        with mock.patch.object(plan_from_chat, "extract_form",
+                               return_value=_extraction(destination="Vancouver")) as extract:
+            state = run("Vancouver", state)["state"]
+            run("anything else", state)
+        self.assertEqual(extract.call_count, 2)
+
+    def test_a_failed_extraction_costs_one_turn_not_the_conversation(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS),
+                 "found": ["destination"]}
+        with mock.patch.object(plan_from_chat, "extract_form",
+                               side_effect=RuntimeError("model down")):
+            result = run("she's two", state)
+        self.assertEqual(result["state"]["stage"], STAGE_COLLECTING)
+        self.assertEqual(result["state"]["found"], ["destination"])
+
+
+class MergeTest(unittest.TestCase):
+    """Each extraction returns a complete form, so a plain update would let a
+    later turn reset an earlier turn's answers back to their defaults."""
+
+    def test_a_later_turn_does_not_reset_an_earlier_one(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("Kitsilano", state, destination="Kitsilano")["state"]
+        state = _turn("she's two", state, age_years="2")["state"]
+        self.assertEqual(state["form"]["destination"], "Kitsilano")
+        self.assertIn("destination", state["found"])
+
+    def test_only_supplied_fields_overwrite(self):
+        state = {"stage": STAGE_COLLECTING,
+                 "form": {**DEFAULTS, "destination": "Kitsilano"},
+                 "found": ["destination"]}
+        # The extraction carries a full form whose destination is the default.
+        state = _turn("she's two", state, age_years="2")["state"]
+        self.assertEqual(state["form"]["destination"], "Kitsilano")
+
+    def test_notes_accumulate_rather_than_replacing(self):
+        # The extractor sees one message at a time, so an earlier note it knows
+        # nothing about used to be overwritten by the next thing said.
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("she hates crowds", state,
+                      extra_notes="She hates loud crowded places.")["state"]
+        state = _turn("and a highchair", state,
+                      extra_notes="She needs a highchair wherever we eat.")["state"]
+        self.assertEqual(
+            state["form"]["extra_notes"],
+            "She hates loud crowded places. She needs a highchair wherever we eat.")
+
+    def test_both_note_fields_accumulate(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("a", state, nap_notes="Naps badly in a stroller.")["state"]
+        state = _turn("b", state, nap_notes="She's teething.")["state"]
+        self.assertEqual(state["form"]["nap_notes"],
+                         "Naps badly in a stroller. She's teething.")
+
+    def test_saying_the_same_thing_twice_does_not_double_it(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("a", state, extra_notes="She hates crowds.")["state"]
+        state = _turn("a again", state, extra_notes="She hates crowds.")["state"]
+        self.assertEqual(state["form"]["extra_notes"], "She hates crowds.")
+
+    def test_only_notes_accumulate(self):
+        # The regression this guards: destination must correct, not concatenate
+        # into "Kitsilano Burnaby".
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("Kitsilano", state, destination="Kitsilano")["state"]
+        state = _turn("actually Burnaby", state, destination="Burnaby")["state"]
+        self.assertEqual(state["form"]["destination"], "Burnaby")
+
+    def test_a_correction_replaces_the_earlier_value(self):
+        state = {"stage": STAGE_COLLECTING,
+                 "form": {**DEFAULTS, "destination": "Kitsilano"},
+                 "found": ["destination"]}
+        state = _turn("actually Burnaby", state, destination="Burnaby")["state"]
+        self.assertEqual(state["form"]["destination"], "Burnaby")
+
+
+class ConfirmTest(unittest.TestCase):
+    def setUp(self):
+        self.state = {
+            "stage": STAGE_CONFIRMING,
+            "form": {**DEFAULTS, "destination": "Vancouver"},
+            "found": ["bedtime", "destination", "age_years", "wake_up"],
+        }
+
+    def test_yes_hands_the_form_over_and_ends_the_flow(self):
+        result = run("yes", self.state)
+        self.assertIsNone(result["state"])
+        self.assertEqual(result["form"]["destination"], "Vancouver")
+
+    def test_anything_else_is_a_correction_not_a_refusal(self):
+        result = _turn("make it four stops", self.state, stop_count="4")
+        self.assertIsNotNone(result["state"])
+        self.assertEqual(result["state"]["form"]["stop_count"], "4")
+
+    def test_the_summary_shows_both_theirs_and_the_defaults(self):
+        # Explicitly required: nothing should reach the planner unseen.
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        reply = _turn("all of it", state, destination="Vancouver",
+                      age_years="2", wake_up="07:00", bedtime="19:30")["reply"]
+        self.assertIn("From what you told me", reply)
+        self.assertIn("Using defaults", reply)
+        self.assertIn("dining", reply)          # a default, with its value
+        self.assertIn("dine_out", reply)
+
+    def test_nothing_is_handed_over_before_confirmation(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        result = _turn("Vancouver", state, destination="Vancouver")
+        self.assertIsNone(result.get("form"))
+
+
+class OfferedButtonsWorkTest(unittest.TestCase):
+    """The widget sends a button's own label back as the message, so a label
+    this module cannot parse is a button that does nothing. That is exactly
+    what "Yes, that's right" was: _YES held "yes" and "that's right"
+    separately, so clicking it re-showed the same summary forever.
+    """
+
+    def test_every_offered_button_moves_the_conversation_on(self):
+        # Walked stage by stage rather than asserted per literal, so a button
+        # added later is covered without anyone remembering to add a test.
+        stages = [
+            run("I want to plan a day"),                     # offered
+            _turn("all of it", {"stage": STAGE_COLLECTING,
+                                "form": dict(DEFAULTS), "found": []},
+                  destination="Vancouver", age_years="2",
+                  wake_up="07:00", bedtime="19:30"),         # confirming
+        ]
+        for offer in stages:
+            for choice in offer["choices"]:
+                with self.subTest(stage=offer["state"]["stage"], choice=choice):
+                    after = _turn(choice, offer["state"])
+                    moved = (after["state"] is None
+                             or after["state"]["stage"] != offer["state"]["stage"])
+                    self.assertTrue(moved, f"{choice!r} left the parent where they were")
+
+    def test_the_confirmation_button_hands_the_form_over(self):
+        state = {"stage": STAGE_CONFIRMING,
+                 "form": {**DEFAULTS, "destination": "Vancouver"},
+                 "found": ["destination"]}
+        result = run(CONFIRM_CHOICE, state)
+        self.assertIsNone(result["state"])
+        self.assertEqual(result["form"]["destination"], "Vancouver")
+
+
+class IsYesTest(unittest.TestCase):
+    def test_whole_message_affirmations_are_accepted(self):
+        for message in ("yes", "Yes!", "Yes, that's right", "yes please",
+                        "sure, go ahead", "perfect, thanks", "looks good"):
+            with self.subTest(message=message):
+                self.assertTrue(_is_yes(message))
+
+    def test_a_yes_with_a_change_attached_is_not_consent(self):
+        # The dangerous half: accepting these would hand over a form the
+        # parent had just asked to change.
+        for message in ("yes but make it four stops", "yes, make it four stops",
+                        "ok, we're in Burnaby actually", "no", "change the bedtime"):
+            with self.subTest(message=message):
+                self.assertFalse(_is_yes(message))
+
+
+class RequiredFieldsTest(unittest.TestCase):
+    def test_age_counts_as_answered_from_either_half(self):
+        # Age is two form fields but one question.
+        state = {"stage": STAGE_COLLECTING,
+                 "form": {**DEFAULTS, "destination": "V", "wake_up": "07:00",
+                          "bedtime": "19:30"},
+                 "found": ["bedtime", "destination", "wake_up"]}
+        result = _turn("18 months", state, age_months="6")
+        self.assertEqual(result["state"]["stage"], STAGE_CONFIRMING)
+
+    def test_the_required_list_is_the_four_that_shape_a_day(self):
+        self.assertEqual(REQUIRED, ("destination", "age", "wake_up", "bedtime"))
+
+
+class MidFlowRoutingTest(unittest.TestCase):
+    """While a flow is running the classifier must not see the message: "yes"
+    and "she's two" are answers, not intents."""
+
+    def setUp(self):
+        self.log = mock.patch.object(agent, "log_decision")
+        self.log.start()
+
+    def tearDown(self):
+        self.log.stop()
+
+    def test_mid_flow_skips_the_classifier_and_the_agent(self):
+        conversation = {"workflow": WORKFLOW_NAME,
+                        "state": {"stage": STAGE_COLLECTING,
+                                  "form": dict(DEFAULTS), "found": []}}
+        with mock.patch.object(agent, "classify_intent") as classify, \
+             mock.patch.object(agent, "run_agent") as ran, \
+             mock.patch.object(plan_from_chat, "extract_form",
+                               return_value=_extraction(destination="Vancouver")):
+            result = agent.handle_message("Vancouver", conversation=conversation)
+        classify.assert_not_called()
+        ran.assert_not_called()
+        self.assertEqual(result["conversation"]["workflow"], WORKFLOW_NAME)
+
+    def test_a_finished_flow_clears_the_conversation(self):
+        conversation = {"workflow": WORKFLOW_NAME,
+                        "state": {"stage": STAGE_CONFIRMING,
+                                  "form": dict(DEFAULTS), "found": ["destination"]}}
+        with mock.patch.object(agent, "classify_intent"):
+            result = agent.handle_message("yes", conversation=conversation)
+        self.assertIsNone(result["conversation"])
+        self.assertIsNotNone(result["form"])
+
+    def test_a_malformed_state_restarts_rather_than_crashing(self):
+        # The widget echoes state back, so it is client-controlled. A non-dict
+        # used to reach the workflow and raise an attribute error.
+        conversation = {"workflow": WORKFLOW_NAME, "state": "not a dict"}
+        with mock.patch.object(agent, "classify_intent"):
+            result = agent.handle_message("Vancouver", conversation=conversation)
+        self.assertIn("Which would you prefer", result["reply"])
+
+    def test_an_unknown_workflow_name_falls_through_to_the_agent(self):
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "hi"}) as ran:
+            agent.handle_message("hello", conversation={"workflow": "nope"})
+        ran.assert_called_once()
+
+    def test_no_conversation_means_the_classifier_runs_as_before(self):
+        with mock.patch.object(agent, "classify_intent",
+                               return_value="none") as classify, \
+             mock.patch.object(agent, "run_agent", return_value={"reply": "hi"}):
+            agent.handle_message("how do I save a plan?")
+        classify.assert_called_once()
+
+
+class PrefillRouteTest(unittest.TestCase):
+    def setUp(self):
+        import app as app_module
+        self.app_module = app_module
+        self.client = app_module.app.test_client()
+
+    def test_prefill_fills_the_form_without_planning(self):
+        with mock.patch.object(self.app_module, "plan_trip") as planned:
+            resp = self.client.post("/plan", data={"prefill": "1",
+                                                   "destination": "Burnaby",
+                                                   "wake_up": "06:30"})
+        planned.assert_not_called()
+        html = resp.get_data(as_text=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Burnaby", html)
+        self.assertIn("06:30", html)
+
+    def test_the_handoff_shape_round_trips(self):
+        # What the widget's hidden form posts: naps as parallel fields rather
+        # than the array read_form returns, lists repeated, booleans as "on".
+        posted = {"prefill": "1", "destination": "Burnaby",
+                  "nap_start": "12:30", "nap_duration": "90",
+                  "transit": ["bus", "stroller"],
+                  "features": "kid_friendly", "strict_schedule": "on",
+                  "stop_count": "4"}
+        with mock.patch.object(self.app_module, "plan_trip") as planned:
+            resp = self.client.post("/plan", data=posted)
+        planned.assert_not_called()
+        html = resp.get_data(as_text=True)
+        for value in ("Burnaby", "12:30", "90", "bus", "stroller"):
+            self.assertIn(value, html)
+
+    def test_without_prefill_the_generate_path_is_unchanged(self):
+        # The regression that matters: prefill must not have broken planning.
+        plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True}
+        with mock.patch.object(self.app_module, "plan_trip",
+                               return_value=plan) as planned:
+            resp = self.client.post("/plan", data={"destination": "Burnaby"})
+        planned.assert_called_once()
+        self.assertEqual(resp.status_code, 200)
+
+
+if __name__ == "__main__":
+    unittest.main()

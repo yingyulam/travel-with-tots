@@ -158,8 +158,74 @@
   white-space: pre-wrap;
 }
 
-.twt-chatbot-msg {
+/* Avatar and bubble sit in a row now. max-width moved here from the bubble,
+   since the row is what the 85% should apply to. */
+.twt-chatbot-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
   max-width: 85%;
+  align-self: flex-start;
+}
+
+.twt-chatbot-row.user {
+  align-self: flex-end;
+}
+
+/* An emoji in a circle, the same shape as the login pill in nav.css. Fixed
+   size and no shrink, or a long reply squeezes it into an oval. */
+.twt-chatbot-avatar {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--twt-navy);
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Choice buttons and the handoff, under a reply. */
+.twt-chips,
+.twt-handoff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.twt-chip {
+  border: 1px solid var(--twt-blue);
+  background: #fff;
+  color: var(--twt-blue);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.twt-chip:hover {
+  background: var(--twt-blue);
+  color: #fff;
+}
+
+.twt-chip.primary {
+  background: var(--twt-orange);
+  border-color: var(--twt-orange);
+  color: #fff;
+}
+
+.twt-chip.primary:hover {
+  background: var(--twt-orange-dark);
+  border-color: var(--twt-orange-dark);
+}
+
+.twt-chatbot-msg {
   padding: 8px 12px;
   border-radius: 14px;
   font-size: 13px;
@@ -168,20 +234,19 @@
   word-break: break-word;
 }
 
+/* Left/right is the row's job now. align-self here would set the bubble's
+   vertical alignment inside that row instead, which is not what these meant. */
 .twt-chatbot-msg.user {
-  align-self: flex-end;
   background: var(--twt-blue);
   color: #fff;
 }
 
 .twt-chatbot-msg.assistant {
-  align-self: flex-start;
   background: var(--twt-surface);
   color: var(--twt-ink);
 }
 
 .twt-chatbot-msg.error {
-  align-self: flex-start;
   background: #fdecea;
   color: #b3261e;
 }

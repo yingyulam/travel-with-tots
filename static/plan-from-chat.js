@@ -87,7 +87,22 @@ document.addEventListener("DOMContentLoaded", () => {
       });
   }
 
-  function renderTurn({ message, reply, tool_calls }) {
+  // Where the form lives depends on which path answered. Mid-conversation the
+  // workflow holds it in its state; on the last turn it is handed over at the
+  // top level. Neither is a tool call any more, so the tool call is only the
+  // fallback for a message the agent answered instead.
+  function collectedForm(result) {
+    if (!result) return null;
+    if (result.form) return { form: result.form, found: result.found || [] };
+    const state = result.state;
+    // An empty form is the opening turn, before anything has been asked.
+    if (state && state.form && Object.keys(state.form).length) {
+      return { form: state.form, found: state.found || [] };
+    }
+    return null;
+  }
+
+  function renderTurn({ message, reply, tool_calls, workflow, workflow_result }) {
     const card = document.createElement("div");
     card.className = "need-card";
 
@@ -96,25 +111,43 @@ document.addEventListener("DOMContentLoaded", () => {
     said.textContent = `You said: ${message}`;
     card.appendChild(said);
 
+    // Which path answered, so a card cannot be misread as the workflow's when
+    // the classifier sent the message somewhere else.
+    const routed = document.createElement("p");
+    routed.className = "meta";
+    const badge = document.createElement("span");
+    badge.className = workflow ? "badge" : "badge badge-pending";
+    badge.textContent = workflow ? `⚙️ ${workflow}` : "💬 no workflow, the agent answered";
+    routed.appendChild(badge);
+    card.appendChild(routed);
+
     renderReply(card, reply);
 
-    // The extractor's real result rides on the tool call, not the reply text.
+    const collected = collectedForm(workflow_result);
+    if (collected) {
+      renderForm(card, collected.form, collected.found);
+      resultList.prepend(card);
+      return;
+    }
+
     const extraction = (tool_calls || []).find(
       (call) => call.name === "extract_form_tool" && call.data && call.data.form);
 
     if (!extraction) {
-      // Two very different reasons to have no form, and conflating them would
-      // hide a real extraction failure behind "it did something else".
+      // Several very different reasons to have no form, and conflating them
+      // would hide a real extraction failure behind "it did something else".
       const attempted = (tool_calls || []).find(
         (call) => call.name === "extract_form_tool");
       const used = (tool_calls || []).map((c) => c.name).join(", ");
       const note = document.createElement("p");
       note.className = "empty-body";
-      note.textContent = attempted
-        ? `The extractor ran but returned no form. ${attempted.output}`
-        : used
-          ? `No form extracted, the agent used ${used} instead.`
-          : "No form extracted, the agent answered directly.";
+      note.textContent = workflow
+        ? "Nothing collected yet: the workflow is still asking."
+        : attempted
+          ? `The extractor ran but returned no form. ${attempted.output}`
+          : used
+            ? `No form extracted, the agent used ${used} instead.`
+            : "No form extracted, the agent answered directly.";
       card.appendChild(note);
     } else {
       renderForm(card, extraction.data.form, extraction.data.found || []);
