@@ -12,12 +12,28 @@ web search only when the curated table has nothing, the same
 import requests
 
 from .. import db, interactions
-from ..data_loader import maps_url
+from ..data_loader import SUPPORTED_CITIES, maps_url
 from ..geo import haversine_km
 from .search_web import WebSearchError, search_web
 
 NEED_LABELS = dict(interactions.NEED_OPTIONS)
 DEFAULT_LIMIT = 2
+
+
+def searchable(where: dict) -> dict:
+    """A resolved location, with the city this app covers filled in when it
+    resolved to nothing at all.
+
+    find_nearby below treats "nothing known" as "search the whole web", which
+    is the right general contract and the wrong answer here: it replied to a
+    Vancouver app's question with restaurants in Austin. Every caller wants the
+    same fallback instead, so the rule lives once. Applied to the resolved
+    location rather than inside find_nearby, which keeps its honest contract
+    and its test.
+    """
+    if where.get("city") or where.get("lat") is not None:
+        return where
+    return {**where, "city": SUPPORTED_CITIES[0]}
 
 
 def _rank_by_proximity(venues, neighbourhood, lat, lng):

@@ -12,6 +12,7 @@ from unittest import mock
 
 import app as app_module
 from src import agent
+from src.components.find_nearby import searchable
 from src.data_loader import SUPPORTED_CITIES
 
 FOUND = {"places": [{"name": "Science World", "neighbourhood": "False Creek",
@@ -58,8 +59,12 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
         with mock.patch.object(app_module, "find_nearby_component",
                                return_value=FOUND) as component:
             response = self.client.post("/find_nearby", json={"need": "nursing_room"})
+        # Every field, the same ones the test page passes, so the two cannot
+        # answer the same question differently.
         self.assertEqual(component.call_args.kwargs,
-                         {"need": "nursing_room", "city": SUPPORTED_CITIES[0]})
+                         {"need": "nursing_room", "city": SUPPORTED_CITIES[0],
+                          "neighbourhood": "", "place_name": "",
+                          "lat": None, "lng": None})
         body = response.get_json()
         self.assertEqual(body["source"], "search")
         self.assertEqual(body["venues"], FOUND["places"])
@@ -70,6 +75,42 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
             body = self.client.post("/find_nearby",
                                     json={"need": "nursing_room"}).get_json()
         self.assertEqual(set(body), {"need", "venues", "source", "location"})
+
+
+class NothingKnownMeansTheCityWeCoverTest(unittest.TestCase):
+    """find_nearby treats "nothing known" as "search the whole web", which is
+    the right general contract and the wrong answer for this app: asked for a
+    kid-friendly restaurant with no location, it returned Austin, Texas."""
+
+    def test_an_unresolved_location_gets_the_supported_city(self):
+        self.assertEqual(
+            searchable({"city": "", "neighbourhood": "", "formatted_address": "",
+                        "lat": None, "lng": None})["city"],
+            SUPPORTED_CITIES[0])
+
+    def test_a_resolved_city_is_left_alone(self):
+        where = searchable({"city": "Richmond", "neighbourhood": "",
+                            "formatted_address": "7360 St Albans Rd",
+                            "lat": None, "lng": None})
+        self.assertEqual(where["city"], "Richmond")
+
+    def test_coordinates_alone_are_left_alone(self):
+        # Coordinates search every venue by real distance. Naming a city here
+        # would narrow the search to one we never resolved.
+        where = searchable({"city": "", "neighbourhood": "",
+                            "formatted_address": "", "lat": 49.1, "lng": -123.1})
+        self.assertEqual(where["city"], "")
+
+    def test_the_component_page_applies_it_too(self):
+        # The page and the chat differed on exactly this: same question, no
+        # location, one answered Vancouver and the other answered Texas.
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_current_parent",
+                               return_value={"id": 1, "is_admin": 1}), \
+             mock.patch.object(app_module, "find_nearby_component",
+                               return_value=FOUND) as component:
+            client.post("/find-nearby/run", json={"need": "restaurant"})
+        self.assertEqual(component.call_args.kwargs["city"], SUPPORTED_CITIES[0])
 
 
 class TheRequestCarriesCoordinatesTest(unittest.TestCase):

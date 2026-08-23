@@ -12,7 +12,8 @@ a need it cannot read, and a location it does not have yet.
 """
 
 from .. import interactions
-from ..components.find_nearby import find_nearby
+from ..components.find_nearby import find_nearby, searchable
+from ..components.geocode import UNKNOWN_LOCATION, GeocodeError, resolve_location
 from ..data_loader import SUPPORTED_CITIES
 
 STAGE_NEED = "need"
@@ -76,6 +77,31 @@ def _coords(context: dict | None) -> tuple:
     return (lat, lng) if lat is not None and lng is not None else (None, None)
 
 
+def _where(lat, lng) -> dict:
+    """Coordinates into the place to search from, via the Geocode component.
+
+    This workflow used to skip that step and pass `city=SUPPORTED_CITIES[0]`
+    whatever the coordinates said. A parent in Richmond was therefore handed
+    Vancouver venues, ranked by distance and described as near them, and the
+    web fallback could never fire because the curated search always had
+    something to return. The component's own docstring says why: `city` is for
+    narrowing when it is the only thing known, and coordinates are meant to
+    search every venue and rank by real distance.
+    """
+    if lat is None:
+        # Nothing to go on but the city the venue data covers.
+        return searchable(dict(UNKNOWN_LOCATION))
+    try:
+        return searchable(resolve_location(lat=lat, lng=lng))
+    except (GeocodeError, KeyError) as e:
+        # Naming the place is a nicety; the coordinates are the useful part, so
+        # a missing key or a failing geocoder must not throw them away. `city`
+        # stays empty on purpose: searching every venue by real distance is
+        # right, and claiming a city we did not resolve is not.
+        print(f"Find-nearby place lookup skipped, using raw coordinates: {e}")
+        return {**UNKNOWN_LOCATION, "lat": lat, "lng": lng}
+
+
 def _answer(result: dict, need: str, located: bool) -> dict:
     """The reply, plus the places for the widget to render as real links.
 
@@ -128,11 +154,15 @@ def run(message: str, state: dict | None = None,
         need = FALLBACK_NEED
 
     lat, lng = _coords(context)
-    # The city goes in every time. The component only consults the curated
-    # table when it has a city or coordinates, and Vancouver is the only city
-    # the venue data covers, so this is what makes the no-location branch work
-    # at all. Coordinates then add real distance ranking on top.
-    result = find_nearby(need=need, city=SUPPORTED_CITIES[0], lat=lat, lng=lng)
+    where = _where(lat, lng)
+    # Every field the test page passes, so the same coordinates give the same
+    # answer in both places. place_name in particular is what the web fallback
+    # searches near, and without it a Richmond parent was searched for in
+    # Vancouver.
+    result = find_nearby(need=need, city=where["city"],
+                         neighbourhood=where["neighbourhood"],
+                         place_name=where["formatted_address"],
+                         lat=where["lat"], lng=where["lng"])
     return _answer(result, need, lat is not None)
 
 
@@ -151,6 +181,7 @@ WORKFLOW = {
     ),
     "steps": [
         {"component": "AI Agent (OpenRouter)", "built": True},
+        {"component": "Geocode", "built": True},
         {"component": "Find nearby stops", "built": True},
         {"component": "Web Search", "built": True},
     ],

@@ -447,6 +447,21 @@ distinctive words is work code does, and the order is the whole point: "a quiet
 place to feed the baby" is a nursing room, not a quiet spot. When the words
 match nothing it asks, offering the six need buttons, and it asks only once.
 
+**One resolver, so the chat and the test page agree.** They did not at first:
+the same coordinates in Richmond had the page web-searching Richmond while the
+chat returned Vancouver venues described as "near you", because the chat
+skipped the Geocode component and passed the supported city whatever the
+coordinates said. That also meant the web fallback could never fire outside
+Vancouver, since the curated search always had something. `resolve_location`
+now lives in the Geocode component and every caller uses it.
+
+And a location that resolves to **nothing** means the city this app covers, not
+the whole web. `find_nearby` treats "nothing known" as a web search, which is
+the right general contract and the wrong answer here: asked for a kid-friendly
+restaurant with no location, the test page returned results in Austin, Texas.
+`find_nearby.searchable()` applies that default in one place for the chat, the
+test page and the trip panel.
+
 **Location is offered, never demanded.** The widget attaches coordinates to a
 message only when permission has already been granted, checked through the
 Permissions API, which reports the state without prompting. Opening a page

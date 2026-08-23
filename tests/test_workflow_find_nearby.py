@@ -21,6 +21,10 @@ from src.workflows.find_nearby_place import (
 )
 
 HERE = {"lat": 49.2734, "lng": -123.1027}
+# What the Geocode component makes of those coordinates.
+RESOLVED = {"city": "Vancouver", "neighbourhood": "False Creek",
+            "formatted_address": "1455 Quebec St, Vancouver, BC",
+            "lat": 49.2734, "lng": -123.1027}
 FOUND = {"places": [{"name": "Science World", "neighbourhood": "False Creek",
                      "type": "attraction", "distance_km": 0.19,
                      "maps_url": "https://maps.example/science-world"}],
@@ -30,9 +34,13 @@ NOTHING = {"places": [], "source": "none", "need": "nursing_room",
            "city": "Vancouver", "neighbourhood": ""}
 
 
-def _run(message, state=None, context=None, result=None):
+def _run(message, state=None, context=None, result=None, where=None):
+    """One turn with both boundaries mocked: the component, and the geocoder,
+    which would otherwise be a real network call for any test with coordinates."""
     with mock.patch.object(find_nearby_place, "find_nearby",
-                           return_value=result or FOUND) as component:
+                           return_value=result or FOUND) as component, \
+         mock.patch.object(find_nearby_place, "resolve_location",
+                           return_value=where or RESOLVED):
         answer = run(message, state, context)
     return answer, component
 
@@ -94,16 +102,49 @@ class ItRunsTheComponentTest(unittest.TestCase):
     """Not interactions.find_nearby, which is the need-matching predicate with
     no location narrowing and no web fallback."""
 
-    def test_the_city_is_always_passed_so_curated_is_consulted(self):
+    def test_with_no_coordinates_it_searches_the_city_we_cover(self):
         # The component only searches the curated table given a city or
         # coordinates, so without this the no-location branch finds nothing.
         _, component = _run("find a nursing room")
         self.assertEqual(component.call_args.kwargs["city"], SUPPORTED_CITIES[0])
 
-    def test_coordinates_reach_the_component(self):
+    def test_coordinates_are_resolved_before_the_search(self):
+        # The bug this replaced: the city was hardcoded whatever the
+        # coordinates said, so a parent outside Vancouver was handed Vancouver
+        # venues described as near them, and the web fallback never fired.
         _, component = _run("find a nursing room", context=HERE)
-        self.assertEqual(component.call_args.kwargs["lat"], HERE["lat"])
-        self.assertEqual(component.call_args.kwargs["lng"], HERE["lng"])
+        passed = component.call_args.kwargs
+        self.assertEqual(passed["lat"], HERE["lat"])
+        self.assertEqual(passed["lng"], HERE["lng"])
+        self.assertEqual(passed["city"], RESOLVED["city"])
+        self.assertEqual(passed["neighbourhood"], RESOLVED["neighbourhood"])
+        self.assertEqual(passed["place_name"], RESOLVED["formatted_address"])
+
+    def test_a_parent_outside_vancouver_is_searched_for_where_they_are(self):
+        elsewhere = {"city": "Richmond", "neighbourhood": "",
+                     "formatted_address": "7360 St Albans Rd, Richmond, BC",
+                     "lat": 49.1593, "lng": -123.1306}
+        _, component = _run("find me kid-friendly restaurants",
+                            context={"lat": 49.1593, "lng": -123.1306},
+                            where=elsewhere)
+        passed = component.call_args.kwargs
+        self.assertEqual(passed["city"], "Richmond")
+        self.assertNotEqual(passed["city"], SUPPORTED_CITIES[0])
+        # Without this the web fallback searched "near Vancouver".
+        self.assertIn("Richmond", passed["place_name"])
+
+    def test_a_failing_geocoder_keeps_the_coordinates(self):
+        # Naming the place is a nicety; the coordinates are the useful part.
+        # The city stays empty rather than claiming one we did not resolve.
+        from src.components.geocode import GeocodeError
+        with mock.patch.object(find_nearby_place, "find_nearby",
+                               return_value=FOUND) as component, \
+             mock.patch.object(find_nearby_place, "resolve_location",
+                               side_effect=GeocodeError("no key")):
+            run("find a nursing room", None, HERE)
+        passed = component.call_args.kwargs
+        self.assertEqual(passed["lat"], HERE["lat"])
+        self.assertEqual(passed["city"], "")
 
     def test_without_coordinates_it_still_answers_and_offers_to_locate(self):
         answer, _ = _run("find a nursing room")
@@ -171,6 +212,8 @@ class RoutingTest(unittest.TestCase):
     def test_coordinates_travel_from_the_request_to_the_workflow(self):
         with mock.patch.object(agent, "classify_intent",
                                return_value=WORKFLOW["name"]), \
+             mock.patch.object(find_nearby_place, "resolve_location",
+                               return_value=RESOLVED), \
              mock.patch.object(find_nearby_place, "find_nearby",
                                return_value=FOUND) as component:
             agent.handle_message("find a nursing room", context=HERE)

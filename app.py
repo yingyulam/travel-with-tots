@@ -34,7 +34,13 @@ from src.agents import (
 )
 from src.components.extract_form import FormExtractionError, extract_form
 from src.components.find_nearby import find_nearby as find_nearby_component
-from src.components.geocode import GeocodeError, geocode, reverse_geocode
+from src.components.find_nearby import searchable
+from src.components.geocode import (
+    UNKNOWN_LOCATION,
+    GeocodeError,
+    resolve_location,
+    reverse_geocode,
+)
 from src.components.place_search import PlaceSearchError, search_places
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
@@ -421,22 +427,12 @@ def search_web_key_route():
     return jsonify({"status": "saved"})
 
 
-# "We don't know where they are", in the shape a resolved location has. Named
-# rather than repeated so the three places that need it cannot drift.
-UNKNOWN_LOCATION = {"city": "", "neighbourhood": "", "formatted_address": "",
-                    "lat": None, "lng": None}
-
-
 def _resolve_location(data):
-    """The place a find-nearby request is centred on: reverse-geocoded
-    browser coordinates, a typed address, or (when neither was sent) nothing
-    at all, so a parent who declines location sharing still gets results."""
-    if data.get("lat") is not None and data.get("lng") is not None:
-        return reverse_geocode(data["lat"], data["lng"])
-    address = (data.get("address") or "").strip()
-    if address:
-        return geocode(address)
-    return dict(UNKNOWN_LOCATION)
+    """A request body's location, resolved. The resolving itself lives in the
+    Geocode component, so this page, the trip panel and the chat workflow all
+    centre on the same place given the same coordinates."""
+    return resolve_location(lat=data.get("lat"), lng=data.get("lng"),
+                            address=data.get("address") or "")
 
 
 @app.route("/find-nearby")
@@ -476,10 +472,13 @@ def find_nearby_run_route():
         location = {"city": "", "neighbourhood": "", "formatted_address": "",
                     "lat": data["lat"], "lng": data["lng"]}
 
+    # Same default as the chat and the trip panel: a location that resolved to
+    # nothing means the city this app covers, not the whole web.
+    where = searchable(location)
     result = find_nearby_component(
-        need=need, city=location["city"], neighbourhood=location["neighbourhood"],
-        place_name=location["formatted_address"],
-        lat=location["lat"], lng=location["lng"])
+        need=need, city=where["city"], neighbourhood=where["neighbourhood"],
+        place_name=where["formatted_address"],
+        lat=where["lat"], lng=where["lng"])
     result["location"] = location
     return jsonify(result)
 
@@ -1090,22 +1089,19 @@ def find_nearby_route():
         location = {**UNKNOWN_LOCATION,
                     "lat": data.get("lat"), "lng": data.get("lng")}
 
-    if location["city"] or location["lat"] is not None:
-        result = find_nearby_component(
-            need=need, city=location["city"],
-            neighbourhood=location["neighbourhood"],
-            place_name=location["formatted_address"],
-            lat=location["lat"], lng=location["lng"])
-        return jsonify({"need": need, "venues": result["places"],
-                        "source": result["source"], "location": location})
-
-    # No location at all. Still the component rather than find_nearby(VENUES):
-    # that one has no web fallback, so this branch used to report "curated"
-    # having consulted nothing but the sample list. The city is the only one the
-    # venue data covers, which is what lets the curated search run here.
-    result = find_nearby_component(need=need, city=SUPPORTED_CITIES[0])
+    # One call, whether or not anything resolved: `searchable` supplies the city
+    # this app covers when nothing did. It used to be two branches, and the
+    # no-location one returned find_nearby(VENUES) with a hardcoded "curated",
+    # having consulted nothing but the sample list and never the web.
+    where = searchable(location)
+    result = find_nearby_component(
+        need=need, city=where["city"], neighbourhood=where["neighbourhood"],
+        place_name=where["formatted_address"],
+        lat=where["lat"], lng=where["lng"])
     return jsonify({"need": need, "venues": result["places"],
-                    "source": result["source"], "location": None})
+                    "source": result["source"],
+                    "location": location if location["lat"] is not None
+                    or location["city"] else None})
 
 
 @app.route("/chatbot", methods=["POST"])

@@ -92,3 +92,27 @@ def geocode(address: str) -> dict:
     """A typed address or place name to the same shape as reverse_geocode,
     for when a parent sets their location by hand instead of sharing it."""
     return _normalize(_first_result({"address": address}))
+
+
+# "We don't know where they are", in the shape a resolved location has. Named
+# rather than repeated so the places that need it cannot drift.
+UNKNOWN_LOCATION = {"city": "", "neighbourhood": "", "formatted_address": "",
+                    "lat": None, "lng": None}
+
+
+def resolve_location(lat=None, lng=None, address="") -> dict:
+    """The place a find-nearby request is centred on: browser coordinates, a
+    typed address, or nothing at all, as one resolved shape.
+
+    Lives here rather than in a route because it is not a route's job and more
+    than one caller needs it: the component's test page, the trip page's need
+    panel, and the chat workflow all have to resolve a location the same way,
+    or they answer the same question differently. Raises what geocode raises,
+    so each caller can decide what a failure costs it.
+    """
+    if lat is not None and lng is not None:
+        return reverse_geocode(lat, lng)
+    address = (address or "").strip()
+    if address:
+        return geocode(address)
+    return dict(UNKNOWN_LOCATION)
