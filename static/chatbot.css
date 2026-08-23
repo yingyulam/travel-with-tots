@@ -569,3 +569,27 @@ details[open] > .twt-result-summary .twt-result-chevron {
   pointer-events: none;
   opacity: 0.65;
 }
+
+/* Found places, one card each. The anchor inside uses .maps-link, which
+   style.css already defines for the trip page and base.html loads everywhere. */
+.twt-places {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.twt-place {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--twt-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.twt-place-meta {
+  font-size: 11px;
+  opacity: 0.75;
+}

@@ -39,7 +39,7 @@ from src.components.place_search import PlaceSearchError, search_places
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
-from src.data_loader import FEATURE_LABELS, VENUES
+from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, VENUES
 from src.dates import compute_age
 from src.db import (
     TRIP_FIELDS,
@@ -80,7 +80,6 @@ from src.interactions import (
     MIN_REPLAN_MINUTES,
     NEED_OPTIONS,
     SITUATION_OPTIONS,
-    find_nearby,
     replan,
 )
 from src.itinerary import THEMES
@@ -124,6 +123,24 @@ FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 # How many times a parent can say "something's off" and get the plan
 # adjusted again before we stop offering it and point at in-trip replanning.
 MAX_REVISE_ROUNDS = 2
+
+
+def _message_context(data):
+    """What a chat request knows that its message does not: the browser's
+    coordinates, when it has already been given permission. Client-supplied, so
+    the values are checked here rather than where they are used, and anything
+    that is not a real pair of numbers becomes no location at all."""
+    location = data.get("location")
+    if not isinstance(location, dict):
+        return {}
+    lat, lng = location.get("lat"), location.get("lng")
+    if not (isinstance(lat, (int, float)) and isinstance(lng, (int, float))):
+        return {}
+    if isinstance(lat, bool) or isinstance(lng, bool):
+        return {}
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return {}
+    return {"lat": float(lat), "lng": float(lng)}
 
 
 def _chosen_model(value):
@@ -1082,8 +1099,13 @@ def find_nearby_route():
         return jsonify({"need": need, "venues": result["places"],
                         "source": result["source"], "location": location})
 
-    return jsonify({"need": need, "venues": find_nearby(need, VENUES),
-                    "source": "curated", "location": None})
+    # No location at all. Still the component rather than find_nearby(VENUES):
+    # that one has no web fallback, so this branch used to report "curated"
+    # having consulted nothing but the sample list. The city is the only one the
+    # venue data covers, which is what lets the curated search run here.
+    result = find_nearby_component(need=need, city=SUPPORTED_CITIES[0])
+    return jsonify({"need": need, "venues": result["places"],
+                    "source": result["source"], "location": None})
 
 
 @app.route("/chatbot", methods=["POST"])
@@ -1121,7 +1143,8 @@ def chatbot_route():
 
     try:
         result = handle_message(message, history=data.get("history") or [],
-                                model=model, conversation=conversation)
+                                model=model, conversation=conversation,
+                                context=_message_context(data))
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:

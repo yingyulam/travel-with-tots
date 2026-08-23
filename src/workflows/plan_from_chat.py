@@ -49,6 +49,20 @@ QUESTIONS = {
 # the offer cannot promise a city the app has nothing to plan in.
 QUESTION_CHOICES = {"destination": list(SUPPORTED_CITIES)}
 
+# Asked once, before any of the individual questions. Everything at once, in
+# one message, because a parent who can describe their day in a sentence should
+# not be interviewed field by field: that is the form again, only slower. The
+# questions above are what is left over, asked only for what this did not get.
+OPENING_QUESTION = (
+    "Tell me about your day, whatever you know:\n\n"
+    f"- Which city (we cover {SUPPORTED_CITIES[0]} for now)\n"
+    "- How old your little one is\n"
+    "- What time their day starts, and bedtime\n"
+    "- Nap time and how long it lasts, if they still nap\n\n"
+    "All in one message is fine, something like: \"Vancouver, she's 2, up at 7 "
+    "and bed at 7:30, naps at 1 for an hour.\""
+)
+
 # Asked once, after the required fields, because the useful things a parent
 # knows about their own child are the ones no field thought to ask for. The
 # answer is free text and goes wherever the extractor puts it, usually the
@@ -293,8 +307,13 @@ def _collect(message: str, state: dict) -> dict:
     return _confirm(carried)
 
 
-def run(message: str, state: dict | None = None) -> dict:
+def run(message: str, state: dict | None = None,
+        context: dict | None = None) -> dict:
     """One turn of the form-filling conversation.
+
+    `context` is part of the runnable-workflow contract and carries what the
+    request knew that the message did not. Nothing here wants it: a planning
+    form is about a day, not about where the parent is standing.
 
     No state begins it; state continues it. Returns {"reply", "state"} plus
     optionally "choices" (buttons to offer) and "form" (present only once the
@@ -318,8 +337,13 @@ def run(message: str, state: dict | None = None) -> dict:
                 "state": None,
                 "open_form": True,
             }
-        return _ask(REQUIRED[0], {"form": dict(DEFAULTS), "found": [],
-                                  "skipped": [], "asked_extras": False})
+        # The one open question, not the first of five. `asking` is None
+        # because no single field owns it, so nothing here can be declined by
+        # accident.
+        return {"reply": OPENING_QUESTION,
+                "state": {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS),
+                          "found": [], "skipped": [], "asking": None,
+                          "asked_extras": False}}
 
     if stage == STAGE_EXTRAS:
         if _is_only(message, _NOTHING):

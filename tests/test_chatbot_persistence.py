@@ -76,5 +76,32 @@ class RestoredTranscriptIsNotMarkupTest(unittest.TestCase):
                 self.assertNotIn(sink, _source())
 
 
+class LinkTargetsAreCheckedTest(unittest.TestCase):
+    """The widget renders links to found places, and a place found by web
+    search carries a URL nobody in this project chose."""
+
+    def test_there_is_an_http_only_allowlist(self):
+        source = _source()
+        self.assertIn("function twtSafeUrl(", source)
+        allowlist = re.search(r"function twtSafeUrl\(.*?\n\}", source,
+                              re.DOTALL).group(0)
+        self.assertIn("^https?:", allowlist)
+
+    def test_every_href_is_a_literal_or_checked(self):
+        # Escaping is not enough for a link target: as a property it could
+        # still be "javascript:". Anything not plain http(s) must lose its
+        # link rather than be rendered.
+        for value in re.findall(r"\.href\s*=\s*([^;]+);", _source()):
+            with self.subTest(value=value):
+                self.assertTrue(
+                    value.strip().startswith('"') or value.strip() == "href",
+                    f"unchecked href assignment: {value}")
+
+    def test_the_checked_href_comes_from_the_allowlist(self):
+        source = _source()
+        self.assertRegex(source, r"const href = twtSafeUrl\(")
+        self.assertRegex(source, r"if \(href\) \{")
+
+
 if __name__ == "__main__":
     unittest.main()

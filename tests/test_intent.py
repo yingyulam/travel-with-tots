@@ -94,7 +94,7 @@ class OfferedWorkflowsTest(unittest.TestCase):
 
     def test_the_registry_still_lists_every_workflow(self):
         # runnable_message_workflows filters; WORKFLOWS must not.
-        self.assertEqual(len(WORKFLOWS), 3)
+        self.assertEqual(len(WORKFLOWS), 4)
 
 
 class LogTest(unittest.TestCase):

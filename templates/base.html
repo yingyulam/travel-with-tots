@@ -45,6 +45,9 @@
 
   {% include "_chatbot_widget.html" %}
   <script src="{{ url_for('static', filename='rag-status.js') }}"></script>
+  {# The chat can offer to use a location, so its helper is loaded everywhere
+     the widget is, which is everywhere. It only asks when a button says so. #}
+  <script src="{{ url_for('static', filename='geolocate.js') }}"></script>
   <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

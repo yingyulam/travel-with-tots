@@ -20,11 +20,11 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
-from . import interactions
 from .agents import DEFAULT_MODEL, ask_website_chatbot
 from .components.extract_form import FormExtractionError, extract_form
+from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
-from .data_loader import VENUES
+from .data_loader import SUPPORTED_CITIES
 from .intent import classify_intent, log_decision
 from .workflows import runnable_message_workflows
 
@@ -82,12 +82,28 @@ def extract_form_tool(description: str) -> tuple[str, dict]:
     return f"Filled in from their words: {found}.", result
 
 
-@tool
-def find_nearby_tool(need: str) -> list[dict]:
+@tool(response_format="content_and_artifact")
+def find_nearby_tool(need: str) -> tuple[str, dict]:
     """Find 1-2 kid-friendly venues nearby matching an immediate need.
     need must be one of: restaurant, family_room, changing_table,
-    nursing_room, quiet_spot."""
-    return interactions.find_nearby(need, VENUES)
+    nursing_room, quiet_spot, other."""
+    # The component, not interactions.find_nearby: that one is the need-matching
+    # predicate, with no location narrowing and no web fallback. This tool used
+    # to call it directly, so the agent answered these from the sample venue
+    # list while the real chain sat unused.
+    #
+    # This is the safety net for a phrasing the intent classifier misses; the
+    # registered workflow is the main path. Both call the same component, so
+    # they cannot answer the same question two different ways.
+    try:
+        result = find_nearby_component(need=need, city=SUPPORTED_CITIES[0])
+    except TOOL_ERRORS as e:
+        return f"Couldn't look that up right now ({type(e).__name__}).", {}
+    names = ", ".join(place["name"] for place in result["places"]) or "nothing"
+    # The artifact carries the places so the caller can render real links from
+    # them. Returned as content_and_artifact for exactly that reason: a plain
+    # dict would be JSON-stringified into the tool message and lost.
+    return f"Found {names} ({result['source']}).", result
 
 
 @tool
@@ -118,7 +134,8 @@ def _build_agent(model: str):
 
 def handle_message(message: str, history: list[dict] | None = None,
                    model: str = DEFAULT_MODEL,
-                   conversation: dict | None = None) -> dict:
+                   conversation: dict | None = None,
+                   context: dict | None = None) -> dict:
     """One turn, routed: a workflow if the message asks for one, else the agent.
 
     This is the entry point for any surface that carries a message. It takes a
@@ -133,6 +150,9 @@ def handle_message(message: str, history: list[dict] | None = None,
     The reply always carries "workflow": the name that ran, or None. None rather
     than an absent key, so a caller can tell "no workflow matched" from "this
     response predates routing".
+
+    `context` is what the request knew that the message did not, today the
+    browser's coordinates. Every workflow is handed it; most ignore it.
 
     `conversation` is {"workflow", "state"} when a workflow is mid-flow. While
     one is, the classifier is skipped entirely: "two year old" and "yes" are
@@ -157,7 +177,7 @@ def handle_message(message: str, history: list[dict] | None = None,
 
     if run is not None:
         try:
-            result = run(message, state) if in_flight else run(message)
+            result = run(message, state, context)
         except TOOL_ERRORS as e:
             # A workflow that fails must not cost the parent their turn, so it
             # falls through to the agent. Logged as not-run, so the trace shows
@@ -188,6 +208,11 @@ def handle_message(message: str, history: list[dict] | None = None,
                 "choices": result.get("choices"),
                 "form": result.get("form"),
                 "open_form": result.get("open_form", False),
+                # Places render as cards with real Maps links, so they travel
+                # as data rather than as URLs written into the reply text.
+                "places": result.get("places") or [],
+                "source": result.get("source"),
+                "ask_location": result.get("ask_location", False),
             }
     else:
         log_decision(message, None, ran=False)
@@ -235,9 +260,15 @@ def run_agent(message: str, history: list[dict] | None = None,
     # The FAQ tool wraps ask_website_chatbot, so when it ran its result already
     # carries the citations and usage numbers the widget expects.
     faq = _artifact_of("answer_faq_tool", tool_messages)
+    # When the classifier missed and the agent answered a nearby question with
+    # the tool, the places are still real records. Surfaced here so they render
+    # as links exactly as the workflow's do.
+    nearby = _artifact_of("find_nearby_tool", tool_messages)
     return {
         "reply": result["messages"][-1].content,
         "sources": faq.get("sources", []),
+        "places": nearby.get("places", []),
+        "source": nearby.get("source"),
         "model": model,
         "response_time": faq.get("response_time"),
         "input_tokens": faq.get("input_tokens"),

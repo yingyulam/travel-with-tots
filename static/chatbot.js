@@ -15,6 +15,15 @@ function twtSelectedModel() {
   return localStorage.getItem(TWT_MODEL_STORAGE_KEY) || "";
 }
 
+// A link target has to be checked, not escaped: as an attribute it could break
+// out, and as a property it could still be "javascript:". Anything that is not
+// plain http(s) loses its link rather than being rendered. Copied in spirit
+// from templates/trip.html, and it matters more here, because a place found by
+// web search carries a URL nobody in this project chose.
+function twtSafeUrl(url) {
+  return /^https?:\/\//i.test(String(url || "").trim()) ? url : null;
+}
+
 function buildFeedbackRow(context) {
   const row = document.createElement("div");
   row.className = "twt-feedback";
@@ -182,6 +191,34 @@ document.addEventListener("click", (e) => {
     // listeners, and restoring it would mean handing stored text to innerHTML,
     // which is the one thing the rest of this file is careful never to do.
     let turns = [];
+    // The browser's coordinates, sent with every message so a nearby question
+    // can be answered by distance. Filled only when permission has already been
+    // granted, or when the parent taps the button below: opening a page must
+    // never raise a location prompt on its own.
+    let coords = null;
+    // The last thing the parent asked, so the location button can ask it again
+    // now that there is somewhere to measure from.
+    let lastQuestion = "";
+
+    // Permissions API rather than getCurrentPosition: querying the state does
+    // not prompt, while calling for a position does. Not every browser has it,
+    // and a rejection here is simply "we do not know", so the button remains.
+    function useCoordsIfAlreadyAllowed() {
+      if (!navigator.permissions || !navigator.permissions.query) return;
+      navigator.permissions.query({ name: "geolocation" })
+        .then((status) => {
+          if (status.state !== "granted") return;
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              coords = { lat: position.coords.latitude,
+                         lng: position.coords.longitude };
+            },
+            () => {},
+            { timeout: 10000, maximumAge: 60000 },
+          );
+        })
+        .catch(() => {});
+    }
 
     function save() {
       try {
@@ -396,6 +433,85 @@ document.addEventListener("click", (e) => {
       return el;
     }
 
+    // One found place: what it is, where it is, how far, and a link. Built from
+    // the record rather than from anything the model wrote, so the href is a
+    // value this app produced and never a string a language model chose.
+    function placeCard(place, source) {
+      const card = document.createElement("div");
+      card.className = "twt-place";
+
+      const name = document.createElement("strong");
+      name.textContent = place.name;
+      card.appendChild(name);
+
+      const facts = [place.type, place.neighbourhood].filter(Boolean);
+      if (typeof place.distance_km === "number") {
+        facts.push(`${place.distance_km}km away`);
+      }
+      if (facts.length) {
+        const meta = document.createElement("div");
+        meta.className = "twt-place-meta";
+        meta.textContent = facts.join(" · ");
+        card.appendChild(meta);
+      }
+
+      const href = twtSafeUrl(place.maps_url);
+      if (href) {
+        const link = document.createElement("a");
+        link.className = "maps-link";
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener";
+        // A web result is somewhere nobody here has checked, so it does not get
+        // to claim it is a place on a map. Same distinction the trip page makes.
+        link.textContent = source === "search"
+          ? "🔗 Open result"
+          : "📍 Open in Google Maps";
+        card.appendChild(link);
+      }
+      return card;
+    }
+
+    function placeList(places, source) {
+      const list = document.createElement("div");
+      list.className = "twt-places";
+      places.forEach((place) => list.appendChild(placeCard(place, source)));
+      return list;
+    }
+
+    // Not a choice chip: tapping it does not send its own text, it asks the
+    // browser for a location and then asks the same question again, now with
+    // somewhere to measure from.
+    function locationButton(bubbleEl) {
+      const row = document.createElement("div");
+      row.className = "twt-chips";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "twt-chip";
+      btn.textContent = "📍 Use my location";
+
+      const say = (text) => {
+        const note = document.createElement("div");
+        note.className = "twt-place-meta";
+        note.textContent = text;
+        row.replaceWith(note);
+      };
+
+      btn.addEventListener("click", () => {
+        const question = lastQuestion;
+        requestCoordinates({
+          onStatus: say,
+          onCoords: (position) => {
+            coords = position;
+            row.remove();
+            send(question);
+          },
+        });
+      });
+      row.appendChild(btn);
+      bubbleEl.appendChild(row);
+    }
+
     // A row of one-tap answers. Clicking sends exactly the text on the button,
     // so a tapped choice and a typed one take the same path through the server.
     // `onUse` records that the row is spent, so restoring the transcript after
@@ -442,6 +558,14 @@ document.addEventListener("click", (e) => {
         bubbleEl.appendChild(row);
         return;
       }
+      if (data.places && data.places.length) {
+        bubbleEl.appendChild(placeList(data.places, data.source));
+      }
+      if (data.ask_location) {
+        locationButton(bubbleEl);
+        return;
+      }
+
       // A row already clicked is not offered again. Everything else on screen
       // comes back, including older rows never answered, because those are
       // still live on the page itself.
@@ -467,6 +591,7 @@ document.addEventListener("click", (e) => {
       sendBtn.disabled = true;
 
       addMessage("user", message);
+      lastQuestion = message;
       turns.push({ kind: "user", text: message });
       const placeholder = addMessage("assistant", "Thinking…");
 
@@ -479,6 +604,7 @@ document.addEventListener("click", (e) => {
             model: modelSelect.value,
             history: history.slice(-MAX_HISTORY_TURNS),
             conversation,
+            location: coords,
           }),
         });
         const data = await res.json();
@@ -581,5 +707,6 @@ document.addEventListener("click", (e) => {
     }
 
     restore();
+    useCoordsIfAlreadyAllowed();
   });
 })();

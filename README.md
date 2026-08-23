@@ -330,12 +330,20 @@ show routing that was right where execution was not.
 
 Saying "plan a trip" in the bubble starts a conversation rather than a single
 extraction. The assistant offers the two ways to plan, and if the parent picks
-chat it asks for **the city, age, wake-up, bedtime and naps**, one question per
-turn, then finishes with **"Is there anything else we need to know?"** because
-the useful things a parent knows about their own child are the ones no field
-thought to ask for.
+chat it **asks for everything at once**:
 
-Two of those questions are shaped by what the answer can be. The city offers
+> Tell me about your day, whatever you know: which city, how old your little
+> one is, what time their day starts and bedtime, nap time and how long it
+> lasts. All in one message is fine.
+
+One open question, not the first of five. Interviewing a parent field by field
+is the form again, only slower, and a day is something they can describe in a
+sentence. **Only what is missing gets a follow-up**, so "Vancouver, she's 2, up
+at 7 and bed at 7:30" is answered with the nap question alone. It finishes with
+**"Is there anything else we need to know?"**, because the useful things a
+parent knows about their own child are the ones no field thought to ask for.
+
+The follow-ups are shaped by what their answer can be. The city offers
 **Vancouver** as a button, taken from the venue data rather than written as a
 literal, since that is the only city the app has anything to plan in. Naps ask
 for the time and the length together: a nap time with no length is half an
@@ -402,6 +410,48 @@ a parent would have typed, so both take one path through the server. "Plan a
 trip" stays on offer under each answer until the form-filling flow has actually
 run, since planning is what most parents come for and a greeting-only chip
 scrolls away after a question or two.
+
+## Finding somewhere nearby, from the chat
+
+Asking the bubble "find the nearest nursing room" runs the **Find a nearby
+place** workflow: the need is read from the message, the Find Nearby component
+searches, and each place comes back as a card with a working
+**📍 Open in Google Maps** link.
+
+It used to answer **💬 no workflow**, and that badge was correct rather than
+broken. Nothing nearby-shaped was registered, so the classifier was offered a
+one-item menu, rightly said `none`, and the message fell through to the agent's
+`find_nearby_tool`, which called `interactions.find_nearby`, the deterministic
+placeholder. No location, no distance, no web fallback, and the real component
+never ran.
+
+**The need is read by keyword, not by a model.** Six fixed categories with
+distinctive words is work code does, and the order is the whole point: "a quiet
+place to feed the baby" is a nursing room, not a quiet spot. When the words
+match nothing it asks, offering the six need buttons, and it asks only once.
+
+**Location is offered, never demanded.** The widget attaches coordinates to a
+message only when permission has already been granted, checked through the
+Permissions API, which reports the state without prompting. Opening a page
+therefore never raises a location prompt. Without coordinates it still answers
+from the curated Vancouver venues and adds a **📍 Use my location** button that
+re-asks the same question, this time with somewhere to measure from. With them,
+the component ranks by real distance.
+
+**Links are rendered from the place records, not from the reply text.** Nothing
+parses model prose for URLs; the `href` is always a value this app produced.
+The widget checks it against an `^https?://` allowlist first, the same rule
+`templates/trip.html` uses, and a URL that fails **loses its link rather than
+being rendered**, which matters because a web-fallback result carries a URL
+nobody here chose. A web result is labelled `🔗 Open result` rather than
+claiming to be a place on a map.
+
+**One implementation behind all three entry points.** The workflow, the agent's
+tool (the safety net for a phrasing the classifier misses) and the trip page's
+need panel all call the same component. The tool returns its places as a
+LangGraph artifact, so the agent's answer renders the same cards the workflow's
+does. The trip page's no-location branch used to report `source: "curated"`
+without having consulted anything; it now reports the source it actually used.
 
 ## Web Search
 
@@ -611,7 +661,8 @@ travel-with-tots/
 │   ├── workflows/                 # one file per workflow, each chaining components
 │   │   ├── nap_time_rescue.py     # replan around a long nap, substitute closed stops
 │   │   ├── log_a_place.py         # log a place from the map, held for admin verification
-│   │   └── plan_from_chat.py      # fill the planning form over a few chat messages
+│   │   ├── plan_from_chat.py      # fill the planning form over a few chat messages
+│   │   └── find_nearby_place.py   # answer "somewhere nearby" from the chat, with Maps links
 │   └── prompts/
 │       ├── website_chatbot.txt    # chatbot system prompt
 │       ├── extract_form.txt       # form extractor system prompt

@@ -9,6 +9,7 @@ from src.workflows.plan_from_chat import (
     CONFIRM_CHOICE,
     EXTRAS_QUESTION,
     NOTHING_CHOICE,
+    OPENING_QUESTION,
     QUESTION_CHOICES,
     QUESTIONS,
     REQUIRED,
@@ -230,9 +231,14 @@ class OfferedButtonsWorkTest(unittest.TestCase):
         extras = _turn("everything", collecting, **ALL_REQUIRED)
         confirming = _turn("she hates crowds", extras["state"],
                            extra_notes="She hates crowds.")
+        # The opening question is left out on purpose: it is open-ended, so
+        # there is no short fixed answer a button could carry. The city
+        # follow-up it leads to when nothing was supplied does have one.
+        opener = run("plan through chat", {"stage": STAGE_OFFERED})
+        city = _turn("hello", opener["state"])
         return [
             run("I want to plan a day"),        # the two ways to plan
-            run("plan through chat", {"stage": STAGE_OFFERED}),  # the city
+            city,                               # which city?
             extras,                             # anything else?
             confirming,                         # yes, that's right
         ]
@@ -309,9 +315,12 @@ class TheQuestionsTest(unittest.TestCase):
     """What the flow actually asks, and in what order."""
 
     def _ask_all(self):
-        state = run("plan through chat", {"stage": STAGE_OFFERED})
-        asked = [state["reply"]]
-        state = state["state"]
+        """Every follow-up question, in order, by answering the opener with
+        nothing and then supplying one field at a time."""
+        state = run("plan through chat", {"stage": STAGE_OFFERED})["state"]
+        turn = _turn("not sure yet", state)
+        asked = [turn["reply"]]
+        state = turn["state"]
         for supplied in ({"destination": "Vancouver"}, {"age_years": "2"},
                          {"wake_up": "07:00"}, {"bedtime": "19:30"},
                          {"naps": [{"start": "13:00", "duration_min": 60}]}):
@@ -320,10 +329,30 @@ class TheQuestionsTest(unittest.TestCase):
             state = turn["state"]
         return asked
 
-    def test_the_city_question_names_visiting_and_offers_the_supported_city(self):
+    def test_it_opens_by_asking_for_everything_at_once(self):
+        # One open question rather than the first of five: answering field by
+        # field is the form again, only slower.
         first = run("plan through chat", {"stage": STAGE_OFFERED})
-        self.assertEqual(first["reply"], "Which city are you visiting?")
-        self.assertEqual(first["choices"], ["Vancouver"])
+        self.assertEqual(first["reply"], OPENING_QUESTION)
+        for asked_about in ("city", "old", "starts", "bedtime", "nap"):
+            with self.subTest(asked_about=asked_about):
+                self.assertIn(asked_about, first["reply"].lower())
+        # Open-ended, so no button could carry the answer.
+        self.assertIsNone(first.get("choices"))
+
+    def test_only_what_is_missing_is_followed_up(self):
+        opener = run("plan through chat", {"stage": STAGE_OFFERED})["state"]
+        # Everything but the nap, in one message.
+        after = _turn("Vancouver, she's 2, up at 7 and bed at 7:30", opener,
+                      destination="Vancouver", age_years="2",
+                      wake_up="07:00", bedtime="19:30")
+        self.assertEqual(after["reply"], QUESTIONS["naps"])
+
+    def test_the_city_follow_up_names_visiting_and_offers_the_supported_city(self):
+        opener = run("plan through chat", {"stage": STAGE_OFFERED})["state"]
+        city = _turn("no idea yet", opener)
+        self.assertEqual(city["reply"], "Which city are you visiting?")
+        self.assertEqual(city["choices"], ["Vancouver"])
 
     def test_the_offered_cities_come_from_the_venue_data(self):
         # Not a literal: offering a city the app has no venues for would be a
