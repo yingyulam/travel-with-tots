@@ -21,7 +21,14 @@ FEATURE_LABELS = {
 FEATURE_KEYS = tuple(FEATURE_LABELS)
 
 
-def maps_url(name, city="Vancouver"):
+# Every venue in data/venues.json is in Vancouver, and none of them carries a
+# city of its own, so this is the whole of what the app can plan. Named here
+# rather than repeated as a literal, so anything that offers the parent a
+# choice of city offers what the data can actually support.
+SUPPORTED_CITIES = ("Vancouver",)
+
+
+def maps_url(name, city=SUPPORTED_CITIES[0]):
     """Build a Google Maps search link from a venue name and city."""
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 

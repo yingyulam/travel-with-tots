@@ -330,8 +330,23 @@ show routing that was right where execution was not.
 
 Saying "plan a trip" in the bubble starts a conversation rather than a single
 extraction. The assistant offers the two ways to plan, and if the parent picks
-chat it asks for **destination, age, wake-up and bedtime**, one question per
-turn, until it has all four.
+chat it asks for **the city, age, wake-up, bedtime and naps**, one question per
+turn, then finishes with **"Is there anything else we need to know?"** because
+the useful things a parent knows about their own child are the ones no field
+thought to ask for.
+
+Two of those questions are shaped by what the answer can be. The city offers
+**Vancouver** as a button, taken from the venue data rather than written as a
+literal, since that is the only city the app has anything to plan in. Naps ask
+for the time and the length together: a nap time with no length is half an
+answer, and asking twice for one fact is worse than asking once for both.
+
+Any question can be **declined**, which marks it asked and moves on. Without
+that, a question the parent cannot answer repeats forever in the same words:
+the extractor finds nothing, so the field stays missing, so it is asked again.
+Naps are the field this is really for, since a child can genuinely not have
+one, so "she doesn't nap anymore" is recognised as an answer and not just a
+plain "no".
 
 **The extractor runs on every message**, not once. Each turn it reads whatever
 was just said and merges it into the form built up so far. The merge is the part

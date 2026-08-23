@@ -3,16 +3,28 @@ from unittest import mock
 
 from src import agent
 from src.form_helpers import DEFAULTS
+from src.data_loader import SUPPORTED_CITIES
 from src.workflows import plan_from_chat
 from src.workflows.plan_from_chat import (
     CONFIRM_CHOICE,
+    EXTRAS_QUESTION,
+    NOTHING_CHOICE,
+    QUESTION_CHOICES,
+    QUESTIONS,
     REQUIRED,
     STAGE_COLLECTING,
     STAGE_CONFIRMING,
+    STAGE_EXTRAS,
     STAGE_OFFERED,
-    _is_yes,
+    _is_only,
+    _NOTHING,
+    _YES,
     run,
 )
+
+# Everything the four required fields need, in one message.
+ALL_REQUIRED = dict(destination="Vancouver", age_years="2", wake_up="07:00",
+                    bedtime="19:30", naps=[{"start": "13:00", "duration_min": 60}])
 
 WORKFLOW_NAME = "Fill the form from a chat message"
 
@@ -73,13 +85,24 @@ class KeepsPromptingTest(unittest.TestCase):
         self.assertEqual(result["state"]["stage"], STAGE_COLLECTING)
         self.assertIn("old", result["reply"].lower())  # asks for the age next
 
-    def test_three_turns_reach_confirmation(self):
+    def test_answering_one_at_a_time_reaches_the_extras_question(self):
         state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
         state = _turn("Vancouver", state, destination="Vancouver")["state"]
         state = _turn("she's two", state, age_years="2")["state"]
-        result = _turn("up at 7, bed at 7:30", state,
-                       wake_up="07:00", bedtime="19:30")
+        state = _turn("up at 7, bed at 7:30", state,
+                      wake_up="07:00", bedtime="19:30")["state"]
+        result = _turn("1pm for an hour", state,
+                       naps=[{"start": "13:00", "duration_min": 60}])
+        self.assertEqual(result["state"]["stage"], STAGE_EXTRAS)
+        self.assertEqual(result["reply"], EXTRAS_QUESTION)
+
+    def test_the_extras_answer_leads_to_the_confirmation(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("everything", state, **ALL_REQUIRED)["state"]
+        result = _turn("she hates crowds", state,
+                       extra_notes="She hates crowds.")
         self.assertEqual(result["state"]["stage"], STAGE_CONFIRMING)
+        self.assertIn("She hates crowds.", result["state"]["form"]["extra_notes"])
 
     def test_the_extractor_runs_on_every_collecting_turn(self):
         state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
@@ -179,9 +202,9 @@ class ConfirmTest(unittest.TestCase):
 
     def test_the_summary_shows_both_theirs_and_the_defaults(self):
         # Explicitly required: nothing should reach the planner unseen.
-        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
-        reply = _turn("all of it", state, destination="Vancouver",
-                      age_years="2", wake_up="07:00", bedtime="19:30")["reply"]
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": [],
+                 "asked_extras": True}
+        reply = _turn("all of it", state, **ALL_REQUIRED)["reply"]
         self.assertIn("From what you told me", reply)
         self.assertIn("Using defaults", reply)
         self.assertIn("dining", reply)          # a default, with its value
@@ -200,23 +223,47 @@ class OfferedButtonsWorkTest(unittest.TestCase):
     separately, so clicking it re-showed the same summary forever.
     """
 
+    def _stages(self):
+        """One turn per stage that offers buttons, with the state that made it."""
+        collecting = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS),
+                      "found": [], "skipped": [], "asked_extras": False}
+        extras = _turn("everything", collecting, **ALL_REQUIRED)
+        confirming = _turn("she hates crowds", extras["state"],
+                           extra_notes="She hates crowds.")
+        return [
+            run("I want to plan a day"),        # the two ways to plan
+            run("plan through chat", {"stage": STAGE_OFFERED}),  # the city
+            extras,                             # anything else?
+            confirming,                         # yes, that's right
+        ]
+
     def test_every_offered_button_moves_the_conversation_on(self):
         # Walked stage by stage rather than asserted per literal, so a button
         # added later is covered without anyone remembering to add a test.
-        stages = [
-            run("I want to plan a day"),                     # offered
-            _turn("all of it", {"stage": STAGE_COLLECTING,
-                                "form": dict(DEFAULTS), "found": []},
-                  destination="Vancouver", age_years="2",
-                  wake_up="07:00", bedtime="19:30"),         # confirming
-        ]
-        for offer in stages:
-            for choice in offer["choices"]:
+        for offer in self._stages():
+            for choice in offer.get("choices", []):
                 with self.subTest(stage=offer["state"]["stage"], choice=choice):
-                    after = _turn(choice, offer["state"])
-                    moved = (after["state"] is None
-                             or after["state"]["stage"] != offer["state"]["stage"])
-                    self.assertTrue(moved, f"{choice!r} left the parent where they were")
+                    # A chip that answers a field is worth what the extractor
+                    # would read out of it, which for "Vancouver" is the city.
+                    asking = offer["state"].get("asking")
+                    supplied = {asking: choice} if asking in QUESTION_CHOICES else {}
+                    after = _turn(choice, offer["state"], **supplied)
+                    # "Where they were" is the question, not just the stage:
+                    # four of the five questions share the collecting stage, so
+                    # a stage comparison would call a repeat of the same
+                    # question progress.
+                    was = (offer["state"]["stage"], asking)
+                    now = (after["state"] and
+                           (after["state"]["stage"], after["state"].get("asking")))
+                    self.assertNotEqual(now, was,
+                                        f"{choice!r} left the parent where they were")
+
+    def test_every_stage_that_asks_something_offers_a_button(self):
+        # The city, "anything else" and the confirmation all have one obvious
+        # answer, and typing it out is work the parent should not have to do.
+        for offer in self._stages():
+            with self.subTest(stage=offer["state"]["stage"]):
+                self.assertTrue(offer.get("choices"))
 
     def test_the_confirmation_button_hands_the_form_over(self):
         state = {"stage": STAGE_CONFIRMING,
@@ -232,7 +279,7 @@ class IsYesTest(unittest.TestCase):
         for message in ("yes", "Yes!", "Yes, that's right", "yes please",
                         "sure, go ahead", "perfect, thanks", "looks good"):
             with self.subTest(message=message):
-                self.assertTrue(_is_yes(message))
+                self.assertTrue(_is_only(message, _YES))
 
     def test_a_yes_with_a_change_attached_is_not_consent(self):
         # The dangerous half: accepting these would hand over a form the
@@ -240,7 +287,7 @@ class IsYesTest(unittest.TestCase):
         for message in ("yes but make it four stops", "yes, make it four stops",
                         "ok, we're in Burnaby actually", "no", "change the bedtime"):
             with self.subTest(message=message):
-                self.assertFalse(_is_yes(message))
+                self.assertFalse(_is_only(message, _YES))
 
 
 class RequiredFieldsTest(unittest.TestCase):
@@ -249,12 +296,124 @@ class RequiredFieldsTest(unittest.TestCase):
         state = {"stage": STAGE_COLLECTING,
                  "form": {**DEFAULTS, "destination": "V", "wake_up": "07:00",
                           "bedtime": "19:30"},
-                 "found": ["bedtime", "destination", "wake_up"]}
+                 "found": ["bedtime", "destination", "naps", "wake_up"]}
         result = _turn("18 months", state, age_months="6")
+        self.assertEqual(result["state"]["stage"], STAGE_EXTRAS)
+
+    def test_the_required_list_is_what_shapes_a_day(self):
+        self.assertEqual(REQUIRED,
+                         ("destination", "age", "wake_up", "bedtime", "naps"))
+
+
+class TheQuestionsTest(unittest.TestCase):
+    """What the flow actually asks, and in what order."""
+
+    def _ask_all(self):
+        state = run("plan through chat", {"stage": STAGE_OFFERED})
+        asked = [state["reply"]]
+        state = state["state"]
+        for supplied in ({"destination": "Vancouver"}, {"age_years": "2"},
+                         {"wake_up": "07:00"}, {"bedtime": "19:30"},
+                         {"naps": [{"start": "13:00", "duration_min": 60}]}):
+            turn = _turn("answer", state, **supplied)
+            asked.append(turn["reply"])
+            state = turn["state"]
+        return asked
+
+    def test_the_city_question_names_visiting_and_offers_the_supported_city(self):
+        first = run("plan through chat", {"stage": STAGE_OFFERED})
+        self.assertEqual(first["reply"], "Which city are you visiting?")
+        self.assertEqual(first["choices"], ["Vancouver"])
+
+    def test_the_offered_cities_come_from_the_venue_data(self):
+        # Not a literal: offering a city the app has no venues for would be a
+        # promise it cannot keep.
+        self.assertEqual(QUESTION_CHOICES["destination"], list(SUPPORTED_CITIES))
+
+    def test_the_nap_question_asks_for_the_time_and_the_length(self):
+        # One question for both, because a nap time with no length is half an
+        # answer and the planner needs the pair.
+        nap_question = QUESTIONS["naps"].lower()
+        self.assertIn("when", nap_question)
+        self.assertIn("how long", nap_question)
+
+    def test_anything_else_is_asked_last(self):
+        asked = self._ask_all()
+        self.assertEqual(asked[-1], EXTRAS_QUESTION)
+        self.assertEqual(asked[:-1], [QUESTIONS[field] for field in REQUIRED])
+
+    def test_anything_else_is_asked_once(self):
+        state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
+        state = _turn("everything", state, **ALL_REQUIRED)["state"]
+        self.assertEqual(state["stage"], STAGE_EXTRAS)
+        # Correcting at the confirmation must not restart the questions.
+        state = _turn("nothing", state)["state"]
+        self.assertEqual(state["stage"], STAGE_CONFIRMING)
+        again = _turn("make it four stops", state, stop_count="4")
+        self.assertEqual(again["state"]["stage"], STAGE_CONFIRMING)
+
+    def test_nothing_to_add_skips_the_extractor_and_confirms(self):
+        state = {"stage": STAGE_EXTRAS, "form": dict(DEFAULTS),
+                 "found": ["destination"], "asked_extras": True}
+        with mock.patch.object(plan_from_chat, "extract_form") as extract:
+            result = run(NOTHING_CHOICE, state)
+        # Running it on "no" would only append that to the notes.
+        extract.assert_not_called()
         self.assertEqual(result["state"]["stage"], STAGE_CONFIRMING)
 
-    def test_the_required_list_is_the_four_that_shape_a_day(self):
-        self.assertEqual(REQUIRED, ("destination", "age", "wake_up", "bedtime"))
+    def test_something_to_add_is_extracted(self):
+        state = {"stage": STAGE_EXTRAS, "form": dict(DEFAULTS),
+                 "found": ["destination"], "asked_extras": True}
+        result = _turn("she is scared of dogs", state,
+                       extra_notes="She is scared of dogs.")
+        self.assertEqual(result["state"]["form"]["extra_notes"],
+                         "She is scared of dogs.")
+
+
+class AQuestionCanBeDeclinedTest(unittest.TestCase):
+    """Without this, a question the parent cannot answer repeats forever: the
+    extractor finds nothing, so the field stays missing, so it is asked again
+    in the same words."""
+
+    def _asking_naps(self):
+        return {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS),
+                "found": ["bedtime", "destination", "age_years", "wake_up"],
+                "skipped": [], "asking": "naps", "asked_extras": False}
+
+    def test_a_child_who_does_not_nap_can_move_on(self):
+        result = _turn("she doesn't nap anymore", self._asking_naps())
+        self.assertEqual(result["state"]["skipped"], ["naps"])
+        self.assertEqual(result["state"]["stage"], STAGE_EXTRAS)
+
+    def test_a_plain_no_moves_on_too(self):
+        result = _turn("no", self._asking_naps())
+        self.assertEqual(result["state"]["stage"], STAGE_EXTRAS)
+
+    def test_declining_does_not_invent_an_answer(self):
+        # Skipped is not found: the summary must still show naps as a default.
+        result = _turn("no", self._asking_naps())
+        self.assertNotIn("naps", result["state"]["found"])
+
+    def test_the_ways_a_parent_says_there_is_no_nap(self):
+        for message in ("she doesn't nap anymore", "he dropped his nap",
+                        "no naps these days", "they stopped napping", "none"):
+            with self.subTest(message=message):
+                result = _turn(message, self._asking_naps())
+                self.assertEqual(result["state"]["skipped"], ["naps"], message)
+
+    def test_no_nap_wording_does_not_skip_a_different_question(self):
+        # The phrase rule is the nap question's alone: "no" still works
+        # everywhere, but "dropped the nap" is not an answer about a city.
+        asking_city = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS),
+                       "found": [], "skipped": [], "asking": "destination"}
+        result = _turn("she dropped the nap", asking_city)
+        self.assertEqual(result["state"]["skipped"], [])
+
+    def test_a_real_answer_is_not_treated_as_a_refusal(self):
+        result = _turn("1pm for an hour", self._asking_naps(),
+                       naps=[{"start": "13:00", "duration_min": 60}])
+        self.assertEqual(result["state"]["skipped"], [])
+        self.assertIn("naps", result["state"]["found"])
 
 
 class MidFlowRoutingTest(unittest.TestCase):
