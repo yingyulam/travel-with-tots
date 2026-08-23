@@ -60,15 +60,16 @@
       <label class="field field-full">
         <span>Area <em>(filled in from the pin, or type it yourself)</em></span>
         <input type="text" name="neighbourhood" id="place-area"
+               value="{{ form.get('neighbourhood', '') }}"
                placeholder="e.g. Kitsilano, Vancouver">
       </label>
       {# The pin itself, not just its name. A spot with no address -- a
          playground, a park building -- is only findable by coordinates, so
          these are submitted and preferred over geocoding the name. #}
-      <input type="hidden" name="lat" id="place-lat">
-      <input type="hidden" name="lng" id="place-lng">
-      <input type="hidden" name="city" id="place-city">
-      <input type="hidden" name="address" id="place-address">
+      <input type="hidden" name="lat" id="place-lat" value="{{ form.get('lat', '') }}">
+      <input type="hidden" name="lng" id="place-lng" value="{{ form.get('lng', '') }}">
+      <input type="hidden" name="city" id="place-city" value="{{ form.get('city', '') }}">
+      <input type="hidden" name="address" id="place-address" value="{{ form.get('address', '') }}">
     </div>
 
     <div class="action-panel">
@@ -77,11 +78,12 @@
       <div class="field-row">
         <label class="field">
           <span>Name</span>
-          <input type="text" name="name" id="place-name" required>
+          <input type="text" name="name" id="place-name" value="{{ form.get('name', '') }}" required>
         </label>
         <label class="field">
           <span>Kind of place <em>(optional)</em></span>
           <input type="text" name="venue_type" id="place-type"
+                 value="{{ form.get('venue_type', '') }}"
                  placeholder="e.g. cafe, park, museum">
         </label>
       </div>
@@ -92,7 +94,7 @@
       <div class="chips">
         {% for key, label in amenity_options %}
         <label class="chip">
-          <input type="checkbox" name="{{ key }}">
+          <input type="checkbox" name="{{ key }}"{% if form.get(key) %} checked{% endif %}>
           <span>{{ label }}</span>
         </label>
         {% endfor %}
@@ -100,7 +102,7 @@
       <label class="field field-full">
         <span>Anything else worth knowing <em>(optional)</em></span>
         <textarea name="notes" rows="3"
-                  placeholder="e.g. the nursing room is behind the lifts on level 2, ask staff for the key"></textarea>
+                  placeholder="e.g. the nursing room is behind the lifts on level 2, ask staff for the key">{{ form.get('notes', '') }}</textarea>
       </label>
     </div>
 

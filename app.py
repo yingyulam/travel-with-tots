@@ -351,6 +351,19 @@ def plan_from_chat_page():
     return render_template("plan_from_chat.html")
 
 
+@app.route("/workflows/log-a-place")
+@login_required
+@admin_required
+def log_place_from_chat_page():
+    """The Log a place workflow's test page: tell the bubble about a place,
+    watch the submission fill in.
+
+    Its own page rather than /log-place: that one is the form a parent
+    submits, and it is where this workflow hands off to, so it cannot also be
+    the surface for watching the conversation that fills it."""
+    return render_template("log_place_from_chat.html")
+
+
 @app.route("/workflows/find-nearby-place")
 @login_required
 @admin_required
@@ -695,7 +708,7 @@ def log_place_page():
     # re-reads the row instead of re-submitting the form.
     logged_id = request.args.get("logged", type=int)
     return render_template(
-        "log_a_place.html", amenity_options=AMENITY_OPTIONS,
+        "log_a_place.html", amenity_options=AMENITY_OPTIONS, form={},
         stored=_logged_place(_current_parent()["id"], logged_id) if logged_id else None)
 
 
@@ -709,9 +722,18 @@ def log_place():
     observable if its output appears where it was run, and a bare redirect gave
     no confirmation that anything had happened at all.
     """
+    # A POST carrying "prefill" fills the form in and stops there, without
+    # storing. That is how the chat hands over a place it collected: the parent
+    # lands on the real page with their answers in place, can move the map pin,
+    # and submits themselves. Same template, no second code path.
+    if request.form.get("prefill"):
+        return render_template(
+            "log_a_place.html", amenity_options=AMENITY_OPTIONS, stored=None,
+            form=request.form)
+
     parent = _current_parent()
     try:
-        record = log_a_place.run(parent["id"], request.form)
+        record = log_a_place.store(parent["id"], request.form)
     except ValueError as e:
         flash(str(e).capitalize() + ".")
         return redirect(url_for("log_place_page"))

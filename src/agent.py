@@ -227,7 +227,13 @@ def handle_message(message: str, history: list[dict] | None = None,
                 "conversation": ({"workflow": chosen, "state": next_state}
                                  if next_state else None),
                 "choices": result.get("choices"),
+                # Whether those choices are exclusive. A place has several
+                # features at once, so its chips collect instead of sending.
+                "choose_many": result.get("choose_many", False),
                 "form": result.get("form"),
+                # The same idea as `form`, for a different page: a collected
+                # place, posted to /log-place rather than /plan.
+                "place_form": result.get("place_form"),
                 "open_form": result.get("open_form", False),
                 # Places render as cards with real Maps links, so they travel
                 # as data rather than as URLs written into the reply text.

@@ -6,30 +6,10 @@
 // The same Run/Listen machine as plan-from-chat.js, deliberately: two workflow
 // pages that arm themselves differently would be two things to learn.
 document.addEventListener("DOMContentLoaded", () => {
-  const runBtn = document.getElementById("find-nearby-place-run");
-  const listenBtn = document.getElementById("find-nearby-place-listen");
-  const status = document.getElementById("find-nearby-place-status");
-  const statusText = document.getElementById("find-nearby-place-status-text");
   const resultList = document.getElementById("find-nearby-place-result-list");
 
   const WORKFLOW_NAME = "Find a nearby place";
 
-  // "once" stops after the next message; "many" keeps going. Kept as one
-  // variable so Run and Listen cannot both be armed at the same time.
-  let mode = "off";
-
-  // The state drives the banner's colour in CSS, so the wording and the look
-  // cannot disagree about whether the page is armed.
-  function setMode(next) {
-    mode = next;
-    listenBtn.textContent = mode === "many" ? "⏹ Stop listening" : "👂 Listen";
-    status.dataset.state = mode;
-    statusText.textContent = {
-      off: "Not watching",
-      once: "Waiting for your next message",
-      many: "Listening: every message you send will be processed",
-    }[mode];
-  }
 
   function line(card, text, className) {
     const p = document.createElement("p");
@@ -126,14 +106,11 @@ document.addEventListener("DOMContentLoaded", () => {
     resultList.prepend(card);
   }
 
-  document.addEventListener("twt:chat-reply", (event) => {
-    if (mode === "off") return;
-    renderTurn(event.detail);
-    setMode(mode === "once" ? "off" : "many");
+  watchChatReplies({
+    runId: "find-nearby-place-run",
+    listenId: "find-nearby-place-listen",
+    statusId: "find-nearby-place-status",
+    statusTextId: "find-nearby-place-status-text",
+    onTurn: renderTurn,
   });
-
-  runBtn.addEventListener("click", () => setMode("once"));
-  listenBtn.addEventListener("click", () => setMode(mode === "many" ? "off" : "many"));
-
-  setMode("off");
 });

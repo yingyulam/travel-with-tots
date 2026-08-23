@@ -485,6 +485,42 @@ LangGraph artifact, so the agent's answer renders the same cards the workflow's
 does. The trip page's no-location branch used to report `source: "curated"`
 without having consulted anything; it now reports the source it actually used.
 
+### Logging a place by talking
+
+Saying "log this place" in the bubble starts a conversation: what it is called
+and roughly where, what it offers, and anything else worth knowing. Only the
+name is required, matching the single thing the storage path validates.
+
+It used to answer **💬 no workflow**, and not because the classifier misjudged
+it. `runnable_message_workflows()` filters on `trigger == "message"` and this
+one was `"event"`, so its name was not even in the enum the classifier chooses
+from. The agent has no logging tool either, so the fallback could only ask for
+details it could do nothing with. That one misroute then cascaded: the
+fall-through cleared the conversation, so the next message was classified cold
+and landed on Find a nearby place, which pinned state and swallowed the one
+after it.
+
+Flipping the trigger alone would have crashed. `run(parent_id, values)` is not
+the message contract, so it would have been called with the parent's text as a
+parent id. It is now **`store(parent_id, values)`**, which is what it does, and
+`run` is the conversation. Both end in the same place.
+
+**A place is several things at once**, so the features question takes as many as
+apply. Typing "family room and nursing room" ticks both: the matcher collects
+every label it finds rather than stopping at the first, which is the one real
+difference from how the nearby workflow reads a need. The chips **toggle rather
+than send**, and ✓ Done sends the picked labels as one ordinary message, so a
+tapped answer and a typed one are read identically. Done with nothing picked
+means none of them.
+
+**The chat does not store it.** The collected values are posted to
+`/log-place`, the way the planning chat posts to `/plan`, with **📝 Open the
+form** to check the map pin first or **📌 Log it** to submit straight away. Two
+reasons: the chat bubble is on every page and is not logged in, while a
+submission needs an owner to be editable and to appear on a dashboard, and only
+the real page has the map. A browser form post carries the session, so an
+anonymous visitor is sent to log in rather than losing what they typed.
+
 ### Watching a workflow run
 
 Each workflow with a test page has the same two controls, and they mean the
@@ -494,8 +530,10 @@ keeps capturing until you stop it. The chat bubble stays the input on purpose,
 because then what the page shows is what a parent really gets, rather than a
 canned sample travelling a code path nobody uses.
 
-`/workflows/find-nearby-place` watches this workflow the way
-`/workflows/plan-from-chat` watches the other. Each captured turn shows what
+There are three of these pages now, so the machine behind Run and Listen
+lives once, in `static/workflow-watch.js`, and each page keeps only its own
+rendering. `/workflows/find-nearby-place` watches that workflow the way
+`/workflows/plan-from-chat` and `/workflows/log-a-place` watch theirs. Each captured turn shows what
 you said, which path answered, the reply, and every place found as a card with
 its distance and a working Maps link. It says **curated** or **web search** so
 the two sources are never confused, and a message this workflow did not handle
@@ -735,6 +773,7 @@ travel-with-tots/
 │   ├── workflows.html             # admin: use cases chaining those components
 │   ├── plan_from_chat.html        # admin: fill-the-form-from-chat workflow test page
 │   ├── find_nearby_place.html     # admin: find-a-nearby-place workflow test page
+│   ├── log_place_from_chat.html   # admin: log-a-place-from-chat workflow test page
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
@@ -838,6 +877,7 @@ transactional.
 | `/agent`                        | GET      | Admin: AI Agent test page, watches real chat-bubble traffic      |
 | `/workflows/plan-from-chat`     | GET      | Admin: fill-the-form-from-chat workflow test page               |
 | `/workflows/find-nearby-place`  | GET      | Admin: find-a-nearby-place workflow test page                   |
+| `/workflows/log-a-place`        | GET      | Admin: log-a-place-from-chat workflow test page                 |
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |

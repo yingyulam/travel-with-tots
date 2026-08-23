@@ -593,3 +593,10 @@ details[open] > .twt-result-summary .twt-result-chevron {
   font-size: 11px;
   opacity: 0.75;
 }
+
+/* A multi-select chip, while it is picked. The row stays up and collects, so
+   the chip has to show its own state rather than vanishing on click. */
+.twt-chip.selected {
+  background: var(--twt-blue);
+  color: #fff;
+}

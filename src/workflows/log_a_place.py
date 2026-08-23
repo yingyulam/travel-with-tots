@@ -3,7 +3,7 @@
 The chain a parent walks: pin or name a location, name the place, say what it
 offers, describe it, submit. Three components, and nothing else sequences them:
 `components/geocode.py` states it "never decides what to do with that place",
-and `db.add_venue` does not geocode. So `run()` below is the sequencing, and it
+and `db.add_venue` does not geocode. So `store()` below is the sequencing, and it
 lives here rather than in `app.py`, whose own docstring says the real work
 belongs in `src/`.
 
@@ -22,6 +22,7 @@ decision does not exist yet: submissions accumulate until it does.
 
 from .. import db
 from ..components.geocode import GeocodeError, geocode
+from ..intent import matches_only
 
 # The amenities a parent can vouch for, as (field name, label). Shared by the
 # log-a-place page and the dashboard's edit form so the two cannot offer
@@ -75,7 +76,7 @@ def _pinned_place(values):
     }
 
 
-def run(parent_id, values, place=None):
+def store(parent_id, values, place=None):
     """Store one parent-submitted place and return the row as stored.
 
     `values` is form-like: name, venue_type, neighbourhood, notes, any amenity
@@ -121,16 +122,147 @@ def run(parent_id, values, place=None):
     return record
 
 
+# ---------------------------------------------------------------------------
+# The chat conversation. `store` above is the same function it always was, and
+# both entry points end there: the Log a Place form posts to it, and this walks
+# a parent through the same fields a message at a time.
+
+STAGE_NAME = "name"
+STAGE_AMENITIES = "amenities"
+STAGE_NOTES = "notes"
+STAGE_CONFIRMING = "confirming"
+
+NAME_QUESTION = ("Happy to log it. What's the place called? Add the area after "
+                 "a comma if the name alone wouldn't find it, like \"Nourish "
+                 "Kitchen, Gastown\".")
+AMENITY_QUESTION = "What does it offer? Pick as many as apply."
+NOTES_QUESTION = "Anything else worth knowing about it?"
+
+DONE_CHOICE = "✓ Done"
+NONE_CHOICE = "None of these"
+NOTHING_CHOICE = "No, that's everything"
+CONFIRM_CHOICE = "📌 Looks right"
+
+# Nothing to add. Shared shape with the planning chat, which reads its own
+# declines the same way.
+_NOTHING = ("no", "nope", "nothing", "none", "nothing else", "no thanks",
+            "that's everything", "thats everything", "that's all", "thats all",
+            "that's it", "thats it", "all good", "none of these", "done")
+
+_YES = ("yes", "yep", "yeah", "ok", "okay", "sure", "correct", "looks right",
+        "log it", "go ahead", "do it", "perfect", "great")
+
+
+def read_amenities(message: str) -> list:
+    """Every amenity the message mentions, not the first.
+
+    A place is several things at once: a mall with a family room usually has a
+    nursing room too. So this collects, where find_nearby_place.read_need
+    picks. The four labels are the vocabulary, which is also what the chips
+    send, so a typed answer and a tapped one are read identically.
+    """
+    said = message.lower()
+    return [key for key, label in AMENITY_OPTIONS if label.lower() in said]
+
+
+def split_name(message: str) -> tuple:
+    """A typed answer into (name, area), on the last comma.
+
+    "Nourish Kitchen, Gastown" is how people write this, and resolve_place
+    joins the two back with a comma anyway. No comma means the whole thing is
+    the name, which geocodes just as well.
+    """
+    name, _, area = message.strip().rpartition(",")
+    return (name.strip(), area.strip()) if name else (area.strip(), "")
+
+
+def _ask(stage: str, values: dict, reply: str, **extra) -> dict:
+    return {"reply": reply, "state": {"stage": stage, "values": values}, **extra}
+
+
+def _summarise(values: dict) -> str:
+    """Everything collected, so nothing is submitted that was not seen."""
+    lines = [f"- name: {values['name']}"]
+    if values.get("neighbourhood"):
+        lines.append(f"- area: {values['neighbourhood']}")
+    picked = [label for key, label in AMENITY_OPTIONS if values.get(key)]
+    lines.append(f"- offers: {', '.join(picked) if picked else '(none said)'}")
+    if values.get("notes"):
+        lines.append(f"- notes: {values['notes']}")
+    return ("Here's what I have:\n\n" + "\n".join(lines)
+            + "\n\nLog it, or open the form to check the map pin first.")
+
+
+def _confirm(values: dict) -> dict:
+    return {"reply": _summarise(values),
+            "state": {"stage": STAGE_CONFIRMING, "values": values},
+            "choices": [CONFIRM_CHOICE]}
+
+
+def run(message: str, state: dict | None = None,
+        context: dict | None = None) -> dict:
+    """One turn of the logging conversation.
+
+    Collects what the Log a Place form collects, then hands the values to that
+    page rather than writing them. The chat has no parent to attach a
+    submission to, and no way to drop a map pin; a form post has both.
+
+    `context` is part of the contract and unused here: where the parent is
+    standing is not where the place is.
+    """
+    stage = (state or {}).get("stage")
+    values = dict((state or {}).get("values") or {})
+
+    if stage is None:
+        return _ask(STAGE_NAME, values, NAME_QUESTION)
+
+    if stage == STAGE_NAME:
+        name, area = split_name(message)
+        if not name:
+            return _ask(STAGE_NAME, values, NAME_QUESTION)
+        values["name"] = name
+        if area:
+            values["neighbourhood"] = area
+        return _ask(STAGE_AMENITIES, values, AMENITY_QUESTION,
+                    choices=[label for _, label in AMENITY_OPTIONS],
+                    choose_many=True)
+
+    if stage == STAGE_AMENITIES:
+        if not matches_only(message, _NOTHING):
+            for key in read_amenities(message):
+                values[key] = True
+        return _ask(STAGE_NOTES, values, NOTES_QUESTION,
+                    choices=[NOTHING_CHOICE])
+
+    if stage == STAGE_NOTES:
+        if not matches_only(message, _NOTHING):
+            values["notes"] = message.strip()
+        return _confirm(values)
+
+    if matches_only(message, _YES):
+        return {
+            "reply": ("Ready. Log it straight away, or open the form to check "
+                      "the map pin first."),
+            "state": None,
+            "place_form": values,
+        }
+    # Anything else at the confirmation is a correction to the notes, which is
+    # the only free-text field left to correct.
+    values["notes"] = message.strip()
+    return _confirm(values)
+
+
 WORKFLOW = {
     "name": "Log a place we don't have",
     "emoji": "📌",
-    "trigger": "event",
-    # Endpoint name for the real page, not a separate admin copy: a test
-    # surface that exercises what a parent uses cannot drift from it.
-    "page": "log_place_page",
+    "trigger": "message",
+    # This workflow's own watch page. The real page a parent uses is
+    # /log-place, which the nav links to and which this hands off to.
+    "page": "log_place_from_chat_page",
     "description": (
-        "A parent finds somewhere good that isn't in the venue table, pins it "
-        "on a map, names it, and says what it offers. It is geocoded so the "
+        "A parent tells the chat about somewhere good that isn't in the venue "
+        "table, naming it and saying what it offers, and the assistant hands "
+        "the filled submission to the Log a Place page. It is geocoded so the "
         "submission is complete enough to check, then held out of every search "
         "until an admin verifies it."
     ),

@@ -102,6 +102,9 @@ document.addEventListener("click", (e) => {
     // box. "Plan a trip" is phrased to match the fill-the-form workflow, and
     // goes through the classifier like any typed message would.
     const PLAN_SUGGESTION = "Plan a trip";
+    // What "Done" sends when no chip was picked. The server reads it as a
+    // decline, the same as typing "none".
+    const NONE_CHOICE = "None of these";
     const SUGGESTIONS = ["What's Travel with Tots?", PLAN_SUGGESTION];
     let greeted = false;
     // Planning is the thing most parents come here for, so the offer stays
@@ -365,6 +368,14 @@ document.addEventListener("click", (e) => {
     // trick the plan page uses to hand a plan to /trip. `prefill` is what tells
     // /plan to fill the boxes in and stop; without it, the existing POST branch
     // generates, which is exactly the page's own Generate my day.
+    function addHidden(form, name, value) {
+      const field = document.createElement("input");
+      field.type = "hidden";
+      field.name = name;
+      field.value = value;
+      form.appendChild(field);
+    }
+
     function handoffForm(collected) {
       const el = document.createElement("form");
       el.className = "twt-handoff";
@@ -376,13 +387,7 @@ document.addEventListener("click", (e) => {
       // Here the browser's own loading indicator does that job. Safe to leave
       // the page now that the transcript survives navigation.
 
-      const add = (name, value) => {
-        const field = document.createElement("input");
-        field.type = "hidden";
-        field.name = name;
-        field.value = value;
-        el.appendChild(field);
-      };
+      const add = (name, value) => addHidden(el, name, value);
 
       Object.entries(collected).forEach(([name, value]) => {
         if (name === "naps") {
@@ -534,6 +539,88 @@ document.addEventListener("click", (e) => {
       return row;
     }
 
+    // Some questions take several answers at once: a place can be kid-friendly
+    // and have a family room and be step-free. These chips toggle rather than
+    // send, and Done sends every selected label as one ordinary message, so
+    // the server reads a tapped answer and a typed one the same way.
+    function multiChoiceRow(choices, onUse) {
+      const row = document.createElement("div");
+      row.className = "twt-chips";
+      const picked = new Set();
+
+      choices.forEach((choice) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "twt-chip";
+        btn.textContent = choice;
+        btn.addEventListener("click", () => {
+          const on = picked.has(choice);
+          if (on) picked.delete(choice); else picked.add(choice);
+          btn.classList.toggle("selected", !on);
+          btn.setAttribute("aria-pressed", String(!on));
+        });
+        btn.setAttribute("aria-pressed", "false");
+        row.appendChild(btn);
+      });
+
+      const done = document.createElement("button");
+      done.type = "button";
+      done.className = "twt-chip primary";
+      done.textContent = "✓ Done";
+      done.addEventListener("click", () => {
+        row.remove();
+        if (onUse) onUse();
+        // Nothing picked is a real answer, not a mistake: this place has none
+        // of them. Sending the none-label keeps one path through the server.
+        send([...picked].join(", ") || NONE_CHOICE);
+      });
+      row.appendChild(done);
+      return row;
+    }
+
+    // A collected place, posted to /log-place as that form's own fields. Same
+    // trick as handoffForm above, different page. The chat does not store it
+    // itself: this widget is on every page and is not logged in, while a
+    // submission needs an owner, and only the real page has the map pin.
+    function placeHandoffForm(collected) {
+      const el = document.createElement("form");
+      el.className = "twt-handoff";
+      el.method = "post";
+      el.action = "/log-place";
+
+      Object.entries(collected).forEach(([name, value]) => {
+        if (value === true) {
+          addHidden(el, name, "on");     // a checkbox, absent when unticked
+        } else if (value !== "" && value !== null && value !== undefined
+                   && value !== false) {
+          addHidden(el, name, value);
+        }
+      });
+
+      const check = document.createElement("button");
+      check.type = "submit";
+      check.className = "twt-chip";
+      check.textContent = "📝 Open the form";
+      check.name = "prefill";
+      check.value = "1";
+
+      const log = document.createElement("button");
+      log.type = "submit";
+      log.className = "twt-chip primary";
+      log.textContent = "📌 Log it";
+
+      el.addEventListener("submit", (event) => {
+        el.classList.add("working");
+        const clicked = event.submitter === check ? check : log;
+        clicked.textContent = clicked === check
+          ? "📝 Opening the form…"
+          : "📌 Logging it…";
+      });
+
+      el.append(check, log);
+      return el;
+    }
+
     // Buttons for whatever the assistant just offered, so a choice can be
     // clicked as well as typed. They send the same text either way, which
     // keeps one path through the server.
@@ -545,6 +632,10 @@ document.addEventListener("click", (e) => {
 
       if (data.form) {
         bubbleEl.appendChild(handoffForm(data.form));
+        return;
+      }
+      if (data.place_form) {
+        bubbleEl.appendChild(placeHandoffForm(data.place_form));
         return;
       }
       if (data.open_form) {
@@ -579,6 +670,13 @@ document.addEventListener("click", (e) => {
       const leaving = data.cancel_choice ? [data.cancel_choice] : [];
 
       if (data.choices && data.choices.length) {
+        // choose_many means the answers are not exclusive, so the row stays up
+        // and collects. Cancel keeps its own row, since it is not an answer.
+        if (data.choose_many) {
+          bubbleEl.appendChild(multiChoiceRow(data.choices, used));
+          if (leaving.length) bubbleEl.appendChild(choiceRow(leaving, used));
+          return;
+        }
         bubbleEl.appendChild(choiceRow([...data.choices, ...leaving], used));
         return;
       }

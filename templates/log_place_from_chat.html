@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Log a place from chat{% endblock %}
+{% block heading %}Log a place from chat{% endblock %}
+{% block tagline %}Tell the chat bubble about a place, watch the submission fill in.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Test page for the "Log a place we don't have" workflow. Type in the bubble in the corner, which is the agent, and the submission as it stands after each message appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+
+  <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the logging conversation, and the assistant asks what the place is called, what it offers, and anything else worth knowing. It stops at the filled submission on purpose. Storing it is the <a href="{{ url_for('log_place_page') }}">Log a Place</a> page's job, so the parent can check the map pin first. Say "log this place" to start.</p>
+
+  <div class="action-panel">
+    <p class="panel-title">Watch the chat</p>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="log-place-from-chat-run">▶ Run once</button>
+      <button type="button" class="cta-secondary" id="log-place-from-chat-listen">👂 Listen</button>
+    </div>
+    <p class="watch-status" id="log-place-from-chat-status" data-state="off" role="status" aria-live="polite">
+      <span class="watch-dot" aria-hidden="true"></span>
+      <span id="log-place-from-chat-status-text">Not watching</span>
+    </p>
+    <p class="field-hint">Run handles the next message you send, then stops. Listen keeps handling each message until you stop it. Either way, one result per message.</p>
+  </div>
+
+  <p class="field-hint">Fields collected so far are marked <span class="badge">collected</span>; the ones still to ask about are <span class="badge badge-pending">not yet</span>. Each card also shows which path answered, so a message the classifier sent elsewhere cannot be misread as this workflow's.</p>
+  <div id="log-place-from-chat-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='workflow-watch.js') }}"></script>
+<script src="{{ url_for('static', filename='log-place-from-chat.js') }}"></script>
+{% endblock %}

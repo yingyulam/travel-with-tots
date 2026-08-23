@@ -159,7 +159,7 @@ class RunTest(_VenueDbTest):
         # A playground has no address to look up, so the pin's coordinates are
         # the only thing locating it. Geocoding must not be consulted at all.
         with mock.patch.object(log_a_place, "geocode") as geocoded:
-            record = log_a_place.run(self.parent_id, {
+            record = log_a_place.store(self.parent_id, {
                 "name": "The good playground", "lat": "49.2827",
                 "lng": "-123.1207", "city": "Vancouver",
                 "neighbourhood": "West End", "address": "Denman St",
@@ -172,7 +172,7 @@ class RunTest(_VenueDbTest):
         resolved = {"city": "Vancouver", "neighbourhood": "Gastown",
                     "formatted_address": "1 Water St", "lat": 49.28, "lng": -123.1}
         with mock.patch.object(log_a_place, "geocode", return_value=resolved):
-            record = log_a_place.run(self.parent_id,
+            record = log_a_place.store(self.parent_id,
                                      {"name": "Nourish", "neighbourhood": "Gastown"})
         self.assertEqual(record["address"], "1 Water St")
         self.assertAlmostEqual(record["lat"], 49.28)
@@ -180,21 +180,21 @@ class RunTest(_VenueDbTest):
     def test_a_half_filled_pin_falls_back_rather_than_crashing(self):
         with mock.patch.object(log_a_place, "geocode",
                                return_value=dict(log_a_place.UNRESOLVED_PLACE)):
-            record = log_a_place.run(self.parent_id,
+            record = log_a_place.store(self.parent_id,
                                      {"name": "Somewhere", "lat": "", "lng": ""})
         self.assertIsNone(record["lat"])
 
     def test_a_failing_geocoder_does_not_cost_the_submission(self):
         with mock.patch.object(log_a_place, "geocode",
                                side_effect=GeocodeError("down")):
-            record = log_a_place.run(self.parent_id, {"name": "Unresolvable"})
+            record = log_a_place.store(self.parent_id, {"name": "Unresolvable"})
         self.assertIsNone(record["lat"])
         self.assertIsNotNone(self._row("Unresolvable"))
 
     def test_amenities_and_notes_are_stored(self):
         with mock.patch.object(log_a_place, "geocode",
                                return_value=dict(log_a_place.UNRESOLVED_PLACE)):
-            log_a_place.run(self.parent_id, {
+            log_a_place.store(self.parent_id, {
                 "name": "Mall", "has_nursing_room": "on", "notes": "level 2",
             })
         row = self._row("Mall")
@@ -204,7 +204,7 @@ class RunTest(_VenueDbTest):
 
     def test_a_nameless_submission_is_refused(self):
         with self.assertRaises(ValueError):
-            log_a_place.run(self.parent_id, {"name": "   "})
+            log_a_place.store(self.parent_id, {"name": "   "})
 
     def test_what_it_stores_is_never_searchable(self):
         with mock.patch.object(log_a_place, "geocode",
@@ -212,16 +212,85 @@ class RunTest(_VenueDbTest):
                                              "neighbourhood": "Downtown",
                                              "formatted_address": "1 Main",
                                              "lat": 49.28, "lng": -123.12}):
-            log_a_place.run(self.parent_id, {"name": "Fresh", "kid_friendly": "on"})
+            log_a_place.store(self.parent_id, {"name": "Fresh", "kid_friendly": "on"})
         self.assertNotIn("Fresh", [v["name"] for v in
                                    db.get_candidate_venues("Vancouver", age_months=24)])
 
 
+class PrefillTest(_VenueDbTest):
+    """The chat hands a collected place here rather than storing it, so this
+    page has to render one without writing a row."""
+
+    def setUp(self):
+        super().setUp()
+        import app as app_module
+        self.app_module = app_module
+        self.client = app_module.app.test_client()
+        self.parent = {"id": self.parent_id, "email": "p@b.c", "name": "P",
+                       "is_admin": False}
+
+    def _post(self, **fields):
+        with mock.patch.object(self.app_module, "_current_parent",
+                               return_value=self.parent), \
+             mock.patch.object(self.app_module.log_a_place, "store") as stored:
+            response = self.client.post("/log-place", data=fields)
+        return response, stored
+
+    def test_prefill_fills_the_form_and_stores_nothing(self):
+        response, stored = self._post(
+            prefill="1", name="Richmond Centre", neighbourhood="Richmond",
+            venue_type="mall", has_family_room="on", notes="level 2")
+        stored.assert_not_called()
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        for value in ('value="Richmond Centre"', 'value="Richmond"',
+                      'value="mall"', ">level 2</textarea>"):
+            with self.subTest(value=value):
+                self.assertIn(value, html)
+
+    def test_only_the_features_given_are_ticked(self):
+        response, _ = self._post(prefill="1", name="Mall",
+                                 has_family_room="on", has_nursing_room="on")
+        html = response.get_data(as_text=True)
+        self.assertIn('name="has_family_room" checked', html)
+        self.assertIn('name="has_nursing_room" checked', html)
+        self.assertIn('name="kid_friendly">', html)
+
+    def test_the_pin_travels_too(self):
+        # Without these the parent would land on the page and have to find the
+        # spot again on the map.
+        response, _ = self._post(prefill="1", name="Mall", lat="49.16",
+                                 lng="-123.13", city="Richmond")
+        html = response.get_data(as_text=True)
+        self.assertIn('value="49.16"', html)
+        self.assertIn('value="-123.13"', html)
+
+    def test_without_the_marker_it_still_stores(self):
+        # The regression that matters: prefill must not have broken logging.
+        _, stored = self._post(name="Richmond Centre")
+        stored.assert_called_once()
+
+    def test_the_empty_form_still_renders(self):
+        with mock.patch.object(self.app_module, "_current_parent",
+                               return_value=self.parent):
+            html = self.client.get("/log-place").get_data(as_text=True)
+        self.assertIn('name="name"', html)
+        # The attribute, not the word: the page's own copy says "checked".
+        self.assertNotIn(" checked>", html)
+        self.assertIn('value=""', html)
+
+
 class DeclarationTest(unittest.TestCase):
-    def test_the_card_points_at_the_real_page(self):
-        # Not a separate admin copy: a test surface that exercises the page a
-        # parent uses cannot drift away from it.
-        self.assertEqual(WORKFLOW["page"], "log_place_page")
+    def test_the_card_points_at_its_watch_page(self):
+        # The card now leads to where the conversation can be watched. The page
+        # a parent submits on is /log-place, which the nav links to and which
+        # this workflow hands off to, so it cannot also be the watch surface.
+        self.assertEqual(WORKFLOW["page"], "log_place_from_chat_page")
+
+    def test_it_is_reachable_from_the_chat(self):
+        # The reported bug: trigger "event" excluded it from the classifier's
+        # menu entirely, so "Log this place" could only ever answer "none".
+        self.assertEqual(WORKFLOW["trigger"], "message")
 
     def test_every_step_is_built_now(self):
         self.assertTrue(all(step["built"] for step in WORKFLOW["steps"]))
@@ -286,7 +355,7 @@ class PageTest(unittest.TestCase):
                   "kid_friendly": 1, "has_family_room": 0,
                   "has_nursing_room": 0, "stroller_accessible": 0}
         with self._as_parent(), \
-             mock.patch.object(self.app_module.log_a_place, "run",
+             mock.patch.object(self.app_module.log_a_place, "store",
                                return_value={"id": 7}), \
              mock.patch.object(self.app_module, "_logged_place", return_value=stored):
             resp = self.client.post("/log-place", data={"name": "Science World"})

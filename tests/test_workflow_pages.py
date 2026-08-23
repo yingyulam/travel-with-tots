@@ -20,6 +20,14 @@ WORKFLOW_PAGES = {
     "plan_from_chat_page": ("/workflows/plan-from-chat", "static/plan-from-chat.js"),
     "find_nearby_place_page": ("/workflows/find-nearby-place",
                                "static/find-nearby-place.js"),
+    "log_place_from_chat_page": ("/workflows/log-a-place",
+                                 "static/log-place-from-chat.js"),
+}
+
+TEMPLATES = {
+    "plan_from_chat_page": "templates/plan_from_chat.html",
+    "find_nearby_place_page": "templates/find_nearby_place.html",
+    "log_place_from_chat_page": "templates/log_place_from_chat.html",
 }
 
 
@@ -110,23 +118,41 @@ class TheScriptIsSafeTest(unittest.TestCase):
                 self.assertNotIn(sink, self.source)
 
 
-class BothPagesArmTheSameWayTest(unittest.TestCase):
-    """Two workflow pages that armed themselves differently would be two
-    things to learn, so the mode machine is deliberately identical."""
+class EveryPageArmsTheSameWayTest(unittest.TestCase):
+    """Workflow pages that armed themselves differently would be several
+    things to learn, so there is one machine and they all call it."""
 
-    def test_each_script_has_the_three_state_mode_machine(self):
-        for _, (_, path) in WORKFLOW_PAGES.items():
-            source = _script(path)
-            with self.subTest(path=path):
-                self.assertIn('let mode = "off";', source)
-                self.assertIn('setMode("once")', source)
-                self.assertIn('mode === "many" ? "off" : "many"', source)
-                self.assertIn('setMode(mode === "once" ? "off" : "many")', source)
+    WATCHER = "static/workflow-watch.js"
 
-    def test_each_ignores_replies_while_off(self):
+    def test_the_machine_lives_in_one_place(self):
+        source = _script(self.WATCHER)
+        self.assertIn('let mode = "off";', source)
+        self.assertIn('setMode("once")', source)
+        self.assertIn('mode === "many" ? "off" : "many"', source)
+        self.assertIn('setMode(mode === "once" ? "off" : "many")', source)
+        self.assertIn('if (mode === "off") return;', source)
+
+    def test_no_page_keeps_a_copy_of_it(self):
+        # Three copies is what prompted the extraction; a fourth would undo it.
         for _, (_, path) in WORKFLOW_PAGES.items():
             with self.subTest(path=path):
-                self.assertIn('if (mode === "off") return;', _script(path))
+                self.assertNotIn('let mode = "off";', _script(path))
+
+    def test_every_page_calls_the_shared_watcher(self):
+        for _, (_, path) in WORKFLOW_PAGES.items():
+            with self.subTest(path=path):
+                self.assertIn("watchChatReplies({", _script(path))
+
+    def test_every_page_loads_it_before_its_own_script(self):
+        # Order matters: the helper is a plain global, so a page loading its
+        # own script first would call an undefined function.
+        for endpoint, (_, path) in WORKFLOW_PAGES.items():
+            template = TEMPLATES[endpoint]
+            with self.subTest(template=template):
+                markup = _script(template)
+                own = path.split("/")[-1]
+                self.assertLess(markup.index("workflow-watch.js"),
+                                markup.index(own))
 
 
 if __name__ == "__main__":

@@ -3,31 +3,11 @@
 // "twt:chat-reply" event chatbot.js fires once per reply, so there is nothing
 // to poll and a message cannot be processed twice.
 document.addEventListener("DOMContentLoaded", () => {
-  const runBtn = document.getElementById("plan-from-chat-run");
-  const listenBtn = document.getElementById("plan-from-chat-listen");
-  const status = document.getElementById("plan-from-chat-status");
-  const statusText = document.getElementById("plan-from-chat-status-text");
   const resultList = document.getElementById("plan-from-chat-result-list");
 
   // Fields a parent never describes, so showing them as "default" is noise.
   const INTERNAL_FIELDS = ["child_ids", "plan_child_id", "revise_feedback"];
 
-  // "once" stops after the next message; "many" keeps going. Kept as one
-  // variable so Run and Listen cannot both be armed at the same time.
-  let mode = "off";
-
-  // The state drives the banner's colour in CSS, so the wording and the look
-  // cannot disagree about whether the page is armed.
-  function setMode(next) {
-    mode = next;
-    listenBtn.textContent = mode === "many" ? "⏹ Stop listening" : "👂 Listen";
-    status.dataset.state = mode;
-    statusText.textContent = {
-      off: "Not watching",
-      once: "Waiting for your next message",
-      many: "Listening: every message you send will be processed",
-    }[mode];
-  }
 
   function formatValue(value) {
     if (Array.isArray(value)) {
@@ -156,14 +136,11 @@ document.addEventListener("DOMContentLoaded", () => {
     resultList.prepend(card);
   }
 
-  document.addEventListener("twt:chat-reply", (event) => {
-    if (mode === "off") return;
-    renderTurn(event.detail);
-    setMode(mode === "once" ? "off" : "many");
+  watchChatReplies({
+    runId: "plan-from-chat-run",
+    listenId: "plan-from-chat-listen",
+    statusId: "plan-from-chat-status",
+    statusTextId: "plan-from-chat-status-text",
+    onTurn: renderTurn,
   });
-
-  runBtn.addEventListener("click", () => setMode("once"));
-  listenBtn.addEventListener("click", () => setMode(mode === "many" ? "off" : "many"));
-
-  setMode("off");
 });
