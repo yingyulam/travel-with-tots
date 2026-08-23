@@ -64,7 +64,8 @@
           </label>
           <label class="field">
             <span>Typical duration (minutes)</span>
-            <input type="number" name="nap_duration" min="15" step="15" value="{{ nap.duration_min }}">
+            <input type="number" name="nap_duration" min="{{ nap_duration_min }}"
+                   max="{{ nap_duration_max }}" step="1" value="{{ nap.duration_min }}">
           </label>
           <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
         </div>
@@ -200,7 +201,12 @@
     <input type="hidden" name="revise_count" id="revise-count-field" value="{{ revise_count or 0 }}">
     <input type="hidden" name="revise_feedback" id="revise-feedback-field" value="{{ form.revise_feedback }}">
 
+    <!-- Filled in on submit from the chat widget's dropdown, so the AI step
+         here runs on the model the parent actually picked. -->
+    <input type="hidden" name="model" id="plan-model-field">
+
     <button type="submit" class="cta" id="plan-submit-btn">Plan my day</button>
+    <p class="revise-progress" id="plan-progress" hidden>Building your day…</p>
   </form>
 </section>
 
@@ -284,6 +290,16 @@
   const planMain = document.getElementById("plan-main");
   const planForm = document.getElementById("plan-form");
 
+  // Building a day is one AI call of several seconds, and this page stays on
+  // screen for all of it, so without this the button looks unclicked and gets
+  // pressed again. On submit rather than on click: submit fires only after the
+  // browser has accepted the form, so a rejected nap length cannot leave a
+  // progress message running under a page that never went anywhere.
+  planForm.addEventListener("submit", () => {
+    document.getElementById("plan-model-field").value = twtSelectedModel();
+    document.getElementById("plan-progress").hidden = false;
+  });
+
   // Point the next submit at a specific in-page anchor (or none), so the
   // browser lands back near where the parent was instead of at the top.
   function setFormAnchor(anchor) {
@@ -347,7 +363,7 @@
       </label>
       <label class="field">
         <span>Typical duration (minutes)</span>
-        <input type="number" name="nap_duration" min="15" step="15">
+        <input type="number" name="nap_duration" min="{{ nap_duration_min }}" max="{{ nap_duration_max }}" step="1">
       </label>
       <button type="button" class="cta-danger remove-nap-btn" aria-label="Remove this nap">Remove</button>
     `;
@@ -397,6 +413,9 @@
       document.getElementById("plan-reject-box").innerHTML =
         '<p class="revise-progress">Updating your plan…</p>';
       setFormAnchor("plan-revise-block");
+      // planForm.submit() does not fire the submit event, so the listener
+      // above never runs for a revision. Same choice, set here too.
+      document.getElementById("plan-model-field").value = twtSelectedModel();
       planForm.submit();
       return;
     }

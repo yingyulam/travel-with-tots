@@ -65,6 +65,8 @@ from src.form_helpers import (
     MAX_AGE_YEARS,
     MAX_MONTHS,
     MAX_NAPS,
+    NAP_DURATION_MAX_MINUTES,
+    NAP_DURATION_MIN_MINUTES,
     STOP_COUNT_FORM_MIN,
     STOP_COUNT_FORM_MAX,
     TRANSIT_NAP_OPTIONS,
@@ -122,6 +124,14 @@ FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 # How many times a parent can say "something's off" and get the plan
 # adjusted again before we stop offering it and point at in-trip replanning.
 MAX_REVISE_ROUNDS = 2
+
+
+def _chosen_model(value):
+    """The model a request asked for, or the default if it asked for nothing
+    the app offers. The chat widget's dropdown is the one place a parent picks
+    a model, so planning and replanning read their choice from the request
+    rather than each keeping a default of their own."""
+    return value if value in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
 
 
 def _current_parent():
@@ -869,6 +879,7 @@ def plan():
             transit=form["transit"], accommodation=form["accommodation"],
             features=form["features"], strict_schedule=form["strict_schedule"],
             themes=form["themes"], transit_nap=form["transit_nap"],
+            model=_chosen_model(request.form.get("model")),
         )
         plans = [Plan.from_dict(result)]
         if result["adjusted"]:
@@ -897,6 +908,8 @@ def plan():
         theme_options=THEME_OPTIONS,
         transit_nap_options=TRANSIT_NAP_OPTIONS,
         max_naps=MAX_NAPS,
+        nap_duration_min=NAP_DURATION_MIN_MINUTES,
+        nap_duration_max=NAP_DURATION_MAX_MINUTES,
         revise_count=revise_count,
         can_revise_more=revise_count < MAX_REVISE_ROUNDS,
         revise_message=revise_message,
@@ -1038,6 +1051,7 @@ def replan_adjust_route():
         dining=data.get("dining"), bedtime=data.get("bedtime"),
         minutes=data.get("minutes"), theme=data.get("theme"),
         nap_notes=data.get("nap_notes", ""), extra_notes=extra_notes,
+        model=_chosen_model(data.get("model")),
     )
     return jsonify(result)
 

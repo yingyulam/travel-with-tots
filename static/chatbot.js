@@ -5,6 +5,16 @@
 // (rather than per-button listeners) so it keeps working after plan.html
 // restores a card from its sessionStorage snapshot, which replaces raw HTML
 // and would otherwise leave old per-button listeners behind.
+// The model the parent picked in the chat widget's dropdown. A true global,
+// like buildFeedbackRow below, because the planning and in-trip pages send it
+// with their own AI calls: one visible choice governs every model this app
+// uses, rather than each page keeping a default nobody can see.
+const TWT_MODEL_STORAGE_KEY = "twt_chatbot_model";
+
+function twtSelectedModel() {
+  return localStorage.getItem(TWT_MODEL_STORAGE_KEY) || "";
+}
+
 function buildFeedbackRow(context) {
   const row = document.createElement("div");
   row.className = "twt-feedback";
@@ -38,7 +48,6 @@ document.addEventListener("click", (e) => {
 });
 
 (function () {
-  const MODEL_STORAGE_KEY = "twt_chatbot_model";
   // The conversation, so it survives navigating to another page. sessionStorage
   // rather than localStorage: the workflow state in here belongs to one
   // transcript, and sharing it between tabs would let two half-filled forms
@@ -70,12 +79,12 @@ document.addEventListener("click", (e) => {
     const modelSelect = root.querySelector(".twt-chatbot-model-row select");
     const endBtn = root.querySelector(".twt-chatbot-end");
 
-    const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
+    const savedModel = localStorage.getItem(TWT_MODEL_STORAGE_KEY);
     if (savedModel && [...modelSelect.options].some((o) => o.value === savedModel)) {
       modelSelect.value = savedModel;
     }
     modelSelect.addEventListener("change", () => {
-      localStorage.setItem(MODEL_STORAGE_KEY, modelSelect.value);
+      localStorage.setItem(TWT_MODEL_STORAGE_KEY, modelSelect.value);
     });
 
     const GREETING = "Hello, I'm your Travel with Tots assistant. "
@@ -324,7 +333,11 @@ document.addEventListener("click", (e) => {
       el.className = "twt-handoff";
       el.method = "post";
       el.action = "/plan";
-      el.target = "_blank";
+      // Submitted in this tab, not a new one. Generating is a real AI call of
+      // ten seconds and up, and in a background tab that is a blank page with
+      // nothing to say it is working, which reads as a button that did nothing.
+      // Here the browser's own loading indicator does that job. Safe to leave
+      // the page now that the transcript survives navigation.
 
       const add = (name, value) => {
         const field = document.createElement("input");
@@ -350,6 +363,10 @@ document.addEventListener("click", (e) => {
         }
       });
 
+      // The same model the chat itself is using, so generating from here and
+      // generating from the planning page cannot disagree.
+      add("model", modelSelect.value);
+
       const check = document.createElement("button");
       check.type = "submit";
       check.className = "twt-chip";
@@ -361,6 +378,19 @@ document.addEventListener("click", (e) => {
       generate.type = "submit";
       generate.className = "twt-chip primary";
       generate.textContent = "✨ Generate my day";
+
+      // This page stays on screen while /plan works, so without a visible
+      // change the button looks unclicked for the whole ten seconds and gets
+      // pressed again. Marked with a class rather than `disabled`, because
+      // disabling the submitter mid-submit can drop its name from the post,
+      // and "Open the form" is nothing but its name.
+      el.addEventListener("submit", (event) => {
+        el.classList.add("working");
+        const clicked = event.submitter === check ? check : generate;
+        clicked.textContent = clicked === check
+          ? "📝 Opening the form…"
+          : "✨ Building your day…";
+      });
 
       el.append(check, generate);
       return el;

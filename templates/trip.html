@@ -414,6 +414,9 @@
           theme: theme || null,
           nap_notes: tripData.nap_notes,
           extra_notes: tripData.extra_notes,
+          // The chat widget's dropdown is where a model is picked, and this
+          // replan is an AI call like any other, so it uses the same one.
+          model: twtSelectedModel(),
           replan_note: note || "",
         }),
       });

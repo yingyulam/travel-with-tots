@@ -9,7 +9,7 @@ instead of each having their own copy.
 
 import requests
 
-from ..agents import PlanningAgent, PlanningAgentError
+from ..agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
 from ..data_loader import VENUES
 from ..itinerary import generate_plans
 
@@ -18,13 +18,18 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
                stop_count=3, dining="dine_out", features=None, naps=None,
                preferred_lunch_time="", nap_notes="", extra_notes="",
                transit=None, accommodation="", strict_schedule=False,
-               themes=None, transit_nap="") -> dict:
+               themes=None, transit_nap="", model=DEFAULT_MODEL) -> dict:
     """Build a full day plan: a rule-based draft, then AI-smoothed. Always
     returns a usable plan -- if the AI step fails, falls back to the
     unadjusted draft rather than raising, so every caller gets that
     resilience for free instead of reimplementing the try/except. Returns
     a Plan-shaped dict ({"label", "blurb", "stops", "source"}) plus
-    "adjusted" (bool), so callers can decide how to present a fallback."""
+    "adjusted" (bool), so callers can decide how to present a fallback.
+
+    `model` is the one the parent picked in the chat widget's dropdown, so the
+    day is smoothed by whichever model they chose rather than by a default they
+    cannot see. It is the whole cost of the call: the rule-based draft below
+    takes well under a millisecond, and everything after it is the model."""
     inputs = {
         "wake_up": wake_up, "bedtime": bedtime, "naps": naps or [],
         "age_years": str(age_months // 12), "age_months": str(age_months % 12),
@@ -36,7 +41,7 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
     plan = generate_plans(VENUES, inputs)[0]
     adjusted = True
     try:
-        adjustment = PlanningAgent().adjust_plan(
+        adjustment = PlanningAgent(model).adjust_plan(
             plan.to_dict(), destination=destination, age_months=age_months,
             wake_up=wake_up, bedtime=bedtime, stop_count=stop_count, dining=dining,
             naps=naps, preferred_lunch_time=preferred_lunch_time,

@@ -562,3 +562,10 @@ details[open] > .twt-result-summary .twt-result-chevron {
     padding-right: 40px;
   }
 }
+
+/* While /plan is working. Not `disabled` on the buttons: disabling the
+   submitter mid-submit can drop its name from the post. */
+.twt-handoff.working {
+  pointer-events: none;
+  opacity: 0.65;
+}

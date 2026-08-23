@@ -74,6 +74,33 @@ chunk index, which can take a few seconds.
   **"💾 Save this plan"** (logged in, child picked) saves it without starting.
 - Every AI-generated plan (and every chatbot reply) gets a 👍/👎 rating,
   reviewable with stats from `/results`.
+- Naps take **any** number of minutes between 15 and 180. The input used to
+  step in quarter hours, so the browser refused 40, and 20, and 50: values the
+  server had always accepted. Its bounds now come from the same
+  `form_helpers` constants the server clamps with, so the two cannot drift.
+- Submitting shows **"Building your day…"**, because the page stays on screen
+  for the whole AI call and silence there reads as a button that did nothing.
+
+**One model choice, everywhere.** The chat widget's dropdown is the only place
+a model is picked, and planning and replanning now read that choice instead of
+each falling back to a default nobody can see. The page sends it with the form,
+`/plan` and `/replan/adjust` check it against the same `ALLOWED_CHAT_MODELS`
+the chat uses, and it reaches `PlanningAgent`/`ReplanningAgent` from there. A
+value the app does not offer falls back to the default rather than being
+passed on, since the field is client-supplied.
+
+This matters for speed, because the AI call *is* the wait. The rule-based
+draft takes 0.0003s; everything after it is the model. Measured on one
+identical day, end to end through `/plan`:
+
+| Model | Time |
+| --- | --- |
+| `openrouter/free` (the dropdown default) | 9.6s, 18s, 22s, 31s |
+| `openai/gpt-4o-mini` | 2.1s, 4.0s, 4.1s, 5.1s |
+
+The free option is OpenRouter's auto-router, which picks a different model per
+request, so its latency is not just high but unpredictable. Picking a paid
+model in the dropdown is now the way to a fast plan.
 
 ### Page 2 - In-trip (`/trip`)
 
@@ -336,6 +363,15 @@ Generate. That keeps one planner rather than two: a generated plan is 2.5-4.5KB
 and would not survive Flask's ~4KB session cookie, the AI adjuster is not
 deterministic so the chat and the page would show different days, and generating
 here would mean duplicating a sixteen-argument call.
+
+Both buttons post in **this** tab, not a new one, and say that they are working
+while they do. Generating is a real AI call of ten seconds and up: opened in a
+background tab that is a blank page with nothing to explain itself, which is
+indistinguishable from a button that did nothing. Here the browser's own
+loading indicator does the explaining, and leaving the page costs nothing now
+that the transcript survives navigation. The buttons are locked with a class
+rather than `disabled`, because disabling the submitter mid-submit can drop its
+name from the post, and "Open the form" is nothing but its name.
 
 While a flow is in progress **the classifier is skipped entirely**. Mid-flow,
 "two year old" and "yes" are answers to the question just asked, not new
