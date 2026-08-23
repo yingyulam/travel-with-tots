@@ -21,7 +21,8 @@ class PlanUsesTheChosenModelTest(unittest.TestCase):
         self.client = app_module.app.test_client()
 
     def _post(self, **extra):
-        plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True}
+        plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
+                "changed": True}
         with mock.patch.object(app_module, "plan_trip", return_value=plan) as planned:
             self.client.post("/plan", data={"destination": "Burnaby", **extra})
         return planned.call_args.kwargs["model"]
@@ -47,7 +48,8 @@ class ReplanUsesTheChosenModelTest(unittest.TestCase):
         body = {"plan": {"stops": []}, "situation": "nap_here",
                 "current_time": "12:00", **extra}
         with mock.patch.object(app_module, "replan_trip",
-                               return_value={**DRAFT, "adjusted": True}) as replanned:
+                               return_value={**DRAFT, "adjusted": True,
+                                             "changed": True}) as replanned:
             self.client.post("/replan/adjust", json=body)
         return replanned.call_args.kwargs["model"]
 

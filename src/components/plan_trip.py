@@ -24,7 +24,9 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
     unadjusted draft rather than raising, so every caller gets that
     resilience for free instead of reimplementing the try/except. Returns
     a Plan-shaped dict ({"label", "blurb", "stops", "source"}) plus
-    "adjusted" (bool), so callers can decide how to present a fallback.
+    "adjusted" (bool: did the AI step run at all) and "changed"
+    (bool: did it move anything), so callers can tell an adjuster that
+    agreed with the draft from one that failed.
 
     `model` is the one the parent picked in the chat widget's dropdown, so the
     day is smoothed by whichever model they chose rather than by a default they
@@ -55,4 +57,9 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
         adjusted = False
     result = plan.to_dict()
     result["adjusted"] = adjusted
+    # Whether the AI actually moved anything. adjust_plan marks every stop it
+    # edits, so no marks means it read the day and left it alone. That is the
+    # adjuster agreeing with the draft, which is a good outcome and a different
+    # one from the call failing, and only `adjusted` can tell those apart.
+    result["changed"] = any(stop.get("adjusted") for stop in result["stops"])
     return result

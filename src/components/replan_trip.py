@@ -22,7 +22,8 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
     then AI-smoothed. Always returns a usable plan -- if the AI step fails,
     falls back to the unadjusted draft rather than raising, so every caller
     gets that resilience for free. Returns a plan dict ({"label", "blurb",
-    "from_time", "stops"}) plus "adjusted" (bool).
+    "from_time", "stops"}) plus "adjusted" (did the AI step run) and
+    "changed" (did it move anything).
 
     `model` is the one the parent picked in the chat widget's dropdown, the
     same as planning, so one choice governs every AI call the app makes."""
@@ -45,4 +46,9 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
         print(f"Replan adjustment skipped, showing the unadjusted draft: {e}")
         adjusted = False
     draft["adjusted"] = adjusted
+    # Whether the AI actually moved anything. adjust_plan marks every stop it
+    # edits, so no marks means it read the day and left it alone. That is the
+    # adjuster agreeing with the draft, which is a good outcome and a different
+    # one from the call failing, and only `adjusted` can tell those apart.
+    draft["changed"] = any(stop.get("adjusted") for stop in draft["stops"])
     return draft

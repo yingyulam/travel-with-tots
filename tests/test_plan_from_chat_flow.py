@@ -534,7 +534,8 @@ class PrefillRouteTest(unittest.TestCase):
 
     def test_without_prefill_the_generate_path_is_unchanged(self):
         # The regression that matters: prefill must not have broken planning.
-        plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True}
+        plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
+                "changed": True}
         with mock.patch.object(self.app_module, "plan_trip",
                                return_value=plan) as planned:
             resp = self.client.post("/plan", data={"destination": "Burnaby"})

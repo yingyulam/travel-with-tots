@@ -933,14 +933,29 @@ def plan():
             model=_chosen_model(request.form.get("model")),
         )
         plans = [Plan.from_dict(result)]
-        if result["adjusted"]:
+        # Three outcomes, not two. The AI can improve the day, read it and
+        # decide it is already right, or fail outright. Those last two used to
+        # look the same to a parent, so an adjuster that agreed was reported as
+        # something going wrong.
+        if not result["adjusted"]:
+            # It raised: a reply that failed validation, a timeout, an
+            # unconfigured key. What is shown is the rule-based plan, which is
+            # a real plan, so name the step that did not run rather than imply
+            # the day is broken.
+            note = ("Showing the rule-based plan. The AI fine-tuning step "
+                    "didn't finish this time.")
             if is_revise:
-                revise_message = "Your plan has been updated."
+                revise_message, revise_error = note, True
+            else:
+                flash(note)
+        elif not result["changed"]:
+            settled = "This is already the best plan for your day. No changes needed."
+            if is_revise:
+                revise_message = settled
+            else:
+                flash(settled)
         elif is_revise:
-            revise_message = "Couldn't fine-tune your plan right now. Showing the plan you had."
-            revise_error = True
-        else:
-            flash("Showing the standard plan, couldn't fine-tune it right now.")
+            revise_message = "Your plan has been updated."
         # The whole form is carried to the in-trip page when a plan is chosen,
         # so a plan can still be saved from there without re-asking for it.
         trip_context = form

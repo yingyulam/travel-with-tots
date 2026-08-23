@@ -80,6 +80,15 @@ chunk index, which can take a few seconds.
   `form_helpers` constants the server clamps with, so the two cannot drift.
 - Submitting shows **"Building your day…"**, because the page stays on screen
   for the whole AI call and silence there reads as a button that did nothing.
+- The AI adjuster has **three** outcomes, not two: it improves the day, it reads
+  the day and leaves it alone, or the call fails. The middle one used to be
+  reported as *"couldn't fine-tune it right now"*, which made an adjuster that
+  agreed with the plan sound broken. It now says **"This is already the best
+  plan for your day. No changes needed."** A real failure still says so, because
+  what is shown then is the rule-based plan and claiming the AI approved it
+  would be a lie. `plan_trip` and `replan_trip` report both `adjusted` (did the
+  step run) and `changed` (did it move anything); `changed` comes free from the
+  per-stop `adjusted` marks the agent already sets.
 
 **One model choice, everywhere.** The chat widget's dropdown is the only place
 a model is picked, and planning and replanning now read that choice instead of

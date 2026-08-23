@@ -428,9 +428,14 @@
       renderTabs();
       renderTimeline();
       const time = newPlan.from_time || nowDisplay();
-      status.textContent = newPlan.adjusted
-        ? `Updated ready from ${time}. Use the tabs above to compare with the original.`
-        : `Updated using the quick plan; couldn't fine-tune it right now.`;
+      // Three outcomes: the AI improved the replan, it read it and left it
+      // alone, or it failed. The middle one is the AI agreeing, and saying
+      // "couldn't fine-tune" there made a good answer sound broken.
+      status.textContent = !newPlan.adjusted
+        ? `Updated using the rule-based plan. The AI fine-tuning step didn't finish this time.`
+        : newPlan.changed
+          ? `Updated ready from ${time}. Use the tabs above to compare with the original.`
+          : `Updated ready from ${time}. The AI reviewed it and had nothing to change.`;
     } catch (e) {
       status.textContent = e.message || "Couldn't re-plan right now.";
     }

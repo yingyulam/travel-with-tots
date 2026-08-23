@@ -72,7 +72,8 @@ class PlanRouteFormWiringTest(unittest.TestCase):
 
         with mock.patch.object(app_module, "plan_trip") as planner:
             planner.return_value = {"label": "Mixed", "blurb": "b", "stops": [],
-                                    "source": "rule", "adjusted": False}
+                                    "source": "rule", "adjusted": False,
+                                    "changed": False}
             self.client.post("/plan", data=BASE_FORM)
         passed = set(planner.call_args.kwargs)
 
