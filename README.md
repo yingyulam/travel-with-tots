@@ -167,136 +167,110 @@ navigation to every page, including admin-only pages when applicable.
 
 ## Log a Place (`/log-place`)
 
-Found somewhere the venue table doesn't have? Search for it by name, or drop a
-pin on the map yourself, then tick what it offers and describe anything else
-worth knowing. The dashboard lists your submissions, with edit and remove.
+Found somewhere the venue table doesn't have? Search by name or drop a pin, tick
+what it offers, describe anything else worth knowing. The dashboard lists your
+submissions, with edit and remove. Reachable from the chat too, via the "Log a
+place" workflow.
 
-**Searching by name uses Google Places, not geocoding.** Geocoding is
-address-shaped and answers a cafe's name with a street; Places answers "which
-place did you mean". Picking a result fills the name, the kind of place, the
-area and the pin from one choice. It needs the **Places API** enabled on the
-same Google project as the Geocoding API; without a key the search says so when
-you try it, and pinning by hand still works.
-
-The page is never disabled based on whether a key is configured. That flag was
-read from `os.environ`, which is fixed when the process starts, so adding a key
-to `.env` without restarting left the page insisting there was none while
-locking a search box that would have worked. The route answers the question at
-the moment it is asked, which is the only answer that can be right.
-
-**Submitting comes back here, showing what was stored** rather than redirecting
-away: the name, the address the geocoder resolved, the coordinates, the
-amenities and the pending badge. A chain is only observable if its output
-appears where it was run. Also testable in isolation: the search half has its
-own admin page at `/place-search`, so a wrong address can be pinned on the
-search or on the form rather than guessed at.
-
-Two things worth knowing about how it works:
-
-- **A submission never becomes searchable on its own.** It is stored with
-  `source="user_submitted"`, and `db.VERIFIED_SOURCES` covers only `curated`
-  and `municipal_open_data`, so it appears on your own dashboard and in no
-  search or plan until an admin promotes it. Editing your own entry cannot
-  change `source`, so a parent can't publish their own guess. The admin page
-  for reviewing the queue does not exist yet.
-- **The map uses Leaflet with OpenStreetMap tiles, not Google.** Every Google
-  embedding option needs the API key in the browser, and this app keeps all its
-  keys server-side. The pin's coordinates are something the browser already
-  has; turning them into an area name still goes through the server, so the
-  Google Geocoding key never moves. Leaflet is vendored in
-  `static/vendor/` rather than loaded from a CDN, keeping the property that
+- **Search uses Google Places, not geocoding.** Geocoding is address-shaped and
+  answers a cafe's name with a street; Places answers "which place did you
+  mean", and picking a result fills the name, kind, area and pin from one
+  choice. It needs the **Places API** on the same Google project as Geocoding;
+  without a key the search says so and pinning by hand still works.
+- **A pinned location beats geocoding the name**, and not as an optimisation: a
+  playground or a park building has no address to look up, so its coordinates
+  are the only thing that locates it.
+- **Submitting comes back here showing what was stored**, rather than
+  redirecting away: the name, the resolved address, the coordinates, the
+  amenities and the pending badge. A chain is only observable if its output
+  appears where it was run.
+- **A submission never becomes searchable on its own.** Stored with
+  `source="user_submitted"`, and `db.VERIFIED_SOURCES` covers only `curated` and
+  `municipal_open_data`, so it shows on your own dashboard and in no search or
+  plan until an admin promotes it. Editing your own entry cannot change
+  `source`, so nobody publishes their own guess. The review queue page does not
+  exist yet.
+- **The map is Leaflet with OpenStreetMap tiles, not Google.** Every Google
+  embedding option needs the key in the browser, and this app keeps all keys
+  server-side; turning a pin into an area name still goes through the server.
+  Leaflet is vendored in `static/vendor/` rather than loaded from a CDN, so
   every script the app serves is its own.
 
-A pinned location beats geocoding the name, and not as an optimisation: a
-playground or a park building has no address to look up, so its coordinates are
-the only thing that locates it.
+The page is never disabled based on whether a key is configured. That flag came
+from `os.environ`, fixed when the process starts, so adding a key to `.env`
+without restarting left the page insisting there was none while locking a search
+box that would have worked. The route answers at the moment it is asked, which
+is the only answer that can be right.
 
-Admin accounts (`is_admin` flag on `parents`) get extra pages:
+Admin accounts (`is_admin` on `parents`) get extra pages:
 
-| Page         | Purpose                                                                 |
-| ------------ | ------------------------------------------------------------------------ |
-| `/settings`  | Edit the chatbot's knowledge base and system prompt from the browser; saving the knowledge base re-indexes it in the background. |
-| `/chunks`    | Inspect how the knowledge base was chunked; re-run chunking at a different size. |
-| `/results`   | Browse rated chatbot responses and AI-generated plans, each in its own session ("Chatbox" / "Generated Plan") with its own stats, auto-refreshing. |
-| `/components` | Inventory of the app's building blocks, each with its own isolated test page. |
-| `/workflows` | End-to-end use cases, each one a chain of those components. |
+| Page | Purpose |
+| --- | --- |
+| `/settings` | Edit the chatbot's knowledge base and system prompt; saving re-indexes in the background. |
+| `/chunks` | Inspect how the knowledge base was chunked; re-run at a different size. |
+| `/results` | Browse rated chatbot replies and AI plans, each session with its own stats. |
+| `/components` | Inventory of the building blocks, each with an isolated test page. |
+| `/workflows` | End-to-end use cases, each chaining those components. |
 
 ## AI chatbot
 
-A floating widget on every page answers questions about how the site works,
-via [OpenRouter](https://openrouter.ai) (model swappable by changing a
-string; a dropdown offers a free model and a couple of paid ones). Every
-OpenRouter call (chatbot and AI planner alike) has a timeout and retries
-once if the provider returns an empty or malformed reply, which free-tier
-models occasionally do under load.
+A floating widget on every page answers questions about how the site works, via
+[OpenRouter](https://openrouter.ai). Every OpenRouter call in the app has a
+timeout and retries once on an empty or malformed reply, which free-tier models
+occasionally return under load.
 
-Answers are grounded with retrieval-augmented generation (RAG) instead of
-the model's own guesses:
+Answers are grounded with retrieval-augmented generation rather than the model's
+own guesses:
 
 1. `data/knowledge_base.md` is split into ~128-token chunks, keeping related
    sentences together.
-2. Each chunk is embedded with `sentence-transformers` (`all-MiniLM-L6-v2`)
-   and stored in a local [ChromaDB](https://www.trychroma.com) index
-   (`data/chroma/`, rebuildable, git-ignored).
-3. Each question retrieves the top 3 most similar chunks (with scores),
-   included in the prompt; the model answers only from those chunks and
-   cites them inline as `[Source N]` (clickable, shows the chunk text).
-4. First-time indexing (or after an admin edits/re-chunks the knowledge
-   base) runs in the background with a progress animation.
+2. Each chunk is embedded with `sentence-transformers` (`all-MiniLM-L6-v2`) into
+   a local [ChromaDB](https://www.trychroma.com) index (`data/chroma/`,
+   rebuildable, git-ignored).
+3. A question retrieves the top 3 chunks with scores; the model answers only
+   from those and cites them inline as `[Source N]`, clickable to show the text.
+4. First-time indexing, or a re-chunk from the admin page, runs in the
+   background behind a progress animation.
 
-Every reply gets a 👍/👎 rating; clicking one saves the question, answer,
-model, timestamp, response time, and token counts to `data/results.json`
-(git-ignored runtime data).
+Every reply takes a 👍/👎, which saves the question, answer, model, timestamp,
+response time and token counts to `data/results.json` (git-ignored).
 
-**The conversation follows you around the site.** The widget is on every page,
-so navigating used to destroy it: it is a script, and a page load starts a new
-one. The transcript is mirrored into `sessionStorage` and replayed on load, so
-closing the panel, moving to another page and reloading all keep it, and
-**"End chat" is the only thing that clears it**.
+## The chat widget
 
-It is replayed as data through the same render functions that drew it the first
-time, not as saved markup: restored HTML would arrive without its citation and
-button listeners, and putting stored text back through `innerHTML` is exactly
-the shape the trip page was rewritten to remove. So a restored answer still
-opens its sources and its buttons still work. A row of choices already clicked
-is remembered as answered and not offered again, while one never answered comes
-back live, which is what it was on the page.
-
-`sessionStorage`, not `localStorage`, because the workflow state in there
-belongs to one transcript: shared between tabs, two half-filled forms would
-answer each other's questions. The cost is that closing the tab ends the chat.
-
-**The panel resizes.** Drag the grip in its **top-left** corner: that is the
-corner with room to move, since the panel is anchored to the bottom-right of
-the window and the opposite corner sits under the bubble. It can also be
-tabbed to and resized with the arrow keys, because a drag-only control is
-unusable without a pointer, and double-clicking it goes back to the default.
-
-The size is a preference rather than conversation state, so unlike the
-transcript it lives in `localStorage` and outlives the tab. It is clamped at
-both ends and clamped again on the way back in: a floor so the input row stays
-usable, and a ceiling of the current window, so a size dragged on a wide screen
-does not reopen off the edge of a narrow one.
-
-**The message box grows with the message.** One line for a question, taller as
-the text wraps, then it stops and scrolls so a long paste cannot push the Send
-button off the panel. It is a textarea rather than a one-line input, which
-means **Enter sends and Shift+Enter starts a new line**: a textarea's Enter is
-a newline by default, so without that the box could only be sent with the
-button, and the placeholder says so.
-
-The height is cleared before it is measured each time. Without that it could
-only ever grow, because `scrollHeight` reports the box it is already in rather
-than the text inside it.
+- **The conversation follows you around the site.** The widget is a script, so
+  a page load used to start a new one and lose everything. The transcript is
+  mirrored into `sessionStorage` and replayed on load; closing the panel,
+  navigating and reloading all keep it, and **"End chat" is the only thing that
+  clears it**.
+- **Replayed as data, not as saved markup.** Restored HTML would arrive without
+  its citation and button listeners, and putting stored text back through
+  `innerHTML` is the shape the trip page was rewritten to remove. So a restored
+  answer still opens its sources and its buttons still work. A choice row
+  already clicked is remembered as answered; one never answered comes back live.
+- **`sessionStorage`, not `localStorage`**, because the workflow state in there
+  belongs to one transcript: shared between tabs, two half-filled forms would
+  answer each other's questions. The cost is that closing the tab ends the chat.
+- **The panel resizes.** Drag the grip in its **top-left** corner, the one with
+  room to move, since the panel is anchored bottom-right and the opposite corner
+  sits under the bubble. Arrow keys do it without a pointer, and double-click
+  resets. The size is a preference rather than conversation state, so it lives in
+  `localStorage`, and it is clamped both when set and when restored: a floor so
+  the input row stays usable, a ceiling of the current window so a size dragged
+  on a wide screen does not reopen off the edge of a narrow one.
+- **The message box grows with the message**, one line to start, then it stops
+  and scrolls so a long paste cannot push Send off the panel. Being a textarea,
+  **Enter sends and Shift+Enter starts a new line**, which the placeholder says
+  because a textarea's Enter is a newline by default. The height is cleared
+  before it is measured, or it could only ever grow: `scrollHeight` reports the
+  box it is already in, not the text inside it.
 
 ## AI Agent
 
-**The chat bubble is this agent's interface.** A message from the bubble goes
-to a tool-calling agent built with
-[LangGraph](https://langchain-ai.github.io/langgraph/)'s `create_react_agent`
-over an OpenRouter-backed model (`src/agent.py`), which decides *what to do*
-with it. It picks between four tools, each a thin wrapper around code that
-already powers the rest of the site rather than new logic:
+**The chat bubble is this agent's interface.** A message goes to a tool-calling
+agent built with [LangGraph](https://langchain-ai.github.io/langgraph/)'s
+`create_react_agent` over an OpenRouter model (`src/agent.py`), which decides
+*what to do* with it. Its four tools are thin wrappers around code that already
+powers the rest of the site:
 
 | Tool | Wraps | For |
 | --- | --- | --- |
@@ -305,411 +279,308 @@ already powers the rest of the site rather than new logic:
 | `plan_trip_tool` | the Plan Trips component | building an itinerary, only when explicitly asked |
 | `find_nearby_tool` | `find_nearby` | somewhere kid-friendly right now |
 
-The last two overlap, so the system prompt gives the extractor priority: a
-parent describing a day they want always fills the form first, even when it
-sounds like a request for a plan, because the point is that they see what was
-read from their words before a day is built on it. `plan_trip_tool` fires only
-when they ask for the itinerary outright. It is a prompt-level rule rather than
-a guarantee, so the workflow test page reports which tool actually ran.
+The last two overlap, so the prompt gives the extractor priority: a described day
+fills the form first, even when it sounds like a request for a plan, because the
+point is seeing what was read from your words before a day is built on it.
+`plan_trip_tool` fires only when asked outright. That is a prompt-level rule
+rather than a guarantee, which is why the test page reports the tool that ran.
 
-Answering questions is now one tool among several rather than a separate code
-path, so there is a single implementation behind the bubble and the admin test
-page. Each tool hands back both a short line for the model and the real
-structured result for the caller, because LangGraph otherwise JSON-stringifies
-a returned dict and the caller only gets text.
+Each tool hands back both a short line for the model and the real structured
+result for the caller, because LangGraph otherwise JSON-stringifies a returned
+dict and the caller gets only text.
 
-The test page at `/agent` therefore has **no chat of its own**: it watches real
-bubble traffic and shows which tool ran, what it returned, and the tokens and
-timing. What is tested is what a parent gets. Its model dropdown is the
-bubble's, which makes it the place to check whether a given model can call
-tools at all.
+`/agent` has **no chat of its own**: it watches real bubble traffic and shows
+which tool ran, what it returned, and the tokens and timing. What is tested is
+what a parent gets. Its model dropdown is the bubble's, which makes it the place
+to check whether a given model can call tools at all.
 
-**Getting an OpenRouter API key** (also needed for the chatbot and AI
-planner above -- one key covers all of it):
+**Getting an OpenRouter API key** (one key covers the chatbot, the agent and the
+AI planner):
 
-- Go to [openrouter.ai](https://openrouter.ai) and sign up (free).
-- Open [openrouter.ai/keys](https://openrouter.ai/keys) and click **Create
-  Key**. Give it a name and copy the value -- it's only shown once.
-- Paste it into `.env` as `OPENROUTER_API_KEY=<your key>` (copy
-  `.env.example` to `.env` first if you haven't already).
-- The default model (`google/gemma-4-26b-a4b-it:free`) doesn't require
-  adding credit. Switching to a paid model (GPT-4o mini, Claude Sonnet 5)
-  needs credit added under
+- Sign up free at [openrouter.ai](https://openrouter.ai), then create a key at
+  [openrouter.ai/keys](https://openrouter.ai/keys). It is shown once.
+- Paste it into `.env` as `OPENROUTER_API_KEY=<your key>`, copying
+  `.env.example` first if you have not already.
+- The default free model needs no credit. A paid model (GPT-4o mini, Claude
+  Sonnet 5) needs credit added under
   [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits).
-- Never commit `.env` or paste a real key into a prompt, screenshot, or
-  commit message -- `call_openrouter`/`src/agent.py` only ever read it from
-  `os.environ`, and it's never logged or printed.
+- Never commit `.env` or paste a real key into a prompt, screenshot or commit
+  message. `call_openrouter` only ever reads it from `os.environ`, and it is
+  never logged or printed.
 
-## Intent routing
+## Chat workflows
 
-Before the agent sees a message, a small classifier (`src/intent.py`) checks it
-against the workflows a chat message could actually trigger, and returns one
-name or `none`. A match runs that workflow; everything else falls through to
-the tool-calling agent above, unchanged. The classifier is a cheap pinned model
-with a strict enum schema, and its answer is re-checked against the offered
-names, so a hallucinated workflow becomes `none` rather than a crash.
+Four things the chat can do beyond answering questions. Each collects a request
+over a few messages and then hands it to whatever already does the work, rather
+than doing it a second time.
 
-Every decision is appended to `data/intents.jsonl` (git-ignored) and the reply
-carries the name that ran, which the bubble shows as a badge: `⚙️ <workflow>`
-or `💬 no workflow`. Two routers coexist deliberately: the classifier owns
-workflows and runs first, the agent owns everything else.
+| Workflow | Started by | Ends at |
+| --- | --- | --- |
+| Plan a day | "plan a trip" | `/plan`, prefilled or straight to Generate |
+| Find somewhere nearby | "find the nearest nursing room" | answered in the chat |
+| Replan on the go | "we need to replan" | the in-trip page's own replan |
+| Log a place | "log this place" | `/log-place`, prefilled or stored |
 
-A workflow that raises does not cost the parent their turn. It is logged as
-routed-but-not-run and the message falls through to the agent, so the trace can
-show routing that was right where execution was not.
+### Rules they all share
 
-## Filling the form by talking
+- **Routing.** A cheap pinned classifier (`src/intent.py`) returns one workflow
+  name or `none` from a strict enum, re-checked against the names actually
+  offered so a hallucinated one becomes `none` rather than a crash. Every
+  decision is appended to `data/intents.jsonl`, and the reply carries the name
+  that ran, shown as `⚙️ <workflow>` or `💬 no workflow`.
+- **A workflow that raises does not cost a turn.** It is logged as
+  routed-but-not-run and falls through to the agent, so the trace can show
+  routing that was right where execution was not.
+- **Mid-flow the classifier is skipped.** "Two year old" and "yes" are answers
+  to the question just asked, not new intents. The state travels with the
+  transcript in the browser: no cookie ceiling, no clash between tabs, it works
+  for a visitor who is not logged in, and it dies with "End chat".
+- **Leaving is one tap.** Every open turn offers **✕ Cancel**, and "cancel" or
+  "actually never mind" do the same. Checked *before* dispatch, so every
+  workflow gets it without remembering to, and it reaches neither the workflow
+  nor the classifier. Matched against the whole message, so "stop by the park
+  at 3" stays a description of a day.
+- **A button is a message.** An offered choice sends exactly its own label, so
+  a tap and a typed answer take one path through the server. Labels come from
+  the server, because a label it cannot parse is a button that does nothing.
+- **Nothing is asked of a model that code can answer.** Needs, features,
+  situations and durations are fixed vocabularies matched by keyword; the model
+  decides the routing and writes the prose.
 
-Saying "plan a trip" in the bubble starts a conversation rather than a single
-extraction. The assistant offers the two ways to plan, and if the parent picks
-chat it **asks for everything at once**:
+### Plan a day
 
-> Tell me about your day, whatever you know: which city, how old your little
-> one is, what time their day starts and bedtime, nap time and how long it
-> lasts. All in one message is fine.
+Asks for **everything at once**, then follows up only on what is missing, so
+"Vancouver, she's 2, up at 7 and bed at 7:30" is answered with the nap question
+alone. Interviewing field by field is the form again, only slower.
 
-One open question, not the first of five. Interviewing a parent field by field
-is the form again, only slower, and a day is something they can describe in a
-sentence. **Only what is missing gets a follow-up**, so "Vancouver, she's 2, up
-at 7 and bed at 7:30" is answered with the nap question alone. It finishes with
-**"Is there anything else we need to know?"**, because the useful things a
-parent knows about their own child are the ones no field thought to ask for.
+- **Asked for:** city, age, wake-up, bedtime, naps. Everything else rides on a
+  default and is shown before anything is handed over.
+- **The city offers Vancouver as a button**, taken from the venue data rather
+  than written as a literal, since it is the only city there is anything to
+  plan in.
+- **Naps ask for the time and the length together**, because a nap time with no
+  length is half an answer.
+- **Any question can be declined**, which marks it asked and moves on. Without
+  that, a question the parent cannot answer repeats forever in the same words,
+  so "she doesn't nap anymore" is a real answer rather than a non-answer.
+- **Ends with "Is there anything else we need to know?"**, because the useful
+  things a parent knows are the ones no field thought to ask for.
 
-The follow-ups are shaped by what their answer can be. The city offers
-**Vancouver** as a button, taken from the venue data rather than written as a
-literal, since that is the only city the app has anything to plan in. Naps ask
-for the time and the length together: a nap time with no length is half an
-answer, and asking twice for one fact is worse than asking once for both.
+**The extractor runs on every message**, and the merge is the part that matters:
+`extract_form` returns a *complete* form plus a `found` list of what that
+message supplied, so **only fields in `found` may overwrite**. A plain dict
+merge would let the second answer reset the first one's destination.
 
-Any question can be **declined**, which marks it asked and moves on. Without
-that, a question the parent cannot answer repeats forever in the same words:
-the extractor finds nothing, so the field stays missing, so it is asked again.
-Naps are the field this is really for, since a child can genuinely not have
-one, so "she doesn't nap anymore" is recognised as an answer and not just a
-plain "no".
+**Notes accumulate rather than replace.** A note is something a parent adds to:
+"she needs a highchair" does not retract "she hates loud places". Repeats are
+dropped. `accommodation` is free text but excluded, being a value rather than a
+note.
 
-**The extractor runs on every message**, not once. Each turn it reads whatever
-was just said and merges it into the form built up so far. The merge is the part
-that matters: `extract_form` returns a *complete* form plus a `found` list of
-what that message actually supplied, so only fields in `found` may overwrite.
-A plain dict merge would let the second answer reset the first one's
-destination back to its default.
+**It never generates the day.** The confirmed form is POSTed to `/plan`, which
+plans it as it always has. One planner rather than two, because a generated plan
+is 2.5-4.5KB and would not survive Flask's ~4KB session cookie, the AI adjuster
+is not deterministic so the two would disagree, and it would mean duplicating a
+sixteen-argument call.
 
-**Notes are the exception: they accumulate rather than replace.** Every other
-field holds one value a later answer corrects, but a note is something a parent
-adds to, and "she needs a highchair" does not retract "she hates loud places".
-Since the extractor reads one message at a time and cannot know what was said
-earlier, `nap_notes` and `extra_notes` are appended to, with a repeat of
-something already in there dropped. The fragments come back sentence-shaped, so
-joining them reads as prose without reformatting. `accommodation` is free text
-too but is deliberately left out: it is a value, and saying where you are
-staying twice is a correction.
+Both buttons post in **this** tab and say they are working while they do:
+generating is a real AI call of ten seconds and up, and a blank background tab
+is indistinguishable from a button that did nothing. They are locked with a
+class rather than `disabled`, since disabling the submitter mid-submit can drop
+its name from the post, and "Open the form" is nothing but its name.
 
-Once the four are there, the whole form is shown split into what came from the
-parent's words and what is riding on a default, values included, so nothing
-reaches the planner unseen. Anything other than "yes" is treated as a
-correction and goes back to collecting, so "make it four stops" edits the form
-rather than ending the conversation. Nothing is handed over before they confirm.
+### Find somewhere nearby
 
-**The chatbot never generates the day.** The confirmed form is POSTed to
-`/plan`, which plans it exactly as it always has: either prefilled for checking
-(a `prefill` marker tells the route to fill the boxes and stop) or straight to
-Generate. That keeps one planner rather than two: a generated plan is 2.5-4.5KB
-and would not survive Flask's ~4KB session cookie, the AI adjuster is not
-deterministic so the chat and the page would show different days, and generating
-here would mean duplicating a sixteen-argument call.
+Reads the need from the message, searches, and returns each place as a card with
+a working **📍 Open in Google Maps** link.
 
-Both buttons post in **this** tab, not a new one, and say that they are working
-while they do. Generating is a real AI call of ten seconds and up: opened in a
-background tab that is a blank page with nothing to explain itself, which is
-indistinguishable from a button that did nothing. Here the browser's own
-loading indicator does the explaining, and leaving the page costs nothing now
-that the transcript survives navigation. The buttons are locked with a class
-rather than `disabled`, because disabling the submitter mid-submit can drop its
-name from the post, and "Open the form" is nothing but its name.
+- **The need is read by keyword**, and the order is the point: "a quiet place to
+  feed the baby" is a nursing room, not a quiet spot. Unrecognised, it asks once
+  with the six need buttons.
+- **Location is offered, never demanded.** Coordinates ride along only when
+  permission was already granted, checked through the Permissions API, which
+  reports the state without prompting, so opening a page never raises one.
+  Without them it still answers from the curated venues and offers **📍 Use my
+  location**, which re-asks the same question with somewhere to measure from.
+- **Links come from the place records, never from model prose.** The `href` is
+  always a value this app produced, checked against an `^https?://` allowlist
+  first, and a URL that fails **loses its link rather than being rendered**,
+  because a web result carries a URL nobody here chose. Those are labelled
+  `🔗 Open result` rather than claiming to be a place on a map.
+- **One implementation behind three entry points:** this workflow, the agent's
+  tool (the safety net for a phrasing the classifier misses) and the trip page's
+  need panel all call the same component.
 
-**Leaving is always one tap away.** Every turn that keeps a workflow open
-offers a **✕ Cancel** button, and typing "cancel", "forget it" or "actually
-never mind" does the same. The check runs before the message is dispatched, so
-it works for every workflow rather than each one having to remember, and it
-reaches neither the workflow nor the classifier: a model call to be told
-"never mind" is a call worth not making. Skipping the classifier mid-flow is
-what makes "yes" an answer rather than an intent, but it also used to make a
-workflow a room with no door, where the only ways out were finishing it or
-ending the chat and losing the transcript.
+Two bugs worth remembering, both from the same root. The chat once skipped the
+Geocode component and passed the supported city whatever the coordinates said,
+so a parent in Richmond got Vancouver venues described as "near you" and the web
+fallback could never fire; `resolve_location` now lives in the Geocode component
+and every caller uses it. And a location that resolves to **nothing** means the
+city this app covers, not the whole web: asked for a restaurant with no
+location, the test page once answered with Austin, Texas.
+`find_nearby.searchable()` applies that default in one place.
 
-The words are matched against the **whole** message, so "stop by the park at 3"
-stays a description of a day. Softeners in front are dropped first, because
-walking the flow showed "actually never mind" is the obvious way to say this
-and a whole-message match had no room for the "actually". The button's label is
-sent by the server rather than written into the widget, so the text a parent
-clicks and the words the server recognises cannot drift apart.
+### Replan on the go
 
-While a flow is in progress **the classifier is skipped entirely**. Mid-flow,
-"two year old" and "yes" are answers to the question just asked, not new
-intents, and routing them would derail the conversation. The state travels with
-the transcript in the browser, the same grain as the chat history: no cookie
-ceiling, no clash between tabs, works for a visitor who is not logged in, and
-it dies with "End chat" rather than outliving it.
+Offers the six situations the in-trip page already has as buttons, tapped or
+described: "she napped 90 minutes" reads as a long nap with the duration lifted
+out of the sentence. Anything unrecognised still replans, carrying what was
+typed as the note, exactly as that page's free-text box does.
 
-The widget carries the flow: an avatar beside each assistant message, a greeting
-on first open with **"What's Travel with Tots?"** and **"Plan a trip"** as
-one-tap openers, and offered choices rendered as buttons that send the same text
-a parent would have typed, so both take one path through the server. "Plan a
-trip" stays on offer under each answer until the form-filling flow has actually
-run, since planning is what most parents come for and a greeting-only chip
-scrolls away after a question or two.
+- **It does not replan.** The in-trip page holds the plan, its versions and the
+  clock, and `runReplan` there is the one implementation. The request travels as
+  a `twt:replan-request` event, the mirror of the `twt:chat-reply` event going
+  the other way, so the new version lands in that page's version switcher.
+- **It asks whether a trip is open**, through `on_trip` in the request context.
+  Without a started day there is nothing to reshape, so it says where to find
+  one rather than collecting a situation it cannot act on.
+- **One button, not two.** An earlier draft confirmed with a chip and *then*
+  offered a Replan button, which is two controls for one decision. Restoring the
+  transcript brings the button back but fires nothing, so a navigation cannot
+  replay a stale replan.
 
-## Finding somewhere nearby, from the chat
+This was **"Nap-time rescue"**, a declaration with no `run()` naming one
+situation out of seven, when a closed stop, rain or wanting to stay put are the
+same request and the component already handled all of them.
 
-Asking the bubble "find the nearest nursing room" runs the **Find a nearby
-place** workflow: the need is read from the message, the Find Nearby component
-searches, and each place comes back as a card with a working
-**📍 Open in Google Maps** link.
+### Log a place
 
-It used to answer **💬 no workflow**, and that badge was correct rather than
-broken. Nothing nearby-shaped was registered, so the classifier was offered a
-one-item menu, rightly said `none`, and the message fell through to the agent's
-`find_nearby_tool`, which called `interactions.find_nearby`, the deterministic
-placeholder. No location, no distance, no web fallback, and the real component
-never ran.
+Collects what it is called and roughly where, what it offers, and anything else
+worth knowing. Only the name is required, matching the single thing the storage
+path validates.
 
-**The need is read by keyword, not by a model.** Six fixed categories with
-distinctive words is work code does, and the order is the whole point: "a quiet
-place to feed the baby" is a nursing room, not a quiet spot. When the words
-match nothing it asks, offering the six need buttons, and it asks only once.
-
-**One resolver, so the chat and the test page agree.** They did not at first:
-the same coordinates in Richmond had the page web-searching Richmond while the
-chat returned Vancouver venues described as "near you", because the chat
-skipped the Geocode component and passed the supported city whatever the
-coordinates said. That also meant the web fallback could never fire outside
-Vancouver, since the curated search always had something. `resolve_location`
-now lives in the Geocode component and every caller uses it.
-
-And a location that resolves to **nothing** means the city this app covers, not
-the whole web. `find_nearby` treats "nothing known" as a web search, which is
-the right general contract and the wrong answer here: asked for a kid-friendly
-restaurant with no location, the test page returned results in Austin, Texas.
-`find_nearby.searchable()` applies that default in one place for the chat, the
-test page and the trip panel.
-
-**Location is offered, never demanded.** The widget attaches coordinates to a
-message only when permission has already been granted, checked through the
-Permissions API, which reports the state without prompting. Opening a page
-therefore never raises a location prompt. Without coordinates it still answers
-from the curated Vancouver venues and adds a **📍 Use my location** button that
-re-asks the same question, this time with somewhere to measure from. With them,
-the component ranks by real distance.
-
-**Links are rendered from the place records, not from the reply text.** Nothing
-parses model prose for URLs; the `href` is always a value this app produced.
-The widget checks it against an `^https?://` allowlist first, the same rule
-`templates/trip.html` uses, and a URL that fails **loses its link rather than
-being rendered**, which matters because a web-fallback result carries a URL
-nobody here chose. A web result is labelled `🔗 Open result` rather than
-claiming to be a place on a map.
-
-**One implementation behind all three entry points.** The workflow, the agent's
-tool (the safety net for a phrasing the classifier misses) and the trip page's
-need panel all call the same component. The tool returns its places as a
-LangGraph artifact, so the agent's answer renders the same cards the workflow's
-does. The trip page's no-location branch used to report `source: "curated"`
-without having consulted anything; it now reports the source it actually used.
-
-### Logging a place by talking
-
-Saying "log this place" in the bubble starts a conversation: what it is called
-and roughly where, what it offers, and anything else worth knowing. Only the
-name is required, matching the single thing the storage path validates.
+- **A place is several things at once**, so the features question takes as many
+  as apply. "Family room and nursing room" ticks both: the matcher collects
+  every label it finds rather than stopping at the first. The chips **toggle
+  rather than send**, and ✓ Done sends the picked labels as one message, so a
+  tapped answer reads identically to a typed one.
+- **The chat does not store it.** The values are posted to `/log-place`, with
+  **📝 Open the form** to check the map pin or **📌 Log it** to submit. The
+  bubble is on every page and is not logged in, while a submission needs an
+  owner to be editable and to appear on a dashboard, and only the real page has
+  the map. A form post carries the session, so an anonymous visitor is sent to
+  log in rather than losing what they typed.
 
 It used to answer **💬 no workflow**, and not because the classifier misjudged
-it. `runnable_message_workflows()` filters on `trigger == "message"` and this
-one was `"event"`, so its name was not even in the enum the classifier chooses
-from. The agent has no logging tool either, so the fallback could only ask for
-details it could do nothing with. That one misroute then cascaded: the
-fall-through cleared the conversation, so the next message was classified cold
-and landed on Find a nearby place, which pinned state and swallowed the one
-after it.
+it: `runnable_message_workflows()` filters on `trigger == "message"` and this
+one was `"event"`, so its name was never in the enum at all. Flipping that alone
+would have crashed, since `run(parent_id, values)` is not the message contract.
+The storage path is now **`store()`**, which is what it does, and `run` is the
+conversation.
 
-Flipping the trigger alone would have crashed. `run(parent_id, values)` is not
-the message contract, so it would have been called with the parent's text as a
-parent id. It is now **`store(parent_id, values)`**, which is what it does, and
-`run` is the conversation. Both end in the same place.
+### Watching one run
 
-**A place is several things at once**, so the features question takes as many as
-apply. Typing "family room and nursing room" ticks both: the matcher collects
-every label it finds rather than stopping at the first, which is the one real
-difference from how the nearby workflow reads a need. The chips **toggle rather
-than send**, and ✓ Done sends the picked labels as one ordinary message, so a
-tapped answer and a typed one are read identically. Done with nothing picked
-means none of them.
+Every workflow has a test page with the same two controls. **▶ Run once** arms
+the page so the next message sent in the chat bubble is captured and shown, then
+disarms itself; **👂 Listen** keeps capturing until stopped. The bubble stays
+the input on purpose: what the page shows is then what a parent really gets,
+rather than a canned sample travelling a code path nobody uses.
 
-**The chat does not store it.** The collected values are posted to
-`/log-place`, the way the planning chat posts to `/plan`, with **📝 Open the
-form** to check the map pin first or **📌 Log it** to submit straight away. Two
-reasons: the chat bubble is on every page and is not logged in, while a
-submission needs an owner to be editable and to appear on a dashboard, and only
-the real page has the map. A browser form post carries the session, so an
-anonymous visitor is sent to log in rather than losing what they typed.
-
-### Watching a workflow run
-
-Each workflow with a test page has the same two controls, and they mean the
-same thing on both: **▶ Run once** arms the page so the next message you send
-in the chat bubble is captured and shown, then disarms itself. **👂 Listen**
-keeps capturing until you stop it. The chat bubble stays the input on purpose,
-because then what the page shows is what a parent really gets, rather than a
-canned sample travelling a code path nobody uses.
-
-There are three of these pages now, so the machine behind Run and Listen
-lives once, in `static/workflow-watch.js`, and each page keeps only its own
-rendering. `/workflows/find-nearby-place` watches that workflow the way
-`/workflows/plan-from-chat` and `/workflows/log-a-place` watch theirs. Each captured turn shows what
-you said, which path answered, the reply, and every place found as a card with
-its distance and a working Maps link. It says **curated** or **web search** so
-the two sources are never confused, and a message this workflow did not handle
-is labelled with whatever did rather than rendered as an empty result.
-
-Its card used to link to the Find Nearby *component's* page, which calls the
-search directly and never runs the workflow, so "Try it" led somewhere that did
-not try it.
+A captured turn shows what was said, which path answered, the reply, and
+whatever that workflow collected. A message this workflow did not handle is
+labelled with what did, rather than rendered as an empty result. The machine
+behind Run and Listen lives once, in `static/workflow-watch.js`; each page keeps
+only its own rendering.
 
 ## Web Search
 
-Another admin-only, isolated component test page (`/search-web`, linked from
-`/components`): a query box and a **Run** button that call the
-[Tavily Search API](https://tavily.com) and display the top 5 results
-(title, URL, snippet). `src/components/search_web.py` is self-contained, one
-file for the whole component, matching the "isolate and test each piece on
-its own" pattern the Components page exists for. Also used as Find Nearby's
-fallback (see below) when the curated venue table has nothing to offer.
+`src/components/search_web.py`, one file, with its own admin page at
+`/search-web`: a query box, a **Run** button, and the top 5
+[Tavily](https://tavily.com) results as title, URL and snippet. Also Find
+Nearby's fallback when the curated venue table has nothing.
 
-Tavily, not Brave: Brave killed its free Search API tier in February 2026 --
-the "identity verification" card is now an active billing instrument,
-charged automatically past $5 of usage/month with no cap. Tavily's free
-tier has no such trap.
+Tavily, not Brave: Brave killed its free Search API tier in February 2026, and
+its "identity verification" card is now an active billing instrument, charged
+automatically past $5 a month with no cap.
 
 **Getting a Tavily API key:**
 
-- Go to [tavily.com](https://tavily.com) and sign up -- no credit card
-  required.
-- Open your [dashboard](https://app.tavily.com/home) and copy your API key.
-- Paste it directly into the Web Search page and click **Save Key** -- this
-  writes it into `.env` for you (via `python-dotenv`'s `set_key`) and it's
-  usable immediately, no restart needed. You can also edit `.env` by hand as
-  `TAVILY_API_KEY=<your key>`, same as any other key in this project.
-- The free plan includes 1,000 search credits per month, resetting monthly.
-  Requests simply stop once exhausted, they never bill you.
-- Same rule as above: never commit `.env` or share the key -- it's only
-  ever read from `os.environ`, never logged, printed, or sent back to the
-  browser once saved.
+- Sign up at [tavily.com](https://tavily.com), no credit card, and copy the key
+  from your [dashboard](https://app.tavily.com/home).
+- Paste it into the Web Search page and click **Save Key**: that writes `.env`
+  via `python-dotenv`'s `set_key` and works immediately, no restart. Editing
+  `.env` by hand as `TAVILY_API_KEY=<your key>` does the same.
+- The free plan gives 1,000 searches a month. Requests stop when exhausted;
+  they never bill you.
+- Never commit `.env` or share the key. It is only read from `os.environ`, and
+  never logged, printed, or sent to the browser once saved.
 
 ## Form Extractor
 
-An admin-only, isolated test page (`/extract-form`, linked from `/components`)
-for reading a parent's own words into the planning form, so they can describe
-their day instead of filling in boxes. `src/components/extract_form.py` is
-self-contained, one file for the whole component.
+`src/components/extract_form.py`, one file, with its own admin page at
+`/extract-form`: a parent's own words into the planning form, so they can
+describe a day instead of filling in boxes. It is what the "Plan a day"
+workflow calls on every turn.
 
-The model proposes and the real validator decides: every value it returns goes
-through the same `form_helpers.read_form` the `/plan` route uses, so the
-clamps, the five-years-zero-months age cap, and the four-nap ceiling are
-enforced once, in one place. A model answering `stop_count: 40` yields `6`
-rather than reaching the planner. Values outside a fixed vocabulary (transit,
-dining, features, themes, transit_nap) are dropped rather than passed on.
+- **The model proposes, the real validator decides.** Every value goes through
+  the same `form_helpers.read_form` the `/plan` route uses, so the clamps, the
+  five-years-zero-months age cap and the four-nap ceiling are enforced once. A
+  model answering `stop_count: 40` yields `6`. Values outside a fixed vocabulary
+  are dropped rather than passed on.
+- **It reports which fields the description actually supplied**, and everything
+  else is shown as a default. A form quietly filled with guesses is worse than
+  one you can see is incomplete, because nobody checks a field they believe came
+  from their own words.
+- **Free text is part of the job.** Whatever no structured field can hold goes
+  to `extra_notes`, anything about sleep to `nap_notes`, both of which reach the
+  planner's prompt. Prose a structured field already captured is not repeated
+  there, so the planner never reads one constraint twice.
 
-It reports which fields the description actually supplied, and the page marks
-everything else as a default. That is deliberate: a form quietly filled with
-guesses is worse than a form you can see is incomplete, because nobody checks
-a field they think came from what they wrote.
+**It pins its own model**, and the pin was chosen by measurement:
 
-Free text is a first-class part of the job, not an afterthought. Anything a
-parent said that no structured field can hold goes into `extra_notes`, and
-anything about sleep goes into `nap_notes`, both of which already render into
-the planner's prompt. Prose a structured field already captured is *not*
-repeated there, so the planner never reads the same constraint twice.
+- The app default is OpenRouter's free auto-router, which advertises structured
+  outputs but picks a different model per request, and honoured the schema
+  about half the time when measured.
+- A free reasoning model was tried and replaced: on the same description it
+  spent 3.2k-4.5k tokens over 25-75s and found *fewer* fields than the current
+  pin does in ~2s on ~130 tokens, and near the free-tier ceiling the reasoning
+  consumed the whole reply and the content came back empty.
+- At ~$0.0003 a call, the paid non-reasoning pin buys latency a parent will wait
+  through and a result that does not change between identical requests.
 
-Reachable from the chat bubble: this component is what the "Fill the form from
-a chat message" workflow calls on every turn (see `/workflows`). That chain ends
-at the filled form on purpose, so a description never becomes a finished
-itinerary without the parent seeing what was read from it.
-
-It pins its own model rather than using the app default, which is OpenRouter's
-free auto-router: the router advertises structured outputs but picks a
-different model per request, and measured live it honoured the schema only
-about half the time.
-
-The pin is a paid non-reasoning model, chosen by measurement. A free reasoning
-model was tried first and replaced: on the same description it spent 3.2k-4.5k
-tokens, mostly reasoning, over 25-75s, and found fewer fields than the current
-model does in about 2s on roughly 130 tokens. It also failed outright near the
-free-tier ceiling, where the reasoning consumed the whole reply and the content
-came back empty. At about $0.0003 a call, the paid model buys latency a parent
-will wait through and a result that does not change between identical requests.
-
-Naps are the field this component has to get right, and it used to invent their
-length: the schema required `duration_min` as a plain integer, so a model under
-strict mode had to supply a number even when the parent gave none, producing 15
-minutes one run and an hour the next. It is nullable now, so "they didn't say"
-is expressible, and the assumed hour comes from
-`form_helpers.ASSUMED_NAP_DURATION_MIN` instead of from the model's guess.
+**Naps are the field it had to stop guessing at.** `duration_min` was a plain
+integer, so under strict mode a model had to invent a number when the parent
+gave none: 15 minutes one run, an hour the next. It is nullable now, so "they
+didn't say" is expressible, and the assumed hour comes from
+`form_helpers.ASSUMED_NAP_DURATION_MIN`.
 
 ## Find Nearby
 
-"Find a kid-friendly place near us, right now", available both on its own
-admin test page (`/find-nearby`, linked from `/components`) and behind the
-live in-trip page's **Need something now?** panel.
-
+"Somewhere kid-friendly near us, right now", on its own admin page
+(`/find-nearby`) and behind the in-trip page's **Need something now?** panel.
 Two components, one job each:
 
-- `src/components/geocode.py` turns a location into a place name, via the
-  Google Geocoding API. Since venues now carry coordinates, this is optional
-  for the "use my location" path: the browser's own free
-  `navigator.geolocation` gives coordinates (no key, no Google script in the
-  page) and distances are computed against the venues directly, so geocoding
-  only adds a human-readable place name. It is genuinely required for a typed
-  address, which has no coordinates to work from.
-- `src/components/find_nearby.py` does the matching. It narrows the venue
-  table to the resolved city (or searches every city when only coordinates
-  are known), ranks by real straight-line distance
-  (`src/geo.py`) and reports each result's `distance_km`, then calls the
-  app's existing `interactions.find_nearby()` for the actual need matching
-  rather than reimplementing it. When curated has nothing, it falls back to a
-  live Tavily web search, tagging the result `source: "search"` so the UI can
-  say where the answer came from.
+- **`geocode.py`** turns a location into a place name via the Google Geocoding
+  API. Optional for "use my location", since the browser's free
+  `navigator.geolocation` gives coordinates and the venues carry their own, so
+  geocoding only adds a readable name. Genuinely required for a typed address,
+  which has no coordinates to work from.
+- **`find_nearby.py`** does the matching: narrow to the resolved city, or search
+  every city when only coordinates are known, rank by real straight-line
+  distance (`src/geo.py`), report each `distance_km`, and delegate the need
+  matching itself to `interactions.find_nearby()` rather than reimplementing it.
+  When curated has nothing it falls back to a Tavily search, tagged
+  `source: "search"` so the UI can say where the answer came from.
 
-Not every venue has coordinates (see Venue coordinates below), so venues
-without them fall back to same-neighbourhood-first ordering and report no
-distance. That fallback is permanent, not transitional: user-submitted venues
-never get coordinates from a source.
+Two limits that are permanent rather than transitional. Venues without
+coordinates fall back to same-neighbourhood-first ordering and report no
+distance, and user-submitted venues never get coordinates from a source. And
+curated venues are Vancouver-only, so a location elsewhere legitimately returns
+nothing curated and falls through to search.
 
-Curated venues are Vancouver-only today, so a location elsewhere legitimately
-returns zero curated matches and falls through to search. Location is always
-optional: with none shared, the panel keeps its original behaviour of
-matching the need across all venues.
+**Optional: a Google Maps API key for address search.** No key is needed to
+share your location. It is only needed for the "set a location by hand" box,
+since turning typed text into coordinates is exactly what geocoding does.
 
-**Optional: a Google Maps API key for address search.**
-
-No key is needed to share your location: the browser supplies coordinates and
-the venues carry their own, so distance ranking works out of the box. A key is
-only needed for the "set a location by hand" box, since turning typed text
-into coordinates is exactly what geocoding does and there is nothing else to
-compute it from. Without a key that one input is disabled and says so.
-
-- Open the [Google Cloud console](https://console.cloud.google.com/google/maps-apis/api-list)
-  and create or pick a project.
-- Enable the **Geocoding API**. That single API is all this component uses.
-- Under **Credentials**, create an API key, then restrict it: *API
-  restrictions* to the Geocoding API only, and *Application restrictions* to
-  IP addresses.
-- Paste it into the Find Nearby page and click **Save Key** (writes `.env`
-  via `set_key`, usable immediately, no restart), or set
+- In the [Google Cloud console](https://console.cloud.google.com/google/maps-apis/api-list),
+  create or pick a project and enable the **Geocoding API**. That one API is all
+  this component uses.
+- Create a key under **Credentials**, then restrict it: *API restrictions* to
+  Geocoding only, *Application restrictions* to IP addresses.
+- Paste it into the Find Nearby page and click **Save Key**, or set
   `GOOGLE_MAPS_API_KEY=<your key>` in `.env` by hand.
-- Google gives a recurring monthly credit that covers well beyond this app's
-  usage, but the Geocoding API does require billing enabled on the project.
-- The key is server-side only: it is never sent to the browser, logged, or
-  printed, and `.env` is git-ignored.
+- Google's recurring monthly credit covers well beyond this app's usage, but the
+  Geocoding API does require billing enabled on the project.
+- The key is server-side only: never sent to the browser, logged or printed.
 
 ## Venue coordinates
 
@@ -781,7 +652,7 @@ travel-with-tots/
 │   ├── rag.py                     # chunking, embeddings, and retrieval for the chatbot
 │   ├── results.py                 # saves/reads thumbs up/down ratings, by kind (chatbot/plan/replan)
 │   ├── workflows/                 # one file per workflow, each chaining components
-│   │   ├── nap_time_rescue.py     # replan around a long nap, substitute closed stops
+│   │   ├── replan_on_the_go.py    # shift the rest of the day when something changes
 │   │   ├── log_a_place.py         # log a place from the map, held for admin verification
 │   │   ├── plan_from_chat.py      # fill the planning form over a few chat messages
 │   │   └── find_nearby_place.py   # answer "somewhere nearby" from the chat, with Maps links
@@ -806,6 +677,7 @@ travel-with-tots/
 │   ├── plan_from_chat.html        # admin: fill-the-form-from-chat workflow test page
 │   ├── find_nearby_place.html     # admin: find-a-nearby-place workflow test page
 │   ├── log_place_from_chat.html   # admin: log-a-place-from-chat workflow test page
+│   ├── replan_on_the_go.html      # admin: replan-on-the-go workflow test page
 │   ├── ai_agent.html              # admin: isolated AI Agent test page (/agent)
 │   ├── search_web.html            # admin: isolated Web Search test page (/search-web)
 │   ├── plan_trip.html             # admin: isolated Plan Trips test page (/plan-trip)
@@ -910,6 +782,7 @@ transactional.
 | `/workflows/plan-from-chat`     | GET      | Admin: fill-the-form-from-chat workflow test page               |
 | `/workflows/find-nearby-place`  | GET      | Admin: find-a-nearby-place workflow test page                   |
 | `/workflows/log-a-place`        | GET      | Admin: log-a-place-from-chat workflow test page                 |
+| `/workflows/replan-on-the-go`   | GET      | Admin: replan-on-the-go workflow test page                      |
 | `/search-web`, `/search-web/run`, `/search-web/key` | GET, POST | Admin: isolated Web Search test page, run a query, save the API key |
 | `/plan-trip`, `/plan-trip/run`  | GET, POST | Admin: isolated Plan Trips component test page + run (JSON out) |
 | `/replan-trip`, `/replan-trip/run` | GET, POST | Admin: isolated Replan Trip component test page + run (JSON out) |
