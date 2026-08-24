@@ -441,6 +441,18 @@
     }
   }
 
+  // The chat bubble can collect a situation too, and hands it here rather
+  // than replanning itself: this page holds the plan, its versions and the
+  // current time, and runReplan above is the one implementation. The flag is
+  // what tells the widget a day is open at all, so it can ask for a situation
+  // instead of offering to shift a day that does not exist.
+  window.twtReplanReady = true;
+  document.addEventListener("twt:replan-request", (event) => {
+    const { situation, minutes, note } = event.detail || {};
+    if (!situation) return;
+    runReplan(situation, minutes ?? null, null, note || "");
+  });
+
   // Prompts that ask for a duration, then confirm, before any re-plan
   // actually runs.
   const napPrompt = document.getElementById("nap-prompt");

@@ -728,6 +728,30 @@ document.addEventListener("click", (e) => {
       return el;
     }
 
+    // A confirmed replan, handed to the in-trip page. Not a form post like the
+    // other two handoffs: that page already holds the plan, its versions and
+    // the current time, and its runReplan is the one implementation. An event
+    // asks it to do what its own situation buttons do, so the new version
+    // lands in its version switcher rather than somewhere else.
+    function replanHandoff(request) {
+      const row = document.createElement("div");
+      row.className = "twt-chips";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "twt-chip primary";
+      btn.textContent = "🔄 Replan my day";
+
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        btn.textContent = "🔄 Replanning…";
+        document.dispatchEvent(new CustomEvent("twt:replan-request", {
+          detail: request,
+        }));
+      });
+      row.appendChild(btn);
+      return row;
+    }
+
     // Buttons for whatever the assistant just offered, so a choice can be
     // clicked as well as typed. They send the same text either way, which
     // keeps one path through the server.
@@ -743,6 +767,10 @@ document.addEventListener("click", (e) => {
       }
       if (data.place_form) {
         bubbleEl.appendChild(placeHandoffForm(data.place_form));
+        return;
+      }
+      if (data.replan_request) {
+        bubbleEl.appendChild(replanHandoff(data.replan_request));
         return;
       }
       if (data.open_form) {
@@ -821,6 +849,10 @@ document.addEventListener("click", (e) => {
             history: history.slice(-MAX_HISTORY_TURNS),
             conversation,
             location: coords,
+            // Set by the in-trip page, which is the only one that can act on
+            // a replan. A global rather than a DOM lookup, so the contract
+            // between that page and this widget is named in both.
+            on_trip: window.twtReplanReady === true,
           }),
         });
         const data = await res.json();

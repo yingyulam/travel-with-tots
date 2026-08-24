@@ -234,6 +234,9 @@ def handle_message(message: str, history: list[dict] | None = None,
                 # The same idea as `form`, for a different page: a collected
                 # place, posted to /log-place rather than /plan.
                 "place_form": result.get("place_form"),
+                # A confirmed replan, for the in-trip page to act on. It holds
+                # the plan and its versions, so it does the re-timing.
+                "replan_request": result.get("replan_request"),
                 "open_form": result.get("open_form", False),
                 # Places render as cards with real Maps links, so they travel
                 # as data rather than as URLs written into the reply text.

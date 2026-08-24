@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Replan on the go{% endblock %}
+{% block heading %}Replan on the go{% endblock %}
+{% block tagline %}Tell the chat bubble what changed, watch the day shift.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Test page for the "Replan on the go" workflow. Type in the bubble in the corner, which is the agent, and the replan it collected appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+
+  <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the replan conversation, and the assistant reads which situation it is from a tapped chip or from your own words. It stops at the confirmed request on purpose. Re-timing the day is the <a href="{{ url_for('trip') }}">in-trip page</a>'s job, because that is where the plan and its versions live. Start a day first, then say "we need to replan" in the bubble.</p>
+
+  <div class="action-panel">
+    <p class="panel-title">Watch the chat</p>
+    <div class="chips">
+      <button type="button" class="cta-secondary" id="replan-on-the-go-run">▶ Run once</button>
+      <button type="button" class="cta-secondary" id="replan-on-the-go-listen">👂 Listen</button>
+    </div>
+    <p class="watch-status" id="replan-on-the-go-status" data-state="off" role="status" aria-live="polite">
+      <span class="watch-dot" aria-hidden="true"></span>
+      <span id="replan-on-the-go-status-text">Not watching</span>
+    </p>
+    <p class="field-hint">Run handles the next message you send, then stops. Listen keeps handling each message until you stop it. Either way, one result per message.</p>
+  </div>
+
+  <p class="field-hint">A request the parent has confirmed is marked <span class="badge">ready to replan</span>; one still being collected is <span class="badge badge-pending">still asking</span>. Each card also shows which path answered, so a message the classifier sent elsewhere cannot be misread as this workflow's.</p>
+  <div id="replan-on-the-go-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='workflow-watch.js') }}"></script>
+<script src="{{ url_for('static', filename='replan-on-the-go.js') }}"></script>
+{% endblock %}

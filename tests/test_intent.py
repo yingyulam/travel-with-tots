@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -9,6 +10,7 @@ import requests
 
 from src import agent, intent
 from src.intent import NO_WORKFLOW, classify_intent, log_decision
+from src import workflows as workflows_module
 from src.workflows import WORKFLOWS, runnable_message_workflows
 
 FILL_THE_FORM = "Fill the form from a chat message"
@@ -88,9 +90,30 @@ class OfferedWorkflowsTest(unittest.TestCase):
             with self.subTest(workflow=workflow["name"]):
                 self.assertTrue(callable(run))
 
-    def test_declaration_only_workflows_are_excluded(self):
-        offered = {w["name"] for w, _ in runnable_message_workflows()}
-        self.assertNotIn("Nap-time rescue", offered)
+    def test_a_workflow_with_nothing_behind_it_is_excluded(self):
+        # Tested against a stub rather than a real module, because every
+        # workflow is runnable now. The guard still matters: offering the
+        # classifier a name with no run means it confidently picks something
+        # that cannot then be executed, which is worse than the chatbot.
+        stub = types.SimpleNamespace(
+            WORKFLOW={"name": "Not built yet", "emoji": "🚧",
+                      "trigger": "message", "description": "One sentence.",
+                      "steps": [{"component": "Nothing", "built": False}]})
+        with mock.patch.object(workflows_module, "_MODULES",
+                               (*workflows_module._MODULES, stub)):
+            offered = {w["name"] for w, _ in runnable_message_workflows()}
+        self.assertNotIn("Not built yet", offered)
+
+    def test_a_non_message_workflow_is_excluded_even_with_a_run(self):
+        stub = types.SimpleNamespace(
+            WORKFLOW={"name": "Started by something else", "emoji": "🔁",
+                      "trigger": "event", "description": "One sentence.",
+                      "steps": [{"component": "Thing", "built": True}]},
+            run=lambda *a, **k: {"reply": "hi"})
+        with mock.patch.object(workflows_module, "_MODULES",
+                               (*workflows_module._MODULES, stub)):
+            offered = {w["name"] for w, _ in runnable_message_workflows()}
+        self.assertNotIn("Started by something else", offered)
 
     def test_the_registry_still_lists_every_workflow(self):
         # runnable_message_workflows filters; WORKFLOWS must not.

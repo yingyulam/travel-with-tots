@@ -114,11 +114,18 @@ class NothingKnownMeansTheCityWeCoverTest(unittest.TestCase):
 
 
 class TheRequestCarriesCoordinatesTest(unittest.TestCase):
-    """`location` is client-supplied, like `conversation` before it."""
+    """`location` is client-supplied, like `conversation` before it. Asserted
+    on the coordinate keys rather than the whole context, which carries other
+    things a request knows and will carry more."""
+
+    @staticmethod
+    def _coords(body):
+        context = app_module._message_context(body)
+        return {k: v for k, v in context.items() if k in ("lat", "lng")}
 
     def test_a_real_pair_is_passed_through(self):
         self.assertEqual(
-            app_module._message_context({"location": {"lat": 49.27, "lng": -123.1}}),
+            self._coords({"location": {"lat": 49.27, "lng": -123.1}}),
             {"lat": 49.27, "lng": -123.1})
 
     def test_anything_else_becomes_no_location(self):
@@ -126,11 +133,16 @@ class TheRequestCarriesCoordinatesTest(unittest.TestCase):
                          {"lat": None, "lng": None}, {"lat": 999, "lng": 0},
                          {"lat": 0, "lng": 999}, {"lat": True, "lng": True}, None):
             with self.subTest(location=location):
-                self.assertEqual(
-                    app_module._message_context({"location": location}), {})
+                self.assertEqual(self._coords({"location": location}), {})
 
     def test_a_missing_key_is_fine(self):
-        self.assertEqual(app_module._message_context({}), {})
+        self.assertEqual(self._coords({}), {})
+
+    def test_a_bad_location_does_not_take_the_rest_of_the_context_with_it(self):
+        # They are read independently: an unusable location must not also lose
+        # the flag saying a trip is open.
+        self.assertTrue(app_module._message_context(
+            {"on_trip": True, "location": "nonsense"})["on_trip"])
 
 
 if __name__ == "__main__":

@@ -99,5 +99,32 @@ class DelegatedHandlerContractTest(unittest.TestCase):
         self.assertIn("stopWhyDetail(", why.group(0))
 
 
+class TheChatCanAskThisPageToReplanTest(unittest.TestCase):
+    """The chat collects a situation and hands it here, because this page holds
+    the plan, its versions and the clock. Both halves of that contract live in
+    this template, and neither shows up in a Python test unless guarded."""
+
+    def test_it_tells_the_widget_a_day_is_open(self):
+        # Without this the chat says "open your trip first" forever, and
+        # nothing else would notice.
+        self.assertIn("window.twtReplanReady = true", _script())
+
+    def test_it_listens_for_a_replan_request(self):
+        self.assertIn('document.addEventListener("twt:replan-request"', _script())
+
+    def test_the_listener_runs_this_page_own_replan(self):
+        # Not a second implementation: the new version has to land in this
+        # page's version switcher, which only runReplan does.
+        listener = re.search(r'addEventListener\("twt:replan-request".*?\}\);',
+                             _script(), re.DOTALL).group(0)
+        self.assertIn("runReplan(", listener)
+
+    def test_a_request_with_no_situation_is_ignored(self):
+        # The event is public on the document, so anything could dispatch it.
+        listener = re.search(r'addEventListener\("twt:replan-request".*?\}\);',
+                             _script(), re.DOTALL).group(0)
+        self.assertIn("if (!situation) return;", listener)
+
+
 if __name__ == "__main__":
     unittest.main()

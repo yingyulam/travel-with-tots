@@ -136,17 +136,22 @@ def _message_context(data):
     coordinates, when it has already been given permission. Client-supplied, so
     the values are checked here rather than where they are used, and anything
     that is not a real pair of numbers becomes no location at all."""
+    # Whether a started day is open on the page that sent this. The workflow
+    # that shifts a day needs to know, so it can say "open your trip first"
+    # rather than collecting a situation it cannot act on.
+    context = {"on_trip": data.get("on_trip") is True}
+
     location = data.get("location")
     if not isinstance(location, dict):
-        return {}
+        return context
     lat, lng = location.get("lat"), location.get("lng")
     if not (isinstance(lat, (int, float)) and isinstance(lng, (int, float))):
-        return {}
+        return context
     if isinstance(lat, bool) or isinstance(lng, bool):
-        return {}
+        return context
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-        return {}
-    return {"lat": float(lat), "lng": float(lng)}
+        return context
+    return {**context, "lat": float(lat), "lng": float(lng)}
 
 
 def _chosen_model(value):
@@ -349,6 +354,19 @@ def plan_from_chat_page():
     """The Plan from chat workflow's test page: describe a day in the bubble,
     watch the agent turn it into the planning form."""
     return render_template("plan_from_chat.html")
+
+
+@app.route("/workflows/replan-on-the-go")
+@login_required
+@admin_required
+def replan_on_the_go_page():
+    """The Replan on the go workflow's test page: say what changed in the
+    bubble, watch the request it collected.
+
+    Its own page rather than /trip: that one holds the plan and does the
+    re-timing, and is where this workflow hands off to, so it cannot also be
+    the surface for watching the conversation that fills the request."""
+    return render_template("replan_on_the_go.html")
 
 
 @app.route("/workflows/log-a-place")
