@@ -24,7 +24,9 @@ class PlanUsesTheChosenModelTest(unittest.TestCase):
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": True}
         with mock.patch.object(app_module, "plan_trip", return_value=plan) as planned:
-            self.client.post("/plan", data={"destination": "Burnaby", **extra})
+            self.client.post("/plan",
+                              data={"destination": "Burnaby",
+                                    "generate": "1", **extra})
         return planned.call_args.kwargs["model"]
 
     def test_the_picked_model_reaches_the_planner(self):

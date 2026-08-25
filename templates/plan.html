@@ -10,6 +10,10 @@
 <section class="card form-card">
   <h2>Your trip</h2>
   <form method="post" action="{{ url_for('plan') }}" id="plan-form">
+    {# This form exists to build a day, so it always asks for one. A hidden
+       field rather than the submit button's name, because the revise flow
+       calls planForm.submit(), which records no submitter and would drop it. #}
+    <input type="hidden" name="generate" value="1">
     {% if current_parent and current_parent_children %}
     <fieldset class="group">
       <legend>Who's on this trip? <em>(pick one or more)</em></legend>

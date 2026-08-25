@@ -265,10 +265,18 @@ class PrefillTest(_VenueDbTest):
         self.assertIn('value="49.16"', html)
         self.assertIn('value="-123.13"', html)
 
-    def test_without_the_marker_it_still_stores(self):
-        # The regression that matters: prefill must not have broken logging.
-        _, stored = self._post(name="Richmond Centre")
+    def test_asking_to_store_still_stores(self):
+        # The regression that matters in the other direction: the hand-off must
+        # not have broken the page's own form, which carries the marker as a
+        # hidden field.
+        _, stored = self._post(name="Richmond Centre", store="1")
         stored.assert_called_once()
+
+    def test_a_post_that_asks_for_nothing_stores_nothing(self):
+        # Storing is opt in, so a post that lost the marker fills the form in
+        # rather than writing a venue row nobody logged.
+        _, stored = self._post(name="Richmond Centre")
+        stored.assert_not_called()
 
     def test_the_empty_form_still_renders(self):
         with mock.patch.object(self.app_module, "_current_parent",
@@ -358,7 +366,8 @@ class PageTest(unittest.TestCase):
              mock.patch.object(self.app_module.log_a_place, "store",
                                return_value={"id": 7}), \
              mock.patch.object(self.app_module, "_logged_place", return_value=stored):
-            resp = self.client.post("/log-place", data={"name": "Science World"})
+            resp = self.client.post("/log-place",
+                                    data={"name": "Science World", "store": "1"})
             self.assertEqual(resp.status_code, 302)
             self.assertIn("logged=7", resp.headers["Location"])
             html = self.client.get("/log-place?logged=7").get_data(as_text=True)

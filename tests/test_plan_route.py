@@ -5,6 +5,8 @@ from unittest import mock
 from src.agents import PlanningAgent, PlanningAgentError
 
 BASE_FORM = {
+    # The planning form asks for a day; /plan only builds one when asked.
+    "generate": "1",
     "destination": "Vancouver", "age_years": "1", "age_months": "6",
     "wake_up": "07:00", "bedtime": "19:30", "stop_count": "3",
     "dining": "dine_out", "transit_nap": "sometimes",

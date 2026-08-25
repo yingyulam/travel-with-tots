@@ -740,11 +740,16 @@ def log_place():
     observable if its output appears where it was run, and a bare redirect gave
     no confirmation that anything had happened at all.
     """
-    # A POST carrying "prefill" fills the form in and stops there, without
-    # storing. That is how the chat hands over a place it collected: the parent
-    # lands on the real page with their answers in place, can move the map pin,
-    # and submits themselves. Same template, no second code path.
-    if request.form.get("prefill"):
+    # Storing is opt in: only a POST carrying "store" writes a row, and
+    # anything else fills the form in and stops there. That is how the chat
+    # hands over a place it collected, so the parent lands on the real page
+    # with their answers in place, can move the map pin, and submits
+    # themselves. Same template, no second code path.
+    #
+    # It was the other way round, a "prefill" flag that turned storing off,
+    # which made writing a venue row the default for any POST that lost the
+    # flag. A submit button's name is exactly what a post loses.
+    if not request.form.get("store"):
         return render_template(
             "log_a_place.html", amenity_options=AMENITY_OPTIONS, stored=None,
             form=request.form)
@@ -913,12 +918,19 @@ def save_trip():
 def plan():
     """Planning page: the trip form and, after generating, comparable plans.
 
-    A POST carrying "prefill" fills the form in and stops there, without
-    planning. That is how the chat assistant hands over a form it collected: the
-    parent lands on the real page with their answers in place and presses
-    Generate themselves. Same read_form, same template, no second code path.
+    Generating is opt in: only a POST carrying "generate" builds a day, and
+    anything else fills the form in and stops there. That is how the chat
+    assistant hands over a form it collected, so the parent lands on the real
+    page with their answers in place and presses Generate themselves. Same
+    read_form, same template, no second code path.
+
+    It was the other way round, a "prefill" flag that turned generating off,
+    which made a ten-second AI call the default for any POST that lost the
+    flag. A submit button's name is exactly what a post loses: disable the
+    submitter mid-submit, or serve a cached older script, and the safe action
+    silently becomes the expensive one.
     """
-    prefill_only = request.method == "POST" and request.form.get("prefill")
+    should_generate = request.method == "POST" and request.form.get("generate")
     if request.method == "POST":
         form = read_form(request.form)
     else:
@@ -930,7 +942,7 @@ def plan():
     is_revise = revise_count > 0
     revise_message, revise_error = None, False
 
-    if request.method == "POST" and not prefill_only:
+    if should_generate:
         # The visible "extra_notes" box only ever holds what the parent typed
         # there; feedback from "Something's off" travels separately in
         # revise_feedback and is merged in here, just for the AI call.

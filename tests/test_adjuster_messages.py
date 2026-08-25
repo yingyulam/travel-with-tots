@@ -16,7 +16,9 @@ from src.components import replan_trip as replan_module
 
 SETTLED = "This is already the best plan for your day. No changes needed."
 FAILED = "finish this time"
-BASE = {"destination": "Vancouver", "age_years": "2", "age_months": "0"}
+BASE = {
+    # The planning form asks for a day; /plan only builds one when asked.
+    "generate": "1","destination": "Vancouver", "age_years": "2", "age_months": "0"}
 
 
 def _stop(name="Science World", adjusted=False):

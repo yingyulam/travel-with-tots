@@ -20,7 +20,7 @@ Fill in what they actually said:
 - themes: the kind of day they want, from: {theme_options}. Match what they ask for to a theme rather than needing the theme's name: a park is Outdoorsy, a museum is Culture, wanting to stay indoors out of the rain is Rainy-day. Pick every theme they asked for, so "a park and a museum" is two themes.
 
 Then the two free-text fields, which is where the rest of what they said has to go:
-- nap_notes: anything about sleep or naps that is not a time. Habits, what wakes the child, what helps them settle.
+- nap_notes: anything about sleep or naps that is not a time. Habits, what wakes the child, what helps them settle. This includes where and how they sleep and what disturbs them, even when the same sentence also tells you about transport: "sleeps in the car seat but wakes when moved to the stroller" sets transit_nap to yes and still belongs here in full, because the part about waking is not something transit_nap can hold. Sleep detail goes here rather than in extra_notes, but only the sleep part: split a sentence that carries both, so "she naps in the carrier, and she is fussy about food" is a nap note about the carrier and a separate extra note about food.
 - extra_notes: everything else they said that no field above can hold. Preferences, dislikes, worries, constraints, anything specific about the child.
 
 Two rules about those two fields, and they matter:

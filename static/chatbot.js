@@ -472,9 +472,9 @@ document.addEventListener("click", (e) => {
     }
 
     // The collected form, posted to /plan as the real form's own fields. Same
-    // trick the plan page uses to hand a plan to /trip. `prefill` is what tells
-    // /plan to fill the boxes in and stop; without it, the existing POST branch
-    // generates, which is exactly the page's own Generate my day.
+    // trick the plan page uses to hand a plan to /trip. `generate` is what
+    // tells /plan to build a day; without it the post just fills the boxes in
+    // and stops, so only the primary button here can spend an AI call.
     function addHidden(form, name, value) {
       const field = document.createElement("input");
       field.type = "hidden";
@@ -520,19 +520,25 @@ document.addEventListener("click", (e) => {
       check.type = "submit";
       check.className = "twt-chip";
       check.textContent = "📝 Open the form";
-      check.name = "prefill";
-      check.value = "1";
 
       const generate = document.createElement("button");
       generate.type = "submit";
       generate.className = "twt-chip primary";
       generate.textContent = "✨ Generate my day";
+      // Only this button asks /plan to build a day. Naming the expensive
+      // action rather than the safe one means a post that loses a submit
+      // button's name fills the form in instead of spending a minute on an
+      // AI call nobody asked for.
+      generate.name = "generate";
+      generate.value = "1";
 
       // This page stays on screen while /plan works, so without a visible
       // change the button looks unclicked for the whole ten seconds and gets
       // pressed again. Marked with a class rather than `disabled`, because
       // disabling the submitter mid-submit can drop its name from the post,
-      // and "Open the form" is nothing but its name.
+      // and "Generate my day" is nothing but its name. Losing it now costs a
+      // filled-in form rather than an unwanted plan, but the button should
+      // still work.
       el.addEventListener("submit", (event) => {
         el.classList.add("working");
         const clicked = event.submitter === check ? check : generate;
@@ -708,13 +714,15 @@ document.addEventListener("click", (e) => {
       check.type = "submit";
       check.className = "twt-chip";
       check.textContent = "📝 Open the form";
-      check.name = "prefill";
-      check.value = "1";
 
       const log = document.createElement("button");
       log.type = "submit";
       log.className = "twt-chip primary";
       log.textContent = "📌 Log it";
+      // Only this button asks /log-place to write a row, for the same reason:
+      // a lost name should cost a form to fill in, not a venue nobody logged.
+      log.name = "store";
+      log.value = "1";
 
       el.addEventListener("submit", (event) => {
         el.classList.add("working");

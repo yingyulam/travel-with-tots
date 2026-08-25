@@ -565,19 +565,28 @@ class PrefillRouteTest(unittest.TestCase):
         for value in ("Burnaby", "12:30", "90", "bus", "stroller"):
             self.assertIn(value, html)
 
-    def test_without_prefill_the_generate_path_is_unchanged(self):
-        # The regression that matters: prefill must not have broken planning.
+    def test_asking_for_a_day_still_generates_one(self):
+        # The regression that matters in the other direction: the hand-off must
+        # not have broken planning for the page's own form, which carries the
+        # marker as a hidden field.
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": True}
         with mock.patch.object(self.app_module, "plan_trip",
                                return_value=plan) as planned:
-            resp = self.client.post("/plan", data={"destination": "Burnaby"})
+            resp = self.client.post("/plan", data={"destination": "Burnaby",
+                                                   "generate": "1"})
         planned.assert_called_once()
         self.assertEqual(resp.status_code, 200)
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_a_post_that_asks_for_nothing_plans_nothing(self):
+        # Generating is opt in, so a post that lost the marker fills the form
+        # in rather than spending a minute on an AI call nobody asked for.
+        # This is the direction that matters: the old flag meant the reverse,
+        # and a lost name cost a plan.
+        with mock.patch.object(self.app_module, "plan_trip") as planned:
+            resp = self.client.post("/plan", data={"destination": "Burnaby"})
+        planned.assert_not_called()
+        self.assertEqual(resp.status_code, 200)
 
 
 
@@ -621,3 +630,7 @@ class SoftFieldsCannotSkipTheOfferTest(unittest.TestCase):
         # aliases them to. Getting that wrong would re-ask an age just given.
         result = _turn("she's 18 months", None, age_months="6", age_years="1")
         self.assertNotEqual(result["state"]["stage"], STAGE_OFFERED)
+
+
+if __name__ == "__main__":
+    unittest.main()

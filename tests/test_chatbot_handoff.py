@@ -1,10 +1,10 @@
 """Structural guards on the chat's handoff to the planning page.
 
 The confirmation reply carries a hidden form that posts the collected fields to
-/plan: "Open the form" with a `prefill` marker so the route fills the boxes and
-stops, "Generate my day" without it so the route's existing generate branch
-runs. Generating is a real AI call of ten seconds and up, which is what shaped
-the two rules here: it happens in this tab, and it says that it is working.
+/plan: "Generate my day" with a `generate` marker so the route builds a day,
+"Open the form" without it so the route just fills the boxes in and stops.
+Generating is a real AI call of ten seconds and up, which is what shaped the
+two rules here: it happens in this tab, and it says that it is working.
 
 Read rather than executed, like the other guards on this file. Behaviour was
 verified separately against a DOM shim, posting the fields the widget really
@@ -30,12 +30,15 @@ class PostsToThePlanningPageTest(unittest.TestCase):
         self.assertIn('el.method = "post"', handoff)
         self.assertIn('el.action = "/plan"', handoff)
 
-    def test_generate_does_not_send_the_prefill_marker(self):
-        # The only difference between the two buttons. If the generate button
-        # gained a name, it would land on a filled form instead of a day.
+    def test_only_the_generate_button_is_named(self):
+        # The only difference between the two buttons, and which one carries
+        # the name is the whole safety property. /plan builds a day only when
+        # asked, so a post that loses a submit button's name fills the form in
+        # rather than spending a minute on an AI call nobody wanted. Naming
+        # the safe button instead, which is how this started, inverts that.
         handoff = _handoff()
-        self.assertIn('check.name = "prefill"', handoff)
-        self.assertNotIn("generate.name", handoff)
+        self.assertIn('generate.name = "generate"', handoff)
+        self.assertNotIn("check.name", handoff)
 
 
 class SlowGenerateIsVisibleTest(unittest.TestCase):
@@ -52,7 +55,7 @@ class SlowGenerateIsVisibleTest(unittest.TestCase):
 
     def test_the_submitter_is_not_disabled(self):
         # Disabling the submitter mid-submit can drop its name from the post,
-        # and "Open the form" is nothing but its name. The row is locked with
+        # and "Generate my day" is nothing but its name. The row is locked with
         # a class instead.
         self.assertEqual(re.findall(r"\.disabled\s*=", _handoff()), [])
 

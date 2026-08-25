@@ -401,7 +401,18 @@ Both buttons post in **this** tab and say they are working while they do:
 generating is a real AI call of ten seconds and up, and a blank background tab
 is indistinguishable from a button that did nothing. They are locked with a
 class rather than `disabled`, since disabling the submitter mid-submit can drop
-its name from the post, and "Open the form" is nothing but its name.
+its name from the post, and "Generate my day" is nothing but its name.
+
+**Generating is opt in, and so is storing a place.** `/plan` builds a day only
+for a post carrying `generate`, and `/log-place` writes a row only for one
+carrying `store`; anything else fills the form in and stops. Each page's own
+form carries its flag as a hidden field, so only the chat's primary button
+sends it. This was the other way round, a `prefill` flag that turned the
+expensive action *off*, which made a minute-long AI call the default for any
+post that lost the flag. A submit button's name is exactly what a post loses:
+disable the submitter mid-submit, or serve a cached older script, and the safe
+action silently becomes the expensive one. Naming the dangerous button instead
+means a lost name costs a filled-in form.
 
 ### Find somewhere nearby
 
