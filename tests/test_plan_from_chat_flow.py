@@ -578,3 +578,46 @@ class PrefillRouteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class SoftFieldsCannotSkipTheOfferTest(unittest.TestCase):
+    """The reported bug: clicking "Plan a trip" jumped straight to a question
+    instead of offering the two ways.
+
+    The cause was not here. This guard was already correct: it skips the offer
+    only when the message supplied a field the conversation asks about, and a
+    theme or a transit mode alone does not count. What broke was the extractor,
+    which claimed a destination, an age and a nap from the words "Plan a trip",
+    all fabricated, all lifted from examples in its own prompt. See
+    GroundingTest in test_components_extract_form.
+
+    These pin the behaviour the fix relies on, so a later change here cannot
+    quietly bring the symptom back.
+    """
+
+    def test_only_soft_fields_still_offers_the_two_ways(self):
+        # What the model returns for a bare intent once the values it cannot
+        # invent are grounded away: the vocabulary fields, which nothing can
+        # ground, since "we'll drive" legitimately means car without sharing a
+        # word with it.
+        result = _turn("Plan a trip", None, themes=["Outdoorsy"],
+                       transit=["car"], transit_nap="yes",
+                       features=["kid_friendly"])
+        self.assertEqual(result["state"]["stage"], STAGE_OFFERED)
+        self.assertEqual(len(result["choices"]), 2)
+
+    def test_a_described_day_still_skips_the_offer(self):
+        result = _turn("Vancouver, she's 2", None,
+                       destination="Vancouver", age_years="2")
+        self.assertNotEqual(result["state"]["stage"], STAGE_OFFERED)
+
+    def test_one_required_field_is_enough_to_skip_it(self):
+        result = _turn("we're up at 7", None, wake_up="07:00")
+        self.assertNotEqual(result["state"]["stage"], STAGE_OFFERED)
+
+    def test_age_counts_even_though_it_is_two_fields(self):
+        # age_years/age_months are form fields; "age" is the question _supplied
+        # aliases them to. Getting that wrong would re-ask an age just given.
+        result = _turn("she's 18 months", None, age_months="6", age_years="1")
+        self.assertNotEqual(result["state"]["stage"], STAGE_OFFERED)

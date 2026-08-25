@@ -556,6 +556,23 @@ workflow calls on every turn.
   else is shown as a default. A form quietly filled with guesses is worse than
   one you can see is incomplete, because nobody checks a field they believe came
   from their own words.
+- **A value the description cannot support is dropped.** `read_form` asks
+  whether a value is well formed; grounding asks whether the parent said it, and
+  both are needed, because a fabricated time is perfectly in range. Times, ages
+  and counts need a number in the description ("up at seven" counts, "money"
+  does not); a nap needs a mention of sleep, since a nap may legitimately carry
+  no clock time; a city has to be named; free text has to share words with what
+  was said. The vocabulary fields are deliberately left alone, because "we'll
+  drive" is legitimately `car` without sharing a word with it.
+
+  This came from a measured failure. Asked to fill the form from the three words
+  "Plan a trip", the pinned model returned up to ten non-null fields, every one
+  lifted from an example in the prompt: an age of 1y6m from "My 18-month-old", a
+  13:30 nap from "naps at around 1:30 pm". The schema and `read_form` both
+  passed them, and the chat then skipped its own opening guidance because it
+  believed the parent had already described a day. The prompt now puts the
+  description last, marks its examples as examples, and says that all-null is
+  the right answer for a description that says nothing.
 - **Free text is part of the job.** Whatever no structured field can hold goes
   to `extra_notes`, anything about sleep to `nap_notes`, both of which reach the
   planner's prompt. Prose a structured field already captured is not repeated

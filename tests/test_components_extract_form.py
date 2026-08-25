@@ -34,12 +34,22 @@ def _reply(**overrides):
     return json.dumps(body)
 
 
-def _run(reply, elapsed=1.0):
+# What the parent is taken to have said. The fake reply stands in for the
+# model, so the description has to be able to account for it: _grounded drops
+# a value the description cannot support, and a fixture claiming a nap time
+# from the words "a description" is exactly the fabrication it exists to
+# catch. Tests about grounding itself pass their own description.
+_SAID = ("Vancouver, Kitsilano, 2 years old, up at 7, bed at 19:00, naps at "
+         "13:00 for 45 minutes, 3 stops, lunch at 12:00, a light sleeper in "
+         "the stroller, hates loud crowded places")
+
+
+def _run(reply, elapsed=1.0, description=_SAID):
     """Fake only the OpenRouter boundary. The real schema, the real read_form,
-    and the real option lists all run."""
+    the real grounding and the real option lists all run."""
     with mock.patch("src.components.extract_form.call_openrouter",
                     return_value=(reply, {}, elapsed)) as call:
-        return extract_form("a description"), call
+        return extract_form(description), call
 
 
 class ExtractFormTest(unittest.TestCase):
@@ -341,3 +351,100 @@ class ExtractFormRouteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GroundingTest(unittest.TestCase):
+    """A value the description cannot support is a fabrication, not an
+    extraction, and must not be reported as something the parent supplied.
+
+    Measured before this existed: asked to fill the form from the three words
+    "Plan a trip", the pinned model returned up to ten non-null fields across
+    repeated runs, every one lifted from an example in the prompt.
+    """
+
+    def test_a_bare_intent_supplies_nothing(self):
+        # The reported bug, at the extractor's own boundary. Everything the
+        # model claims here is invented, and all of it used to be reported as
+        # the parent's own words.
+        result, _ = _run(_reply(
+            destination="Vancouver", age_years=1, age_months=6,
+            wake_up="07:00", bedtime="20:00",
+            naps=[{"start": "13:30", "duration_min": None}],
+            accommodation="our hotel in downtown Vancouver"),
+            description="Plan a trip")
+        self.assertEqual(result["found"], [])
+
+    def test_the_form_still_comes_back_whole(self):
+        # Grounding drops claims, never the form: read_form's defaults are
+        # what the planner runs on.
+        result, _ = _run(_reply(wake_up="05:00"), description="Plan a trip")
+        self.assertEqual(result["form"]["wake_up"], DEFAULTS["wake_up"])
+        self.assertEqual(set(result["form"]), set(DEFAULTS))
+
+    def test_a_time_needs_a_number_somewhere(self):
+        ungrounded, _ = _run(_reply(bedtime="19:30"),
+                             description="she goes to bed late")
+        self.assertEqual(ungrounded["found"], [])
+        grounded, _ = _run(_reply(bedtime="19:30"),
+                           description="she goes to bed at 7:30")
+        self.assertEqual(grounded["form"]["bedtime"], "19:30")
+
+    def test_a_number_word_counts_as_a_number(self):
+        # "up at seven" is a time, and a digit test alone would lose it.
+        result, _ = _run(_reply(wake_up="07:00"),
+                         description="we're up at seven")
+        self.assertEqual(result["form"]["wake_up"], "07:00")
+
+    def test_a_number_word_must_be_a_whole_word(self):
+        # "one" inside "money" is not a number, so tokens are compared rather
+        # than substrings.
+        result, _ = _run(_reply(stop_count=3),
+                         description="somewhere that doesn't cost money")
+        self.assertEqual(result["found"], [])
+
+    def test_a_nap_is_grounded_on_sleep_not_on_a_clock(self):
+        # The prompt deliberately allows a nap with no stated time, so naps
+        # cannot be grounded the way the other times are.
+        result, _ = _run(_reply(naps=[{"start": "13:00", "duration_min": 90}]),
+                         description="she naps after lunch")
+        self.assertEqual(result["form"]["naps"][0]["start"], "13:00")
+
+    def test_a_nap_nobody_mentioned_is_dropped(self):
+        result, _ = _run(_reply(naps=[{"start": "13:00", "duration_min": 60}]),
+                         description="a day out downtown")
+        self.assertEqual(result["found"], [])
+        self.assertEqual(result["form"]["naps"], [])
+
+    def test_a_city_has_to_be_named(self):
+        result, _ = _run(_reply(destination="Vancouver"),
+                         description="we're staying in Kitsilano")
+        self.assertEqual(result["found"], [])
+        # The value is still the one the app plans in; only the claim that the
+        # parent chose it is gone.
+        self.assertEqual(result["form"]["destination"], DEFAULTS["destination"])
+
+    def test_a_named_city_survives(self):
+        result, _ = _run(_reply(destination="Vancouver"),
+                         description="we'll be in vancouver in July")
+        self.assertEqual(result["found"], ["destination"])
+
+    def test_invented_free_text_is_dropped(self):
+        result, _ = _run(_reply(extra_notes="she loves the aquarium"),
+                         description="plan me a day")
+        self.assertEqual(result["found"], [])
+
+    def test_free_text_in_the_parents_own_words_survives(self):
+        result, _ = _run(_reply(extra_notes="hates loud places"),
+                         description="she hates loud places")
+        self.assertEqual(result["form"]["extra_notes"], "hates loud places")
+
+    def test_the_vocabulary_fields_are_deliberately_not_grounded(self):
+        # "we'll drive" is legitimately car without sharing a word with it, so
+        # there is nothing to compare these against. The prompt is what keeps
+        # them honest. Asserted so nobody "fixes" this into dropping them.
+        result, _ = _run(_reply(transit=["car"], transit_nap="yes",
+                                themes=["Outdoorsy"]),
+                         description="we'll drive and he sleeps in the buggy")
+        self.assertEqual(result["form"]["transit"], ["car"])
+        self.assertEqual(result["form"]["transit_nap"], "yes")
+        self.assertEqual(result["form"]["themes"], ["Outdoorsy"])

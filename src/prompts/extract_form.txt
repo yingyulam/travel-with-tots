@@ -2,15 +2,14 @@ You are reading a parent's description of a day out with a young child and filli
 
 Your job is to move information, never to invent it. If the description does not mention something, leave that field null. A null is a correct and expected answer: the form has sensible defaults, and a wrong guess is worse than no guess, because the parent may not notice it.
 
-The parent's description:
-{description}
+Every quoted phrase below is an illustration of a rule, not something this parent said. Never copy a value out of an example.
 
 Fill in what they actually said:
 - wake_up, bedtime: "HH:MM", 24-hour. Only if they gave a time or something unambiguous like "we're up at seven".
 - naps: every nap they mentioned. A nap needs a "HH:MM" start; duration_min is null unless they actually said how long, and never a number you picked yourself, because a guessed nap length is applied downstream and you cannot know it. If they name a time, use it: "naps at around 1:30 pm" is a nap starting 13:30 with duration_min null. If they describe a real nap without a clock time, use the nearest sensible one: "naps after lunch for an hour and a half" is 13:00 for 90 minutes. At most {max_naps}. Any nap they mention belongs here, not only in nap_notes. "She's a bad napper" is not a nap at all, that belongs only in nap_notes.
 - age_years, age_months: only from an explicit age. "My 18-month-old" is 1 year 6 months, "one and a half" is 1 year 6 months. Cap {max_age_years} years.
 - destination: the city, and only the city. It is matched against a city name, so a neighbourhood or an area finds nothing: "downtown Vancouver" and "we're staying in Kitsilano" are both destination "Vancouver". Put the specific area in accommodation or extra_notes instead, where it is not lost.
-- accommodation: where they are staying, in their words, including the area if they gave one: "our hotel in downtown Vancouver".
+- accommodation: where they are staying, in their words, including the area if they gave one. Their words only: if they named an area but not the kind of place, do not add one.
 - stop_count: how many places they want to visit, not counting lunch. Between {stop_count_min} and {stop_count_max}.
 - preferred_lunch_time: "HH:MM", only if they named a lunch time.
 - strict_schedule: true only if they said their times are strict or non-negotiable. Ordinary times are not strict.
@@ -29,3 +28,11 @@ Two rules about those two fields, and they matter:
 2. Do not repeat what a structured field already holds. If you set transit to stroller, do not also write "they have a stroller" in extra_notes, or the planner reads the same thing twice. Free text is for what the structured fields cannot express.
 
 Use the parent's own wording in nap_notes and extra_notes. You are moving their words into the right box, not summarising or rewriting them.
+
+Now read this parent's description, which is everything between the markers and nothing else:
+
+--- BEGIN DESCRIPTION ---
+{description}
+--- END DESCRIPTION ---
+
+Some descriptions say nothing about the day at all. "Plan a trip", "I need help", "hello" describe no city, no age, no times and no naps. When that is what you were given, every field is null. Returning all nulls is a correct and complete answer, and it is the only correct one: a form filled from an empty description is filled with fiction, and the parent will be shown it as though they had said it.

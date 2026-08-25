@@ -10,12 +10,17 @@ the age cap, and the nap ceiling are enforced by the real validator rather than
 reimplemented here. That also means a model emitting nonsense degrades to a
 sensible default instead of reaching the planner.
 
+read_form asks whether a value is well formed; `_grounded` asks whether the
+parent said it. Both are needed, because a fabricated time is perfectly well
+formed and in range.
+
 The model's choice vocabularies are constrained by the JSON schema rather than
 checked afterwards, because read_form deliberately does not validate transit,
 dining, features, or themes against the option lists.
 """
 
 import os
+import re
 
 from werkzeug.datastructures import MultiDict
 
@@ -188,6 +193,104 @@ def _allowed(field, value):
     return permitted is None or value in permitted
 
 
+# Digits, or the number words a parent writes instead of one: "up at seven",
+# "one and a half", "a couple of places".
+NUMBER_WORDS = frozenset((
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "half", "quarter", "couple", "few",
+    "noon", "midday", "midnight"))
+
+# Fields whose value can only have come from a number in the description. The
+# prompt asks for each of these only from an explicit time or count.
+NUMERIC_FIELDS = ("age_years", "age_months", "wake_up", "bedtime",
+                  "preferred_lunch_time", "stop_count")
+
+# Naps are grounded on sleep words rather than numbers, because the prompt
+# deliberately allows a nap with no clock time ("naps after lunch" is 13:00).
+SLEEP_WORDS = frozenset((
+    "nap", "naps", "napping", "napped", "napper", "sleep", "sleeps",
+    "sleeping", "slept", "asleep", "bed", "bedtime", "rest", "rests",
+    "resting", "snooze", "siesta", "downtime"))
+
+# Free text, which the prompt requires to be the parent's own wording moved
+# into the right box, so an invented value shares no content word with it.
+QUOTED_FIELDS = ("accommodation", "nap_notes", "extra_notes")
+
+# Words too common to count as evidence that free text came from the parent.
+_FILLER = frozenset((
+    "a", "an", "and", "at", "be", "but", "for", "he", "her", "him", "his",
+    "i", "in", "is", "it", "me", "my", "of", "on", "or", "our", "she",
+    "the", "them", "they", "to", "us", "we", "with", "you", "your"))
+
+
+def _words(text: str) -> set:
+    """Lowercased word tokens, so "one" cannot be found inside "money"."""
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _has_number(said: set) -> bool:
+    return any(word.isdigit() or word in NUMBER_WORDS for word in said)
+
+
+def _echoes(value: str, said: set) -> bool:
+    """Whether free text is built from the parent's own words.
+
+    Any overlap counts, deliberately. A stricter threshold would start
+    dropping legitimate notes, and the prompt's first rule about these fields
+    is that nothing the parent said may be lost. This only has to catch
+    wholesale invention, which shares nothing.
+    """
+    mine = _words(value) - _FILLER
+    return bool(mine) and bool(mine & said)
+
+
+def _grounded(extracted: dict, description: str) -> dict:
+    """Drop values the description cannot support.
+
+    The model proposes and read_form validates, but validation only ever asked
+    whether a value was well formed and in range, never whether the parent
+    said it. A fabrication passes both.
+
+    That gap was measured, not theorised. Asked to fill this form from the
+    three words "Plan a trip", the pinned model returned up to ten non-null
+    fields across repeated runs, and each was lifted from an example in the
+    prompt: an age of 1 year 6 months from "My 18-month-old", a 13:30 nap from
+    "naps at around 1:30 pm", accommodation "our hotel in downtown Vancouver"
+    word for word. Downstream that reads as fields the parent supplied, which
+    is worse than a default, because nobody checks a value they are told came
+    from their own words.
+
+    Only fields whose support is decidable from the text are checked. The
+    vocabulary fields (transit, features, themes, dining, transit_nap) are
+    legitimately inferred from words they do not share, "we'll drive" meaning
+    car, so there is nothing here to compare them against. They stay the
+    prompt's problem.
+    """
+    said = _words(description)
+    has_number = _has_number(said)
+    kept = dict(extracted)
+
+    for field in NUMERIC_FIELDS:
+        if kept.get(field) is not None and not has_number:
+            kept[field] = None
+
+    if kept.get("naps") and not (said & SLEEP_WORDS):
+        kept["naps"] = None
+
+    # A city named in the description, or nothing. A parent who gives only a
+    # neighbourhood still plans in the one city the app covers, since that is
+    # the default; it is the claim that they chose it that has to go.
+    destination = kept.get("destination")
+    if destination and destination.lower() not in (description or "").lower():
+        kept["destination"] = None
+
+    for field in QUOTED_FIELDS:
+        if kept.get(field) and not _echoes(kept[field], said):
+            kept[field] = None
+
+    return kept
+
+
 def _as_form_data(extracted: dict) -> MultiDict:
     """Shape the model's reply the way read_form reads a submitted form.
 
@@ -266,7 +369,7 @@ def extract_form(description: str, model: str = EXTRACTOR_MODEL) -> dict:
     if not isinstance(extracted, dict):
         raise FormExtractionError("Expected a JSON object of form fields.")
 
-    data = _as_form_data(extracted)
+    data = _as_form_data(_grounded(extracted, description))
     return {
         "form": read_form(data),
         "found": _found_fields(data),
