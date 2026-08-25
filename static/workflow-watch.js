@@ -9,7 +9,8 @@
 // It lives here because three pages wanted it. Two workflow pages that armed
 // themselves differently would be two things to learn, and a test already
 // asserted the two copies were identical, which is the sign to extract.
-function watchChatReplies({ runId, listenId, statusId, statusTextId, onTurn }) {
+function watchChatReplies({ runId, listenId, statusId, statusTextId, workflow,
+                           onTurn }) {
   const runBtn = document.getElementById(runId);
   const listenBtn = document.getElementById(listenId);
   const status = document.getElementById(statusId);
@@ -21,21 +22,33 @@ function watchChatReplies({ runId, listenId, statusId, statusTextId, onTurn }) {
 
   // The state drives the banner's colour in CSS, so the wording and the look
   // cannot disagree about whether the page is armed.
-  function setMode(next) {
+  //
+  // Arming also tells the widget to send every message to *this* workflow. The
+  // chat is both the input to a workflow and the general-purpose front door, so
+  // without this a test page cannot reach its own workflow at all when the
+  // classifier prefers another. Cleared on disarm, so normal routing resumes.
+  function setMode(next, finished) {
     mode = next;
+    window.twtForceWorkflow = mode === "off" ? null : workflow;
     listenBtn.textContent = mode === "many" ? "⏹ Stop listening" : "👂 Listen";
     status.dataset.state = mode;
     statusText.textContent = {
-      off: "Not watching",
-      once: "Waiting for your next message",
-      many: "Listening: every message you send will be processed",
+      off: finished ? "That run finished" : "Not watching",
+      once: "Running: this workflow handles your messages until it finishes",
+      many: "Listening: every message runs this workflow, run after run",
     }[mode];
   }
 
+  // "Once" is one execution, not one turn. A conversational workflow asks
+  // follow-up questions, so Run stays armed through them and lets go when the
+  // workflow finishes. `conversation` going null is that signal, and it covers
+  // a cancelled run too, since abandoning one still ends it. Listen never lets
+  // go on its own: it carries straight into the next run.
   document.addEventListener("twt:chat-reply", (event) => {
     if (mode === "off") return;
-    onTurn(event.detail);
-    setMode(mode === "once" ? "off" : "many");
+    if (onTurn(event.detail) === false) return;
+    const finished = !event.detail.conversation;
+    if (mode === "once" && finished) setMode("off", true);
   });
 
   runBtn.addEventListener("click", () => setMode("once"));

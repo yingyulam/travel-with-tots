@@ -129,8 +129,31 @@ class EveryPageArmsTheSameWayTest(unittest.TestCase):
         self.assertIn('let mode = "off";', source)
         self.assertIn('setMode("once")', source)
         self.assertIn('mode === "many" ? "off" : "many"', source)
-        self.assertIn('setMode(mode === "once" ? "off" : "many")', source)
         self.assertIn('if (mode === "off") return;', source)
+
+    def test_run_spans_one_execution_and_listen_spans_several(self):
+        # "Once" is one execution, not one turn: a conversational workflow asks
+        # follow-ups, so Run holds through them and lets go when the workflow
+        # finishes. Listen never lets go on its own.
+        source = _script(self.WATCHER)
+        self.assertIn("const finished = !event.detail.conversation;", source)
+        self.assertIn('if (mode === "once" && finished) setMode("off", true);',
+                      source)
+
+    def test_arming_routes_messages_to_this_workflow(self):
+        # The chat is both a workflow's input and the general front door, so
+        # without this a page cannot reach its own workflow when the classifier
+        # prefers another.
+        source = _script(self.WATCHER)
+        self.assertIn("window.twtForceWorkflow = mode === \"off\" ? null : workflow;",
+                      source)
+        self.assertIn("force_workflow: window.twtForceWorkflow || null,",
+                      _script("static/chatbot.js"))
+
+    def test_every_page_names_the_workflow_it_arms(self):
+        for _, (_, path) in WORKFLOW_PAGES.items():
+            with self.subTest(path=path):
+                self.assertIn("workflow: WORKFLOW_NAME,", _script(path))
 
     def test_no_page_keeps_a_copy_of_it(self):
         # Three copies is what prompted the extraction; a fourth would undo it.

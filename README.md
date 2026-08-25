@@ -353,6 +353,21 @@ Asks for **everything at once**, then follows up only on what is missing, so
 "Vancouver, she's 2, up at 7 and bed at 7:30" is answered with the nap question
 alone. Interviewing field by field is the form again, only slower.
 
+**Including the very first message.** It used to be skipped, on the reasoning
+that an opening message is only ever an intent and extracting would waste a
+call. A parent who opens with their whole day had all of it discarded and had to
+type it again. Now the opening turn reads the message: nothing usable in it
+still gets the two ways to plan, and a described day skips the offer and carries
+on from what was said.
+
+Replan on the go does the same, but only when a *specific* situation was named:
+"she napped 90 minutes" is read, "we need to replan" still gets the six chips.
+**Log a place deliberately does not.** Its reader is a comma split with no way to
+tell a place name from a sentence about wanting to log one, so reading the
+opening message would store "I want to log a place" as a venue. The planning chat
+can only do this because an extractor decides what is a destination and what is
+noise; one extra question is cheaper than a junk row.
+
 - **Asked for:** city, age, wake-up, bedtime, naps. Everything else rides on a
   default and is shown before anything is handed over.
 - **The city offers Vancouver as a button**, taken from the venue data rather
@@ -475,11 +490,32 @@ disarms itself; **👂 Listen** keeps capturing until stopped. The bubble stays
 the input on purpose: what the page shows is then what a parent really gets,
 rather than a canned sample travelling a code path nobody uses.
 
-A captured turn shows what was said, which path answered, the reply, and
-whatever that workflow collected. A message this workflow did not handle is
-labelled with what did, rather than rendered as an empty result. The machine
-behind Run and Listen lives once, in `static/workflow-watch.js`; each page keeps
-only its own rendering.
+**Arming a page routes messages to its workflow.** ▶ Run and 👂 Listen both do
+that, so a page can always exercise the thing it tests. Without it a page could
+not reach its own workflow at all when the classifier preferred another, which is
+a problem the course's example never has: MoneyClaw reads Gmail, so its data
+source and its agent interface are different objects. Here the chat is both.
+
+Forcing grants nothing new. A parent can already trigger any workflow by typing
+the right words, and the name is re-checked against the registry the same way the
+classifier's own answer is. Precedence is **cancel, then in-flight, then forced,
+then classify**: mid-conversation "Vancouver" is an answer to the question just
+asked, so forcing must not restart the flow every turn. Forced turns are flagged
+in `data/intents.jsonl`, because that file is what classifier accuracy is
+measured from and these never went near the classifier.
+
+**"Once" is one execution, not one turn.** A conversational workflow asks
+follow-up questions, so Run holds through them and lets go when the workflow
+finishes; Listen carries straight into the next run and stops only on a click.
+`conversation` going null is the signal, and it covers an abandoned run too. For
+a single-turn workflow like Find a nearby place, Run captures one answer while
+Listen keeps answering, so the two stay distinct everywhere.
+
+A captured turn shows what was said, the reply, and whatever that workflow
+collected. **A page only ever shows its own workflow's turns**, so a foreign one
+leaves a single line naming where it went rather than another workflow's
+conversation. The machine behind both buttons lives once, in
+`static/workflow-watch.js`; each page keeps only its own rendering.
 
 ## Web Search
 

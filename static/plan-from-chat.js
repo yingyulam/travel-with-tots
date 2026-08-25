@@ -82,7 +82,27 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  function renderTurn({ message, reply, tool_calls, workflow, workflow_result }) {
+  const WORKFLOW_NAME = "Fill the form from a chat message";
+
+  // A turn the classifier sent elsewhere is not this page's to show. One line
+  // saying where it went, so a misroute stays visible and a page that has just
+  // been armed does not look broken, and `false` so Run stays armed.
+  function notMine(workflow) {
+    const card = document.createElement("div");
+    card.className = "need-card";
+    const note = document.createElement("p");
+    note.className = "empty-body";
+    note.textContent = workflow
+      ? `That message went to ${workflow}. Still waiting for one this workflow handles.`
+      : "That message was answered by the agent, not a workflow. Still waiting.";
+    card.appendChild(note);
+    resultList.prepend(card);
+    return false;
+  }
+
+  function renderTurn({ message, reply, workflow, workflow_result }) {
+    if (workflow !== WORKFLOW_NAME) return notMine(workflow);
+
     const card = document.createElement("div");
     card.className = "need-card";
 
@@ -91,49 +111,32 @@ document.addEventListener("DOMContentLoaded", () => {
     said.textContent = `You said: ${message}`;
     card.appendChild(said);
 
-    // Which path answered, so a card cannot be misread as the workflow's when
-    // the classifier sent the message somewhere else.
     const routed = document.createElement("p");
     routed.className = "meta";
     const badge = document.createElement("span");
-    badge.className = workflow ? "badge" : "badge badge-pending";
-    badge.textContent = workflow ? `⚙️ ${workflow}` : "💬 no workflow, the agent answered";
+    badge.className = "badge";
+    badge.textContent = `⚙️ ${workflow}`;
     routed.appendChild(badge);
     card.appendChild(routed);
 
     renderReply(card, reply);
 
+    // Only this workflow's turns reach here, so the form is either in its
+    // state or handed over at the end. The old fallback to an
+    // extract_form_tool call was for agent-answered turns, which the guard
+    // above now keeps off this page entirely.
     const collected = collectedForm(workflow_result);
     if (collected) {
       renderForm(card, collected.form, collected.found);
-      resultList.prepend(card);
-      return;
-    }
-
-    const extraction = (tool_calls || []).find(
-      (call) => call.name === "extract_form_tool" && call.data && call.data.form);
-
-    if (!extraction) {
-      // Several very different reasons to have no form, and conflating them
-      // would hide a real extraction failure behind "it did something else".
-      const attempted = (tool_calls || []).find(
-        (call) => call.name === "extract_form_tool");
-      const used = (tool_calls || []).map((c) => c.name).join(", ");
+    } else {
       const note = document.createElement("p");
       note.className = "empty-body";
-      note.textContent = workflow
-        ? "Nothing collected yet: the workflow is still asking."
-        : attempted
-          ? `The extractor ran but returned no form. ${attempted.output}`
-          : used
-            ? `No form extracted, the agent used ${used} instead.`
-            : "No form extracted, the agent answered directly.";
+      note.textContent = "Nothing collected yet: the workflow is still asking.";
       card.appendChild(note);
-    } else {
-      renderForm(card, extraction.data.form, extraction.data.found || []);
     }
 
     resultList.prepend(card);
+    return true;
   }
 
   watchChatReplies({
@@ -141,6 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
     listenId: "plan-from-chat-listen",
     statusId: "plan-from-chat-status",
     statusTextId: "plan-from-chat-status-text",
+    workflow: WORKFLOW_NAME,
     onTurn: renderTurn,
   });
 });

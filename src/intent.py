@@ -170,14 +170,21 @@ def classify_intent(message: str, workflows: list[dict],
     return chosen if chosen in names else NO_WORKFLOW
 
 
-def log_decision(message: str, workflow: str | None, ran: bool) -> None:
+def log_decision(message: str, workflow: str | None, ran: bool,
+                 forced: bool = False) -> None:
     """Append one routing decision. Never raises: losing a log line must not
-    cost the parent their reply."""
+    cost the parent their reply.
+
+    `forced` marks a turn an admin test page directed, which never went near
+    the classifier. This file is what classifier accuracy is measured from, so
+    without the flag test traffic would silently corrupt every measurement.
+    """
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "message": message,
         "workflow": workflow,
         "ran": ran,
+        "forced": forced,
     }
     try:
         INTENT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)

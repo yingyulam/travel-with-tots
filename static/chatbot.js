@@ -853,6 +853,10 @@ document.addEventListener("click", (e) => {
             // a replan. A global rather than a DOM lookup, so the contract
             // between that page and this widget is named in both.
             on_trip: window.twtReplanReady === true,
+            // Set by an armed workflow test page, so its messages reach the
+            // workflow it is testing rather than whichever one the classifier
+            // prefers. Null in normal use, which is every page but those.
+            force_workflow: window.twtForceWorkflow || null,
           }),
         });
         const data = await res.json();

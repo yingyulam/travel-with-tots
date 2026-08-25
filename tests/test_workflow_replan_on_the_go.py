@@ -97,6 +97,21 @@ class ItNeedsAStartedDayTest(unittest.TestCase):
     def test_a_missing_context_counts_as_no_trip(self):
         self.assertIsNone(run("we need to replan")["state"])
 
+    def test_a_specific_opening_situation_is_read_not_re_asked(self):
+        # A parent who says what happened should not be asked what happened.
+        answer = run("she napped 90 minutes", None, ON_TRIP)
+        self.assertEqual(answer["replan_request"],
+                         {"situation": "nap_happened", "minutes": 90,
+                          "note": "she napped 90 minutes"})
+
+    def test_a_vague_opening_still_gets_the_chips(self):
+        # read_situation falls back to free text for anything it does not
+        # recognise, so reading it blindly would skip past the six chips, which
+        # are the useful thing to offer someone who has not said yet.
+        answer = run("we need to replan", None, ON_TRIP)
+        self.assertEqual(answer["choices"], LABELS)
+        self.assertIsNone(answer.get("replan_request"))
+
     def test_on_the_trip_page_it_asks_what_happened(self):
         answer = run("we need to replan", None, ON_TRIP)
         self.assertEqual(answer["state"]["stage"], STAGE_SITUATION)

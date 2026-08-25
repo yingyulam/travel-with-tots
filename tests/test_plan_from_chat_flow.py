@@ -46,14 +46,38 @@ def _turn(message, state, **supplied):
 
 
 class OfferTest(unittest.TestCase):
-    def test_starting_offers_two_ways_and_does_not_extract(self):
-        # Nothing has been said yet worth extracting, and calling the model
-        # here would be a wasted call on every "I want to plan a day".
-        with mock.patch.object(plan_from_chat, "extract_form") as extract:
-            result = run("I want to plan a day")
-        extract.assert_not_called()
+    def test_a_bare_intent_offers_the_two_ways(self):
+        # This replaces a test that asserted the extractor was *not* called on
+        # the first message, on the reasoning that an opening message is only
+        # ever an intent. It is not: a parent who opens with their whole day
+        # had all of it thrown away. The extractor runs on this turn now, and
+        # what it finds decides the reply.
+        result = _turn("I want to plan a day", None)
         self.assertEqual(result["state"]["stage"], STAGE_OFFERED)
         self.assertEqual(len(result["choices"]), 2)
+
+    def test_a_first_message_describing_the_day_is_not_thrown_away(self):
+        # The reported bug, stated directly.
+        result = _turn("Vancouver, she's 2, up at 7, bed at 7:30, naps at 1",
+                       None, destination="Vancouver", age_years="2",
+                       wake_up="07:00", bedtime="19:30",
+                       naps=[{"start": "13:00", "duration_min": 60}])
+        self.assertEqual(result["state"]["form"]["destination"], "Vancouver")
+        self.assertEqual(result["reply"], EXTRAS_QUESTION)
+
+    def test_a_partial_first_message_asks_only_for_the_rest(self):
+        result = _turn("plan a day in Vancouver", None, destination="Vancouver")
+        self.assertEqual(result["state"]["form"]["destination"], "Vancouver")
+        self.assertEqual(result["reply"], QUESTIONS["age"])
+        # The offer is skipped: describing a day is choosing chat by doing it.
+        self.assertNotEqual(result["state"]["stage"], STAGE_OFFERED)
+
+    def test_a_failing_extractor_on_the_first_turn_still_offers_the_choice(self):
+        # An unreachable model must degrade to the old behaviour, not a dead end.
+        with mock.patch.object(plan_from_chat, "extract_form",
+                               side_effect=RuntimeError("model down")):
+            result = run("I want to plan a day")
+        self.assertEqual(result["state"]["stage"], STAGE_OFFERED)
 
     def test_choosing_the_form_ends_the_flow(self):
         result = run("fill out the form myself", {"stage": STAGE_OFFERED})
@@ -237,7 +261,10 @@ class OfferedButtonsWorkTest(unittest.TestCase):
         opener = run("plan through chat", {"stage": STAGE_OFFERED})
         city = _turn("hello", opener["state"])
         return [
-            run("I want to plan a day"),        # the two ways to plan
+            # Mocked: the opening turn reads the message now, and this one
+            # supplies nothing, so it lands on the two-ways offer. Unmocked it
+            # would be a real model call from a unit test.
+            _turn("I want to plan a day", None),
             city,                               # which city?
             extras,                             # anything else?
             confirming,                         # yes, that's right
@@ -480,11 +507,17 @@ class MidFlowRoutingTest(unittest.TestCase):
 
     def test_a_malformed_state_restarts_rather_than_crashing(self):
         # The widget echoes state back, so it is client-controlled. A non-dict
-        # used to reach the workflow and raise an attribute error.
+        # used to reach the workflow and raise an attribute error. The
+        # extractor is mocked because restarting now reads the message, and a
+        # test must not depend on a network call to prove it did not crash.
         conversation = {"workflow": WORKFLOW_NAME, "state": "not a dict"}
-        with mock.patch.object(agent, "classify_intent"):
+        with mock.patch.object(agent, "classify_intent"), \
+             mock.patch.object(plan_from_chat, "extract_form",
+                               return_value=_extraction(destination="Vancouver")):
             result = agent.handle_message("Vancouver", conversation=conversation)
-        self.assertIn("Which would you prefer", result["reply"])
+        self.assertTrue(result["reply"])
+        self.assertEqual(result["conversation"]["state"]["form"]["destination"],
+                         "Vancouver")
 
     def test_an_unknown_workflow_name_falls_through_to_the_agent(self):
         with mock.patch.object(agent, "run_agent",

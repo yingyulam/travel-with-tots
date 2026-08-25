@@ -135,7 +135,8 @@ def _build_agent(model: str):
 def handle_message(message: str, history: list[dict] | None = None,
                    model: str = DEFAULT_MODEL,
                    conversation: dict | None = None,
-                   context: dict | None = None) -> dict:
+                   context: dict | None = None,
+                   force_workflow: str | None = None) -> dict:
     """One turn, routed: a workflow if the message asks for one, else the agent.
 
     This is the entry point for any surface that carries a message. It takes a
@@ -153,6 +154,10 @@ def handle_message(message: str, history: list[dict] | None = None,
 
     `context` is what the request knew that the message did not, today the
     browser's coordinates. Every workflow is handed it; most ignore it.
+
+    `force_workflow` names a workflow to run instead of asking the classifier,
+    set by an armed workflow test page. It grants nothing a parent could not do
+    by typing the right words; it only decides which workflow those words reach.
 
     A message that asks to cancel ends whatever flow is running and answers
     plainly, without reaching the workflow or the classifier at all.
@@ -183,6 +188,9 @@ def handle_message(message: str, history: list[dict] | None = None,
             "ask_location": False, "cancelled": in_flight,
         }
 
+    forced = force_workflow if any(
+        w["name"] == force_workflow for w, _ in offered) else None
+
     if in_flight:
         chosen = in_flight
         # Client-supplied, so it is checked rather than trusted. A non-dict
@@ -190,6 +198,13 @@ def handle_message(message: str, history: list[dict] | None = None,
         state = conversation.get("state")
         if not isinstance(state, dict):
             state = None
+    elif forced:
+        # Nothing to classify: a test page has said where this message goes.
+        # After in-flight on purpose, because mid-conversation "Vancouver" is an
+        # answer to the question just asked, and forcing would restart the flow
+        # on every turn.
+        chosen = forced
+        state = None
     else:
         chosen = classify_intent(message, [workflow for workflow, _ in offered])
         state = None
@@ -204,9 +219,9 @@ def handle_message(message: str, history: list[dict] | None = None,
             # falls through to the agent. Logged as not-run, so the trace shows
             # the routing was right even where the execution was not.
             print(f"Workflow {chosen!r} failed, answering as the chatbot: {e}")
-            log_decision(message, chosen, ran=False)
+            log_decision(message, chosen, ran=False, forced=bool(forced))
         else:
-            log_decision(message, chosen, ran=True)
+            log_decision(message, chosen, ran=True, forced=bool(forced))
             # A workflow that returns a state is still talking; one that returns
             # None is finished, and the next message starts fresh at the
             # classifier.

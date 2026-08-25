@@ -214,6 +214,12 @@ def run(message: str, state: dict | None = None,
     values = dict((state or {}).get("values") or {})
 
     if stage is None:
+        # Deliberately does not read the opening message, unlike the planning
+        # chat. That one can, because an extractor decides what is a
+        # destination and what is noise. Here the reader is split_name, a comma
+        # split, which cannot tell a place name from a sentence about wanting
+        # to log one: "I want to log a place" would be stored as a venue called
+        # "I want to log a place". One extra question is cheaper than a junk row.
         return _ask(STAGE_NAME, values, NAME_QUESTION)
 
     if stage == STAGE_NAME:

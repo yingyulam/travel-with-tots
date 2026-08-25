@@ -1208,7 +1208,8 @@ def chatbot_route():
     try:
         result = handle_message(message, history=data.get("history") or [],
                                 model=model, conversation=conversation,
-                                context=_message_context(data))
+                                context=_message_context(data),
+                                force_workflow=data.get("force_workflow"))
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:

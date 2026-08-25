@@ -153,6 +153,18 @@ class LogTest(unittest.TestCase):
         log_decision("second", FILL_THE_FORM, ran=True)
         self.assertEqual([e["message"] for e in self._lines()], ["first", "second"])
 
+    def test_a_forced_decision_is_marked_as_forced(self):
+        # This file is what classifier accuracy is measured from, and a turn an
+        # admin test page directed never went near the classifier. Tested on
+        # the real writer, not on a mock of it: asserting that handle_message
+        # *passes* forced= says nothing about whether the logger records it.
+        log_decision("anything", FILL_THE_FORM, ran=True, forced=True)
+        self.assertTrue(self._lines()[0]["forced"])
+
+    def test_an_ordinary_decision_is_not(self):
+        log_decision("we're in Vancouver", FILL_THE_FORM, ran=True)
+        self.assertFalse(self._lines()[0]["forced"])
+
     def test_a_no_match_is_recorded_too(self):
         # "Nothing matched" is the answer worth auditing most: it is how you
         # find messages the router should have caught.

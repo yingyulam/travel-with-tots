@@ -74,7 +74,23 @@ document.addEventListener("DOMContentLoaded", () => {
     card.appendChild(row);
   }
 
+  // A turn the classifier sent elsewhere is not this page's to show. One line
+  // saying where it went, so a misroute stays visible and a page that has just
+  // been armed does not look broken, and `false` so Run stays armed.
+  function notMine(workflow) {
+    const card = document.createElement("div");
+    card.className = "need-card";
+    line(card, workflow
+      ? `That message went to ${workflow}. Still waiting for one this workflow handles.`
+      : "That message was answered by the agent, not a workflow. Still waiting.",
+      "empty-body");
+    resultList.prepend(card);
+    return false;
+  }
+
   function renderTurn({ message, reply, workflow, places, source }) {
+    if (workflow !== WORKFLOW_NAME) return notMine(workflow);
+
     const card = document.createElement("div");
     card.className = "need-card";
 
@@ -104,6 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     resultList.prepend(card);
+    return true;
   }
 
   watchChatReplies({
@@ -111,6 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     listenId: "find-nearby-place-listen",
     statusId: "find-nearby-place-status",
     statusTextId: "find-nearby-place-status-text",
+    workflow: WORKFLOW_NAME,
     onTurn: renderTurn,
   });
 });

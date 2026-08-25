@@ -302,7 +302,22 @@ def run(message: str, state: dict | None = None,
     contract `runnable_message_workflows()` looks for is a callable named `run`.
     """
     if state is None:
-        return _start()
+        # The extractor runs on the opening message too. It used to be skipped,
+        # on the reasoning that a first message is only ever an intent and the
+        # call would be wasted. When a parent opens with their whole day, that
+        # assumption throws all of it away and makes them type it again.
+        blank = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": [],
+                 "skipped": [], "asking": None, "asked_extras": False}
+        opened = _collect(message, blank)
+        if _missing(set(opened["state"]["found"]) if opened["state"] else set()) \
+                == list(REQUIRED):
+            # Nothing usable in it, so it really was just "plan a trip": offer
+            # the two ways, as before.
+            return _start()
+        # They described their day, which is choosing chat by doing it. Skip
+        # the offer and carry on from what they said. ✕ Cancel is still on
+        # every turn if they wanted the form after all.
+        return opened
 
     stage = state.get("stage")
 

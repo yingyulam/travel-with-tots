@@ -80,6 +80,20 @@ class TheConversationTest(unittest.TestCase):
         self.assertEqual(first["state"]["stage"], STAGE_NAME)
         self.assertIn("called", first["reply"])
 
+    def test_the_opening_message_is_deliberately_not_read(self):
+        # The planning chat reads its opening message; this one must not, and
+        # the difference is the reader. split_name is a comma split with no way
+        # to tell a place name from a sentence about wanting to log one, so
+        # reading "I want to log a place" would store that as a venue name.
+        # Do not "fix" this without a reader that can tell them apart.
+        for message in ("log Richmond Centre in Richmond", "I want to log a place"):
+            with self.subTest(message=message):
+                answer = run(message)
+                self.assertEqual(answer["state"]["stage"], STAGE_NAME)
+                self.assertEqual(answer["state"]["values"], {})
+                self.assertEqual(split_name(message)[0], message,
+                                 "the reader cannot separate intent from name")
+
     def test_the_name_leads_to_the_features_question(self):
         turn = _turn("Richmond Centre, Richmond", _state(STAGE_NAME))
         self.assertEqual(turn["state"]["stage"], STAGE_AMENITIES)

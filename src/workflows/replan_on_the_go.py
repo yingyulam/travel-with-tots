@@ -138,6 +138,13 @@ def run(message: str, state: dict | None = None,
         # we cannot act on would waste the parent's turn.
         if not (context or {}).get("on_trip"):
             return {"reply": NO_TRIP_REPLY, "state": None}
+        # The opening message often already says what happened. Only a
+        # *specific* situation counts: read_situation falls back to free text
+        # for anything it does not recognise, so "we need to replan" would
+        # otherwise skip straight past the six chips, which are the useful
+        # thing to offer someone who has not said yet.
+        if read_situation(message) != FREE_TEXT_SITUATION:
+            return run(message, {"stage": STAGE_SITUATION, "values": {}}, context)
         return {"reply": SITUATION_QUESTION,
                 "state": {"stage": STAGE_SITUATION, "values": {}},
                 "choices": SITUATION_LABELS}
