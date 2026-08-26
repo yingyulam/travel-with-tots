@@ -607,6 +607,55 @@ gave none: 15 minutes one run, an hour the next. It is nullable now, so "they
 didn't say" is expressible, and the assumed hour comes from
 `form_helpers.ASSUMED_NAP_DURATION_MIN`.
 
+## Memory
+
+`src/memory.py`, one read-only function. `recall(parent_id)` turns a parent into
+the durable facts worth reusing, already in the planning form's own shape, so
+the chat stops asking for things the app is already holding. A parent whose
+child's date of birth is on file was still being asked how old they are.
+
+- **The chat learns who is asking from the session, and only from the session.**
+  `parent_id` is what every recall is scoped by, so a client-supplied one would
+  read another parent's children and saved trips. No client change was needed:
+  the widget's `fetch` is same origin, so the cookie was already arriving and
+  only the server was ignoring it. An anonymous chat recalls nothing and behaves
+  exactly as before, which matters because the bubble is on every page.
+- **`read_form` decides, and a repaired value is not a memory.** The trip row
+  goes through the same validator `/plan` uses, so NULL naps, malformed nap
+  JSON and the age cap are handled by code that already exists. A field is only
+  *remembered* if its stored value survived that unchanged: the `stop_count`
+  column still holds legacy words like `"balanced"`, which clamps to `3`, and
+  offering that back as the parent's own answer would be worse than not
+  remembering it.
+- **An age is recomputed, a routine is dated.** The age comes from the date of
+  birth on every call, so it cannot go stale; the routine comes from the last
+  saved trip and can be months old. They are shown under separate headings for
+  that reason, and past a freshness window the clock fields are asked about
+  again rather than recalled, because sleep moves every few months at these
+  ages and it is what the whole plan is shaped around.
+- **It names the child, not just the age.** `/plan` recomputes the age from
+  `plan_child_id` on both its branches and defaults to the youngest child, so an
+  age handed over without a child attached is silently replaced. Measured on a
+  parent with three children: a remembered 3y3m arrived as 1y2m.
+- **Nothing recalled reaches a model.** The seeding is deterministic with no
+  model call, `extract_form` still sees only the parent's message, and the AI
+  adjuster still sees `age_months` as a number, so no child's name or date of
+  birth leaves the app. The two note fields are deliberately never recalled,
+  since they *are* fed to the adjuster and would ship a months-old note into a
+  new request.
+
+In the conversation this is a third provenance list beside "the parent said it"
+and "the parent declined", and the summary gains a bucket per source, because
+nobody checks a field they believe came from their own words. Their own words
+always win: only fields the extractor reports may overwrite. **"Something's
+changed"** drops everything recalled and asks properly, which doubles as the
+only way to retract a field that was never asked about.
+
+**Deliberately not done yet.** Drafts are not memory, so a half-finished form is
+not stored. The tool-calling agent gets none of this: its tools take
+model-chosen arguments, so a `recall(parent_id)` tool would let the model name
+any parent, and it would have to be bound at construction time instead.
+
 ## Find Nearby
 
 "Somewhere kid-friendly near us, right now", on its own admin page

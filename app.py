@@ -132,10 +132,18 @@ MAX_REVISE_ROUNDS = 2
 
 
 def _message_context(data):
-    """What a chat request knows that its message does not: the browser's
-    coordinates, when it has already been given permission. Client-supplied, so
-    the values are checked here rather than where they are used, and anything
-    that is not a real pair of numbers becomes no location at all."""
+    """What the *browser* told us that the message did not: coordinates, when
+    permission was already given, and whether a trip is open.
+
+    All client-supplied, so the values are checked here rather than where they
+    are used, and anything that is not a real pair of numbers becomes no
+    location at all. Deliberately pure and session-free: who is asking is added
+    by the route, from the session, because that is not the browser's to claim.
+
+    Built from literal keys and never spreading `data`, which is what stops a
+    client-supplied key it does not know about reaching a workflow. Keep it
+    that way.
+    """
     # Whether a started day is open on the page that sent this. The workflow
     # that shifts a day needs to know, so it can say "open your trip first"
     # rather than collecting a situation it cannot act on.
@@ -166,6 +174,24 @@ def _current_parent():
     """The logged-in parent's row, or None if no one is logged in."""
     parent_id = session.get("parent_id")
     return get_parent(parent_id) if parent_id else None
+
+
+def _chat_context(data):
+    """Everything a chat turn is given beyond the message itself.
+
+    Identity comes from the session and only from the session: `parent_id` is
+    what every recall is scoped by, so a client-supplied one would read another
+    parent's children and saved trips. Read through `_current_parent()` rather
+    than `session.get("parent_id")` raw, because SQLite reuses row ids, so a
+    stale cookie can eventually name a real but different parent; the lookup
+    returns None for a row that is gone.
+
+    Our value is merged last, so it wins outright even if the browser half of
+    the context ever grows a key of the same name.
+    """
+    parent = _current_parent()
+    return {**_message_context(data),
+            "parent_id": parent["id"] if parent else None}
 
 
 def login_required(view):
@@ -1220,7 +1246,7 @@ def chatbot_route():
     try:
         result = handle_message(message, history=data.get("history") or [],
                                 model=model, conversation=conversation,
-                                context=_message_context(data),
+                                context=_chat_context(data),
                                 force_workflow=data.get("force_workflow"))
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500

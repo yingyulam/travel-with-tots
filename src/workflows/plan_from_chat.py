@@ -21,14 +21,33 @@ this conversation's own judgement about what is worth asking for.
 
 from ..components.extract_form import extract_form
 from ..data_loader import SUPPORTED_CITIES
+from ..dates import format_age
 from ..form_helpers import DEFAULTS
 from ..intent import matches_only
+from ..memory import recall
 
 # Asked for before handing the form over, in the order they are asked. Not the
 # fields plan_trip needs (it needs only destination and an age) but the ones
 # that most change the shape of a day, and that a parent would be surprised to
 # see guessed. Everything else rides on its default and is shown at the end.
 REQUIRED = ("destination", "age", "wake_up", "bedtime", "naps")
+
+# The form fields behind each question. `found` and `remembered` hold form field
+# names while `skipped` and REQUIRED hold question names, and age is two fields
+# behind one question, so the mapping has to be written down rather than
+# rediscovered at each use. _summarise reads it too: an entry naming a question
+# rather than a field matches nothing in the form and would render as a default,
+# which is the one thing the provenance buckets exist to prevent.
+QUESTION_FIELDS = {
+    "destination": ("destination",),
+    "age": ("age_years", "age_months"),
+    "wake_up": ("wake_up",),
+    "bedtime": ("bedtime",),
+    "naps": ("naps",),
+}
+
+REQUIRED_FIELDS = frozenset(
+    field for question in REQUIRED for field in QUESTION_FIELDS[question])
 
 # What to say when one is missing. One question per turn: a question answerable
 # in a sentence gets answered, a checklist gets abandoned. Naps are the
@@ -68,6 +87,16 @@ OPENING_QUESTION = (
 # notes, so there is nothing here that can be "missing".
 EXTRAS_QUESTION = "Is there anything else we need to know?"
 
+# Said before a question when memory already supplied something, because a
+# parent asked one bare question ("When is their nap?") cannot tell whether the
+# rest was remembered or forgotten. What exactly was remembered is shown, field
+# by field and labelled by source, on the summary at the end.
+RECALLED_PREFACE = "I've filled in what I already know from your last day out."
+
+# Said when memory covered everything, so there is nothing to ask at all.
+SAME_AS_LAST_TIME = ("Welcome back. I still have your last day out, so we can "
+                     "reuse it as it is.")
+
 # Fields the parent never talks about, so listing them as defaults is noise.
 INTERNAL = ("child_ids", "plan_child_id", "revise_feedback")
 
@@ -82,6 +111,7 @@ STAGE_CONFIRMING = "confirming"
 FORM_CHOICE = "Fill out the form"
 CHAT_CHOICE = "Plan through chat"
 CONFIRM_CHOICE = "Yes, that's right"
+CHANGED_CHOICE = "Something's changed"
 NOTHING_CHOICE = "No, that's everything"
 
 _YES = ("yes", "yep", "yeah", "yup", "ok", "okay", "sure", "correct", "confirm",
@@ -92,6 +122,14 @@ _YES = ("yes", "yep", "yeah", "yup", "ok", "okay", "sure", "correct", "confirm",
 _NOTHING = ("no", "nope", "nothing", "none", "nothing else", "no thanks",
             "that's everything", "thats everything", "that's all", "thats all",
             "that's it", "thats it", "all good")
+
+# Rejecting what was remembered, which nothing in _YES or _NOTHING parses. It
+# also doubles as the "unsay" this conversation otherwise lacks: without it
+# there is no way to retract a field that was never asked about, because only an
+# answered question can be corrected.
+_CHANGED = ("something's changed", "somethings changed", "changed",
+            "that's changed", "thats changed", "not right", "no",
+            "start over", "different", "not the same")
 
 # Naps are the one required field a child can genuinely not have, and "she
 # doesn't nap anymore" is how a parent says so. Matched as a phrase inside the
@@ -128,6 +166,95 @@ def _append_note(existing: str, addition: str) -> str:
     return f"{existing} {addition}".strip()
 
 
+def _seed(context: dict | None) -> dict:
+    """What the app already knows, before the parent has said anything.
+
+    Only for a parent the *session* identified: `parent_id` reaches here from
+    `_chat_context`, never from the request body, because it is what the recall
+    is scoped by. An anonymous chat seeds nothing and behaves exactly as it did
+    before memory existed.
+
+    recall() does not raise, and this catches anyway: losing what we remember is
+    a worse outcome than the parent retyping it, but losing the turn is worse
+    than both.
+    """
+    parent_id = (context or {}).get("parent_id")
+    if not parent_id:
+        return {"form": {}, "remembered": [], "recalled": {}}
+    try:
+        known = recall(parent_id)
+    except Exception as e:
+        print(f"Recall skipped for one turn: {type(e).__name__}: {e}")
+        return {"form": {}, "remembered": [], "recalled": {}}
+    child = known["child"] or {}
+    return {
+        "form": known["form"],
+        "remembered": known["remembered"],
+        # Kept apart from the form: these describe where the values came from,
+        # for the headings, and are not fields anything plans on.
+        "recalled": {"child": child.get("name"),
+                     "trip_saved_at": known["trip_saved_at"]},
+    }
+
+
+def _forget_all(state: dict) -> dict:
+    """Drop everything memory supplied and ask for it properly.
+
+    The parent has said the recalled day is not this day, and there is no way to
+    know which part changed, so nothing recalled survives. What they told us in
+    this conversation does, which is why `found` is untouched.
+    """
+    found, skipped, remembered = _answered(state)
+    form = dict(state["form"])
+    for field in remembered:
+        form[field] = DEFAULTS[field]
+    cleared = {**state, "form": form, "remembered": [],
+               "recalled": {}, "stage": STAGE_COLLECTING, "asking": None}
+    missing = _missing(found, skipped)
+    return _ask(missing[0], cleared) if missing else _confirm(cleared)
+
+
+def _same_as_last_time(state: dict) -> dict:
+    """Memory covered every question, so there is nothing to ask.
+
+    Left to the ordinary flow this turn would answer "plan a day" with "Is there
+    anything else we need to know?", which mentions no memory and reads as a non
+    sequitur. Going straight to the summary makes it a one-tap replan, and that
+    summary is already the "same as last time" screen. The extras question is
+    marked asked, because asking it of a wholly remembered form is noise.
+    """
+    ready = _confirm({**state, "asked_extras": True})
+    ready["reply"] = f"{SAME_AS_LAST_TIME}\n\n{ready['reply']}"
+    # The door _start() would have offered stays open: a returning parent may
+    # still prefer to fill the form in themselves.
+    ready["choices"] = [*ready["choices"], FORM_CHOICE]
+    return ready
+
+
+def _to_form() -> dict:
+    """Hand over to the real form and end the conversation."""
+    return {
+        "reply": ("No problem, the planning form is ready when you are. "
+                  "Open it from the Planning link, fill in your day, and "
+                  "press Generate my day."),
+        "state": None,
+        "open_form": True,
+    }
+
+
+def _forget(question: str, form: dict, remembered: set) -> tuple[dict, set]:
+    """Drop what memory supplied for one question, back to the defaults.
+
+    Marking it skipped is not enough. The recalled value is still sitting in the
+    form, so the summary would show a value the parent has just contradicted and
+    the hand-off would post it.
+    """
+    cleared = dict(form)
+    for field in QUESTION_FIELDS.get(question, ()):
+        cleared[field] = DEFAULTS[field]
+    return cleared, remembered - set(QUESTION_FIELDS.get(question, ()))
+
+
 def _declined(message: str, field: str) -> bool:
     """Whether this answer is the parent saying there is nothing to give.
 
@@ -139,24 +266,38 @@ def _declined(message: str, field: str) -> bool:
     return field == "naps" and any(phrase in message.lower() for phrase in _NO_NAP)
 
 
-def _supplied(found: set, skipped: set = ()) -> set:
-    """Which required fields count as answered.
+def _supplied(found: set, skipped: set = (), remembered: set = ()) -> set:
+    """Which required fields count as answered, by whatever route.
 
-    Read off `found` rather than the form, because read_form fills every field
-    from DEFAULTS: a form always *has* a destination, so only `found` can say
-    whether the parent chose it.
+    Read off these three lists rather than the form, because read_form fills
+    every field from DEFAULTS: a form always *has* a destination, so only the
+    provenance lists can say whether it came from anywhere.
     """
-    supplied = set(found) | set(skipped)
-    # Age is two form fields but one question, so either counts as answered.
-    if "age_years" in supplied or "age_months" in supplied:
-        supplied.add("age")
+    supplied = set(found) | set(skipped) | set(remembered)
+    # A question is answered once any of its fields is, since age is two form
+    # fields behind one question.
+    supplied.update(question for question, fields in QUESTION_FIELDS.items()
+                    if supplied.intersection(fields))
     return supplied
 
 
-def _missing(found: set, skipped: set = ()) -> list:
+def _missing(found: set, skipped: set = (), remembered: set = ()) -> list:
     """Required fields still to ask about, in the order they are asked."""
-    supplied = _supplied(found, skipped)
+    supplied = _supplied(found, skipped, remembered)
     return [field for field in REQUIRED if field not in supplied]
+
+
+def _answered(state: dict) -> tuple[set, set, set]:
+    """The three provenance lists off a state, as sets.
+
+    One reader rather than three `set(state.get(...) or [])` incantations at
+    four call sites, which is exactly where a forgotten third argument would
+    quietly re-ask something already known. `.get` throughout, because every
+    state written before memory existed lacks the third key.
+    """
+    return (set(state.get("found") or []),
+            set(state.get("skipped") or []),
+            set(state.get("remembered") or []))
 
 
 def _merge(form: dict, found: set, result: dict) -> tuple[dict, set]:
@@ -179,21 +320,50 @@ def _merge(form: dict, found: set, result: dict) -> tuple[dict, set]:
     return merged, set(found) | set(result["found"])
 
 
-def _summarise(form: dict, found: set) -> str:
-    """The whole form, every field marked as theirs or a default.
+# Recalled from the child's own record, so recomputed today and never stale.
+# Everything else recalled comes from a saved trip and can be months old, which
+# is why the two are never shown under one heading.
+PROFILE_FIELDS = ("age_years", "age_months")
 
-    Both halves matter: they asked to see the values that came from their words,
-    and to see the defaults, so nothing reaches the planner unseen.
+
+def _recalled_heading(recalled: dict) -> str:
+    saved = (recalled or {}).get("trip_saved_at")
+    return f"From your last trip{f', saved {saved}' if saved else ''}:"
+
+
+def _summarise(form: dict, found: set, remembered: set = (),
+               recalled: dict = None) -> str:
+    """The whole form, every field marked with where it came from.
+
+    Four buckets, each rendered only when it has something. What the parent
+    said, what was recalled about the child, what was recalled from their last
+    day out, and what is riding on a default, so nothing reaches the planner
+    unseen and nothing is presented as theirs that was not.
+
+    `found` is checked before `remembered` on purpose: _merge adds a corrected
+    field to `found` without removing it from `remembered`, so the order is what
+    moves it into the right bucket rather than any bookkeeping.
     """
-    theirs, defaults = [], []
+    theirs, profile, trip, defaults = [], [], [], []
     for field, value in form.items():
         if field in INTERNAL:
             continue
         line = f"- {field.replace('_', ' ')}: {_show(value)}"
-        (theirs if field in found else defaults).append(line)
+        if field in found:
+            theirs.append(line)
+        elif field in remembered:
+            (profile if field in PROFILE_FIELDS else trip).append(line)
+        else:
+            defaults.append(line)
     parts = []
     if theirs:
         parts.append("From what you told me:\n" + "\n".join(theirs))
+    if profile:
+        name = (recalled or {}).get("child")
+        heading = f"From {name}'s details:" if name else "From your saved details:"
+        parts.append(heading + "\n" + "\n".join(profile))
+    if trip:
+        parts.append(_recalled_heading(recalled) + "\n" + "\n".join(trip))
     if defaults:
         parts.append("Using defaults for the rest:\n" + "\n".join(defaults))
     parts.append("Does that look right? Say yes, or tell me what to change.")
@@ -212,15 +382,29 @@ def _show(value) -> str:
     return str(value) if value != "" else "(not set)"
 
 
-def _start() -> dict:
+def _start(state: dict | None = None) -> dict:
     """The two ways to plan. Offered rather than assumed: some parents would
-    rather fill the form themselves, and the chat should not railroad them."""
+    rather fill the form themselves, and the chat should not railroad them.
+
+    Carries the state through rather than starting empty. The offer can be shown
+    on a turn that already collected something, either recalled from memory or
+    mentioned in passing ("we're staying at the Fairmont, plan me a day"), and
+    an empty state here would throw it away and then ask for it again.
+    """
+    known = state or {}
     return {
         "reply": ("Happy to help you plan a day. Two ways to do it:\n\n"
                   "1. Fill out the form yourself, and I'll take you there.\n"
                   "2. Plan through chat, and I'll fill the form in for you as "
                   "we talk.\n\nWhich would you prefer?"),
-        "state": {"stage": STAGE_OFFERED, "form": {}, "found": []},
+        "state": {"stage": STAGE_OFFERED,
+                  "form": known.get("form") or dict(DEFAULTS),
+                  "found": sorted(known.get("found") or []),
+                  "skipped": sorted(known.get("skipped") or []),
+                  "remembered": sorted(known.get("remembered") or []),
+                  "recalled": known.get("recalled") or {},
+                  "asked_extras": known.get("asked_extras", False),
+                  "asking": None},
         "choices": [FORM_CHOICE, CHAT_CHOICE],
     }
 
@@ -239,20 +423,41 @@ def _ask(field: str, state: dict) -> dict:
 
 
 def _confirm(state: dict) -> dict:
-    """The whole form, for the parent to check before it is handed over."""
-    found = set(state.get("found") or [])
+    """The whole form, for the parent to check before it is handed over.
+
+    CHANGED_CHOICE is offered whenever memory contributed, because a recalled
+    value is the one kind the parent was never asked about and so has no other
+    way to retract.
+    """
+    found, _skipped, remembered = _answered(state)
+    choices = [CONFIRM_CHOICE]
+    if remembered:
+        choices.append(CHANGED_CHOICE)
     return {
-        "reply": _summarise(state["form"], found),
+        "reply": _summarise(state["form"], found, remembered,
+                            state.get("recalled")),
         "state": {**state, "stage": STAGE_CONFIRMING, "asking": None},
-        "choices": [CONFIRM_CHOICE],
+        "choices": choices,
     }
+
+
+def _prefaced(reply: dict, remembered: set) -> dict:
+    """Say that memory contributed, before whatever is being asked.
+
+    Without it a parent who is asked one bare question cannot tell whether the
+    rest was remembered or simply forgotten. Deliberately does not itemise: the
+    summary at the end lists every field under the heading it came from, and two
+    places formatting the same values is two places to disagree.
+    """
+    if not remembered:
+        return reply
+    return {**reply, "reply": f"{RECALLED_PREFACE}\n\n{reply['reply']}"}
 
 
 def _collect(message: str, state: dict) -> dict:
     """One collecting turn: extract, merge, then ask, or move on."""
     form = state.get("form") or dict(DEFAULTS)
-    found = set(state.get("found") or [])
-    skipped = set(state.get("skipped") or [])
+    found, skipped, remembered = _answered(state)
     asking = state.get("asking")
     try:
         form, found = _merge(form, found, extract_form(message))
@@ -267,11 +472,24 @@ def _collect(message: str, state: dict) -> dict:
     # question can be declined, which marks it asked and moves on.
     if asking and asking not in _supplied(found) and _declined(message, asking):
         skipped.add(asking)
+        form, remembered = _forget(asking, form, remembered)
+
+    # A recalled nap the parent has just denied. They were never asked about it,
+    # since memory answered the question, so the decline above cannot fire and
+    # without this the summary would print a nap they said does not happen and
+    # post it to /plan. Matched on the nap phrases only, never on a bare "no",
+    # which belongs to whatever question was actually asked.
+    if "naps" in remembered and any(
+            phrase in message.lower() for phrase in _NO_NAP):
+        skipped.add("naps")
+        form, remembered = _forget("naps", form, remembered)
 
     carried = {"form": form, "found": sorted(found), "skipped": sorted(skipped),
+               "remembered": sorted(remembered),
+               "recalled": state.get("recalled") or {},
                "asked_extras": state.get("asked_extras", False)}
 
-    missing = _missing(found, skipped)
+    missing = _missing(found, skipped, remembered)
     if missing:
         return _ask(missing[0], carried)
 
@@ -306,38 +524,54 @@ def run(message: str, state: dict | None = None,
         # on the reasoning that a first message is only ever an intent and the
         # call would be wasted. When a parent opens with their whole day, that
         # assumption throws all of it away and makes them type it again.
-        blank = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": [],
-                 "skipped": [], "asking": None, "asked_extras": False}
+        seed = _seed(context)
+        blank = {"stage": STAGE_COLLECTING,
+                 "form": {**DEFAULTS, **seed["form"]},
+                 "found": [], "skipped": [],
+                 "remembered": seed["remembered"],
+                 "recalled": seed["recalled"],
+                 "asking": None, "asked_extras": False}
         opened = _collect(message, blank)
-        if _missing(set(opened["state"]["found"]) if opened["state"] else set()) \
-                == list(REQUIRED):
-            # Nothing usable in it, so it really was just "plan a trip": offer
-            # the two ways, as before.
-            return _start()
-        # They described their day, which is choosing chat by doing it. Skip
-        # the offer and carry on from what they said. ✕ Cancel is still on
-        # every turn if they wanted the form after all.
-        return opened
+        found, skipped, remembered = _answered(opened["state"] or {})
+
+        if found & REQUIRED_FIELDS:
+            # They described their day, which is choosing chat by doing it. Skip
+            # the offer and carry on from what they said. ✕ Cancel is still on
+            # every turn if they wanted the form after all.
+            return _prefaced(opened, remembered)
+
+        # Nothing about the day in the message, so it really was just "plan a
+        # trip". Tested against the fields this conversation asks about rather
+        # than `found` being empty, because the extractor still reports themes
+        # and transit modes it inferred from nothing, and those must not be able
+        # to skip the offer.
+        if remembered and not _missing(found, skipped, remembered):
+            return _same_as_last_time(opened["state"])
+        return _start(opened["state"])
 
     stage = state.get("stage")
 
     if stage == STAGE_OFFERED:
         said = message.lower()
         if any(word in said for word in _FORM_CHOICE):
-            return {
-                "reply": ("No problem, the planning form is ready when you are. "
-                          "Open it from the Planning link, fill in your day, and "
-                          "press Generate my day."),
-                "state": None,
-                "open_form": True,
-            }
+            return _to_form()
         # The one open question, not the first of five. `asking` is None
         # because no single field owns it, so nothing here can be declined by
-        # accident.
-        return {"reply": OPENING_QUESTION,
-                "state": {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS),
-                          "found": [], "skipped": [], "asking": None,
-                          "asked_extras": False}}
+        # accident. Carried from the offered state rather than rebuilt blank,
+        # which used to throw away everything memory had supplied the moment
+        # the parent chose chat.
+        carried = {**state, "stage": STAGE_COLLECTING, "asking": None}
+        found, skipped, remembered = _answered(state)
+        missing = _missing(found, skipped, remembered)
+        if not missing:
+            return _same_as_last_time(carried)
+        if remembered:
+            # Asking everything at once would list things already on file, and
+            # "I've filled in what I know" followed by "how old is your little
+            # one" contradicts itself. A returning parent is asked for the gaps
+            # instead, one at a time, which is the fallback flow anyway.
+            return _prefaced(_ask(missing[0], carried), remembered)
+        return {"reply": OPENING_QUESTION, "state": carried}
 
     if stage == STAGE_EXTRAS:
         if matches_only(message, _NOTHING):
@@ -347,6 +581,12 @@ def run(message: str, state: dict | None = None,
         return _collect(message, {**state, "stage": STAGE_COLLECTING})
 
     if stage == STAGE_CONFIRMING:
+        # Both offered as buttons on a recalled summary, so both have to parse:
+        # the widget sends a button's own label back as the message.
+        if any(word in message.lower() for word in _FORM_CHOICE):
+            return _to_form()
+        if state.get("remembered") and matches_only(message, _CHANGED):
+            return _forget_all(state)
         if matches_only(message, _YES):
             return {
                 "reply": ("Great. I've got everything ready on the planning "
