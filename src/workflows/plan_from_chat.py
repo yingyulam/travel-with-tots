@@ -91,7 +91,11 @@ EXTRAS_QUESTION = "Is there anything else we need to know?"
 # parent asked one bare question ("When is their nap?") cannot tell whether the
 # rest was remembered or forgotten. What exactly was remembered is shown, field
 # by field and labelled by source, on the summary at the end.
-RECALLED_PREFACE = "I've filled in what I already know from your last day out."
+RECALLED_PREFACE = "Here's what I already have for you:"
+
+# Said when what memory supplied is cleared, so the parent gets an
+# acknowledgement rather than an unexplained question.
+FORGOTTEN = "Fine, I've dropped all of that. Let's take it from the top."
 
 # Said when memory covered everything, so there is nothing to ask at all.
 SAME_AS_LAST_TIME = ("Welcome back. I still have your last day out, so we can "
@@ -128,8 +132,13 @@ _NOTHING = ("no", "nope", "nothing", "none", "nothing else", "no thanks",
 # there is no way to retract a field that was never asked about, because only an
 # answered question can be corrected.
 _CHANGED = ("something's changed", "somethings changed", "changed",
-            "that's changed", "thats changed", "not right", "no",
-            "start over", "different", "not the same")
+            "that's changed", "thats changed", "not right", "start over",
+            "not the same", "that's wrong", "thats wrong")
+
+# Deliberately not in there: "no" and "different". This is now tested on every
+# turn, and a bare "no" is an answer to whatever was just asked, so accepting it
+# here would wipe what memory supplied instead of declining one question. That
+# is the mistake the ✕ Cancel matcher already had to learn.
 
 # Naps are the one required field a child can genuinely not have, and "she
 # doesn't nap anymore" is how a parent says so. Matched as a phrase inside the
@@ -211,7 +220,8 @@ def _forget_all(state: dict) -> dict:
     cleared = {**state, "form": form, "remembered": [],
                "recalled": {}, "stage": STAGE_COLLECTING, "asking": None}
     missing = _missing(found, skipped)
-    return _ask(missing[0], cleared) if missing else _confirm(cleared)
+    answer = _ask(missing[0], cleared) if missing else _confirm(cleared)
+    return {**answer, "reply": f"{FORGOTTEN}\n\n{answer['reply']}"}
 
 
 def _same_as_last_time(state: dict) -> dict:
@@ -326,9 +336,52 @@ def _merge(form: dict, found: set, result: dict) -> tuple[dict, set]:
 PROFILE_FIELDS = ("age_years", "age_months")
 
 
-def _recalled_heading(recalled: dict) -> str:
-    saved = (recalled or {}).get("trip_saved_at")
-    return f"From your last trip{f', saved {saved}' if saved else ''}:"
+def _recalled_source(remembered: set) -> str:
+    """Where the recalled values came from, naming only the sources actually
+    used: crediting a child's record to a parent who has not added one is the
+    same unverifiable claim this is meant to replace.
+
+    Both sources are things they can already see and edit on the dashboard,
+    which is the point worth making. Nothing is remembered here that the app
+    holds and they cannot reach.
+    """
+    profile = bool(set(PROFILE_FIELDS) & set(remembered))
+    trip = bool(set(remembered) - set(PROFILE_FIELDS))
+    if profile and trip:
+        where = "your child's details and the last day you saved, both"
+    elif profile:
+        where = "your child's details,"
+    else:
+        where = "the last day you saved,"
+    return (f"That comes from {where} on your dashboard. "
+            "Tell me if anything has changed.")
+
+
+def _recalled_blocks(form: dict, remembered: set, recalled: dict) -> list:
+    """What memory supplied, as headed blocks, one per source.
+
+    Shared by the summary and by the preface on the turn memory is first used,
+    because a claim to remember something is worth nothing unless the parent can
+    see what it is. Rendered once here so the two cannot disagree about the same
+    values, which was the reason the preface used not to itemise at all.
+    """
+    profile, trip = [], []
+    for field in sorted(remembered):
+        if field in INTERNAL or field not in form:
+            continue
+        line = f"- {field.replace('_', ' ')}: {_show(form[field])}"
+        (profile if field in PROFILE_FIELDS else trip).append(line)
+
+    blocks = []
+    if profile:
+        name = (recalled or {}).get("child")
+        heading = f"From {name}'s details:" if name else "From your saved details:"
+        blocks.append(heading + "\n" + "\n".join(profile))
+    if trip:
+        saved = (recalled or {}).get("trip_saved_at")
+        heading = f"From your last trip{f', saved {saved}' if saved else ''}:"
+        blocks.append(heading + "\n" + "\n".join(trip))
+    return blocks
 
 
 def _summarise(form: dict, found: set, remembered: set = (),
@@ -344,26 +397,23 @@ def _summarise(form: dict, found: set, remembered: set = (),
     field to `found` without removing it from `remembered`, so the order is what
     moves it into the right bucket rather than any bookkeeping.
     """
-    theirs, profile, trip, defaults = [], [], [], []
+    # A corrected field is in both lists, so `found` winning here is what moves
+    # it out of the recalled bucket. _recalled_blocks is given only what is
+    # still purely memory's for the same reason.
+    theirs, defaults = [], []
+    still_recalled = set(remembered) - set(found)
     for field, value in form.items():
         if field in INTERNAL:
             continue
         line = f"- {field.replace('_', ' ')}: {_show(value)}"
         if field in found:
             theirs.append(line)
-        elif field in remembered:
-            (profile if field in PROFILE_FIELDS else trip).append(line)
-        else:
+        elif field not in still_recalled:
             defaults.append(line)
     parts = []
     if theirs:
         parts.append("From what you told me:\n" + "\n".join(theirs))
-    if profile:
-        name = (recalled or {}).get("child")
-        heading = f"From {name}'s details:" if name else "From your saved details:"
-        parts.append(heading + "\n" + "\n".join(profile))
-    if trip:
-        parts.append(_recalled_heading(recalled) + "\n" + "\n".join(trip))
+    parts.extend(_recalled_blocks(form, still_recalled, recalled))
     if defaults:
         parts.append("Using defaults for the rest:\n" + "\n".join(defaults))
     parts.append("Does that look right? Say yes, or tell me what to change.")
@@ -441,17 +491,30 @@ def _confirm(state: dict) -> dict:
     }
 
 
-def _prefaced(reply: dict, remembered: set) -> dict:
-    """Say that memory contributed, before whatever is being asked.
+def _prefaced(reply: dict) -> dict:
+    """Show what memory supplied, before whatever is being asked.
 
-    Without it a parent who is asked one bare question cannot tell whether the
-    rest was remembered or simply forgotten. Deliberately does not itemise: the
-    summary at the end lists every field under the heading it came from, and two
-    places formatting the same values is two places to disagree.
+    This used to say only that memory had contributed, on the reasoning that the
+    summary at the end itemises everything and formatting the same values twice
+    is two places to disagree. That was wrong: it left the assistant claiming to
+    remember a parent's day with no way to see what it thought it knew, several
+    turns before the summary. The shared renderer solves the duplication without
+    the claim going unverified.
+
+    The correction is offered here too, not only at the summary, because a
+    recalled value is the one kind the parent was never asked about, so the turn
+    that reveals it is the turn they need to be able to reject it.
     """
-    if not remembered:
+    state = reply.get("state") or {}
+    found, _skipped, remembered = _answered(state)
+    blocks = _recalled_blocks(state.get("form") or {}, remembered - found,
+                              state.get("recalled"))
+    if not blocks:
         return reply
-    return {**reply, "reply": f"{RECALLED_PREFACE}\n\n{reply['reply']}"}
+    body = "\n\n".join([RECALLED_PREFACE, *blocks,
+                        _recalled_source(remembered - found), reply["reply"]])
+    return {**reply, "reply": body,
+            "choices": [*(reply.get("choices") or []), CHANGED_CHOICE]}
 
 
 def _collect(message: str, state: dict) -> dict:
@@ -538,7 +601,7 @@ def run(message: str, state: dict | None = None,
             # They described their day, which is choosing chat by doing it. Skip
             # the offer and carry on from what they said. ✕ Cancel is still on
             # every turn if they wanted the form after all.
-            return _prefaced(opened, remembered)
+            return _prefaced(opened)
 
         # Nothing about the day in the message, so it really was just "plan a
         # trip". Tested against the fields this conversation asks about rather
@@ -550,6 +613,13 @@ def run(message: str, state: dict | None = None,
         return _start(opened["state"])
 
     stage = state.get("stage")
+
+    # Offered on every turn that reveals what memory supplied, so it has to
+    # parse at any stage rather than only at the summary. Checked before
+    # dispatch for the same reason ✕ Cancel is: a workflow should not have to
+    # remember to handle it.
+    if state.get("remembered") and matches_only(message, _CHANGED):
+        return _forget_all(state)
 
     if stage == STAGE_OFFERED:
         said = message.lower()
@@ -570,7 +640,7 @@ def run(message: str, state: dict | None = None,
             # "I've filled in what I know" followed by "how old is your little
             # one" contradicts itself. A returning parent is asked for the gaps
             # instead, one at a time, which is the fallback flow anyway.
-            return _prefaced(_ask(missing[0], carried), remembered)
+            return _prefaced(_ask(missing[0], carried))
         return {"reply": OPENING_QUESTION, "state": carried}
 
     if stage == STAGE_EXTRAS:
@@ -585,8 +655,6 @@ def run(message: str, state: dict | None = None,
         # the widget sends a button's own label back as the message.
         if any(word in message.lower() for word in _FORM_CHOICE):
             return _to_form()
-        if state.get("remembered") and matches_only(message, _CHANGED):
-            return _forget_all(state)
         if matches_only(message, _YES):
             return {
                 "reply": ("Great. I've got everything ready on the planning "
@@ -594,7 +662,11 @@ def run(message: str, state: dict | None = None,
                           "straight away."),
                 "state": None,
                 "form": state["form"],
+                # Provenance travels with the hand-off, so the workflow test
+                # page can still say where each value came from on the one turn
+                # that has no state left to read it from.
                 "found": state.get("found") or [],
+                "remembered": state.get("remembered") or [],
             }
         # Anything else is a correction, not a refusal. asked_extras rides
         # along in the state, so correcting cannot restart the questions.

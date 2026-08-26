@@ -15,6 +15,34 @@ function twtSelectedModel() {
   return localStorage.getItem(TWT_MODEL_STORAGE_KEY) || "";
 }
 
+// The collected form as the field names /plan's own form uses, which is exactly
+// what a hand-off posts. A true global because the workflow test page shows it
+// too: that page exists to verify the mapping, so it has to read the same one
+// the hand-off performs rather than keep a second copy that could drift.
+//
+// There is a mapping at all because read_form does not take the shape the
+// workflow holds: naps arrive as parallel nap_start/nap_duration lists, a
+// checkbox is the literal "on" or absent, and an empty value is left out so the
+// server falls back to its own default.
+function twtPlanFormFields(collected) {
+  const fields = [];
+  Object.entries(collected || {}).forEach(([name, value]) => {
+    if (name === "naps") {
+      (value || []).forEach((nap) => {
+        fields.push(["nap_start", nap.start]);
+        fields.push(["nap_duration", nap.duration_min]);
+      });
+    } else if (Array.isArray(value)) {
+      value.forEach((item) => fields.push([name, item]));
+    } else if (typeof value === "boolean") {
+      if (value) fields.push([name, "on"]);
+    } else if (value !== "") {
+      fields.push([name, value]);
+    }
+  });
+  return fields;
+}
+
 // A link target has to be checked, not escaped: as an attribute it could break
 // out, and as a property it could still be "javascript:". Anything that is not
 // plain http(s) loses its link rather than being rendered. Copied in spirit
@@ -496,21 +524,7 @@ document.addEventListener("click", (e) => {
 
       const add = (name, value) => addHidden(el, name, value);
 
-      Object.entries(collected).forEach(([name, value]) => {
-        if (name === "naps") {
-          // read_form takes naps as parallel lists, not the array it returns.
-          value.forEach((nap) => {
-            add("nap_start", nap.start);
-            add("nap_duration", nap.duration_min);
-          });
-        } else if (Array.isArray(value)) {
-          value.forEach((item) => add(name, item));
-        } else if (typeof value === "boolean") {
-          if (value) add(name, "on");   // a checkbox, absent when unticked
-        } else if (value !== "") {
-          add(name, value);
-        }
-      });
+      twtPlanFormFields(collected).forEach(([name, value]) => add(name, value));
 
       // The same model the chat itself is using, so generating from here and
       // generating from the planning page cannot disagree.

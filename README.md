@@ -501,6 +501,25 @@ disarms itself; **👂 Listen** keeps capturing until stopped. The bubble stays
 the input on purpose: what the page shows is then what a parent really gets,
 rather than a canned sample travelling a code path nobody uses.
 
+**The fill-the-form page shows both halves, side by side.** Its whole job is
+verifying that what the workflow collected becomes the right form fields, and
+only the pair is verifiable: the left panel is the workflow's own state with a
+badge saying where each value came from, the right is the real form field names
+that collection would post. That right panel is built from the same mapping the
+chat's own hand-off performs, not a second copy, so the page cannot agree with
+itself while disagreeing with what `/plan` receives. The mapping is where a bug
+would hide: naps become parallel `nap_start` and `nap_duration` entries,
+a checkbox becomes the literal `on`, and an empty value is dropped so the server
+falls back to its own default. Being admin-only and used on a desktop, the panels
+sit side by side rather than stacking.
+
+Three badges, not two, since Memory landed: a value came **from your words**, was
+**remembered** from the child's record or their last saved day, or is on a
+**default**. The middle one is the one worth watching, because in the finished
+form a recalled value is indistinguishable from one the parent typed. The
+hand-off turn carries its provenance too, since it is the one turn with no state
+left to read it from.
+
 **Arming a page routes messages to its workflow.** ▶ Run and 👂 Listen both do
 that, so a page can always exercise the thing it tests. Without it a page could
 not reach its own workflow at all when the classifier preferred another, which is
@@ -647,9 +666,23 @@ child's date of birth is on file was still being asked how old they are.
 In the conversation this is a third provenance list beside "the parent said it"
 and "the parent declined", and the summary gains a bucket per source, because
 nobody checks a field they believe came from their own words. Their own words
-always win: only fields the extractor reports may overwrite. **"Something's
-changed"** drops everything recalled and asks properly, which doubles as the
-only way to retract a field that was never asked about.
+always win: only fields the extractor reports may overwrite.
+
+**It shows what it remembers, on the turn it first uses it.** The reported bug
+was an assistant that said it had filled in what it knew and then asked a
+question, leaving no way to see what it thought it knew until the summary several
+turns later. Closing the tab did not help, and would not: the transcript is
+per-tab, but this memory is the parent's own saved rows. So the values are
+itemised where the claim is made, under the source they came from, and the reply
+names that source, which is always something already on their dashboard. Nothing
+is remembered that they cannot go and look at.
+
+**"Something's changed"** is offered on that same turn rather than only at the
+summary, since a recalled value is the one kind never asked about, so the turn
+that reveals it is the turn to be able to reject it. It drops everything recalled
+and asks properly, and doubles as the only way to retract a field no question
+covered. Its matcher runs on every turn, which is why "no" is deliberately not in
+its vocabulary: a bare "no" answers whatever was just asked.
 
 **Deliberately not done yet.** Drafts are not memory, so a half-finished form is
 not stored. The tool-calling agent gets none of this: its tools take

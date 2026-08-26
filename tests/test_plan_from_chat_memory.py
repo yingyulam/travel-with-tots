@@ -12,6 +12,7 @@ from src.form_helpers import DEFAULTS
 from src.workflows import plan_from_chat
 from src.workflows.plan_from_chat import (
     CHANGED_CHOICE,
+    FORGOTTEN,
     CHAT_CHOICE,
     CONFIRM_CHOICE,
     FORM_CHOICE,
@@ -132,12 +133,77 @@ class MemoryAnswersTheQuestionsTest(unittest.TestCase):
         self.assertEqual(done["form"]["destination"], "Vancouver")
         self.assertIsNone(done["state"])
 
+    def test_the_hand_off_says_which_values_were_recalled(self):
+        # The one turn with no state left, so without this the workflow test
+        # page cannot say where the final form's values came from.
+        offered = _turn("plan a trip", known=FULL)
+        done = _turn(CONFIRM_CHOICE, offered["state"], known=FULL)
+        self.assertEqual(done["remembered"], FULL["remembered"])
+        self.assertEqual(done["found"], [])
+
     def test_the_child_is_named_in_the_handed_over_form(self):
         # /plan recomputes the age from plan_child_id and defaults to the
         # youngest child, so an age with no child attached is silently replaced.
         offered = _turn("plan a trip", known=FULL)
         done = _turn(CONFIRM_CHOICE, offered["state"], known=FULL)
         self.assertEqual(done["form"]["plan_child_id"], "3")
+
+
+class ItShowsWhatItRemembersTest(unittest.TestCase):
+    """A claim to remember is worth nothing the parent cannot check.
+
+    The reported bug: the assistant said it had filled in what it knew from the
+    last day out, then asked a question, and there was no way to see what it
+    thought it knew until several turns later. Closing the tab did not help,
+    because this memory is the parent's own saved rows, not the transcript.
+    """
+
+    def _revealed(self):
+        offered = _turn("plan a trip", known=CHILD_ONLY)
+        return _turn(CHAT_CHOICE, offered["state"], known=CHILD_ONLY)
+
+    def test_the_recalled_values_are_itemised_not_just_claimed(self):
+        reply = self._revealed()["reply"]
+        self.assertIn("age years: 1", reply)
+        self.assertIn("age months: 6", reply)
+
+    def test_it_says_where_the_values_came_from(self):
+        self.assertIn("dashboard", self._revealed()["reply"])
+
+    def test_it_credits_only_the_sources_it_actually_used(self):
+        # CHILD_ONLY has no saved trip, so crediting one would be the same
+        # unverifiable claim this replaced.
+        reply = self._revealed()["reply"]
+        self.assertIn("child's details", reply)
+        self.assertNotIn("last day you saved", reply)
+
+    def test_a_trip_only_recall_does_not_credit_a_child(self):
+        trip_only = {"child": None,
+                     "form": {"destination": "Vancouver", "wake_up": "07:00"},
+                     "remembered": ["destination", "wake_up"],
+                     "trip_saved_at": "2026-08-15"}
+        offered = _turn("plan a trip", known=trip_only)
+        reply = _turn(CHAT_CHOICE, offered["state"], known=trip_only)["reply"]
+        self.assertIn("last day you saved", reply)
+        self.assertNotIn("child's details", reply)
+
+    def test_the_turn_that_reveals_it_offers_the_rejection(self):
+        # A recalled value is the one kind never asked about, so the turn that
+        # shows it is the turn they need to be able to reject it.
+        self.assertIn(CHANGED_CHOICE, self._revealed()["choices"])
+
+    def test_rejecting_it_works_mid_conversation_not_only_at_the_summary(self):
+        revealed = self._revealed()
+        cleared = _turn(CHANGED_CHOICE, revealed["state"], known=CHILD_ONLY)
+        self.assertEqual(cleared["state"]["remembered"], [])
+        self.assertIn(FORGOTTEN, cleared["reply"])
+
+    def test_a_bare_no_answers_the_question_rather_than_wiping_memory(self):
+        # The matcher runs on every turn now, so an ambiguous word in it would
+        # hijack an answer meant for whatever was just asked.
+        revealed = self._revealed()
+        answered = _turn("no", revealed["state"], known=CHILD_ONLY)
+        self.assertNotIn(FORGOTTEN, answered["reply"])
 
 
 class TheParentStillWinsTest(unittest.TestCase):

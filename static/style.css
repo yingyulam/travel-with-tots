@@ -892,6 +892,49 @@ textarea:focus {
   margin-bottom: 0.6rem;
 }
 
+/* The workflow test pages' side-by-side comparison: what a workflow collected
+   next to what it would hand over. Admin-only and used on a desktop, so two
+   columns is the intent rather than a wide-screen bonus. auto-fit with a floor
+   rather than a media query, so it drops to one column only when there is
+   genuinely not room for two, which is the same rule at any breakpoint. */
+.wf-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 0.6rem;
+  align-items: start;
+}
+
+.wf-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  /* The two panels rarely have the same number of rows, and a short one next to
+     a long one reads as an error. Both stretch instead. */
+  height: 100%;
+}
+
+.wf-panel .panel-title {
+  margin-top: 0;
+}
+
+/* A posted field is a name and a value, so it is shown as one: monospace for
+   the key, because these are the server's own field names and a reader is
+   checking them character by character against read_form. */
+.posted-field {
+  margin: 0.15rem 0;
+  word-break: break-word;
+}
+
+.posted-field code {
+  background: #eef2f7;
+  border-radius: 4px;
+  color: #1f3350;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.3rem;
+}
+
 .need-card h4 {
   color: var(--ink);
   font-size: 1rem;

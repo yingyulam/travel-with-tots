@@ -22,7 +22,9 @@
     <p class="field-hint">Run handles the next message you send, then stops. Listen keeps handling each message until you stop it. Either way, one result per message.</p>
   </div>
 
-  <p class="field-hint">Fields you have supplied so far are marked <span class="badge">from your words</span>; the rest are still on the form's own <span class="badge badge-pending">default</span>. Each card also shows which path answered, so a message the classifier sent elsewhere cannot be misread as this workflow's.</p>
+  <p class="field-hint">Each card puts the two halves side by side, because only the pair is verifiable: on the left what the workflow is holding and where every value came from, on the right the real form field names that collection would post. The right-hand panel is built from the same mapping the chat's own hand-off uses, so this page cannot agree with itself while disagreeing with what <code>/plan</code> receives. That mapping is where a bug would hide: naps become parallel <code>nap_start</code> and <code>nap_duration</code> entries, a checkbox becomes the literal <code>on</code>, and an empty value is left out so the server falls back to its own default.</p>
+
+  <p class="field-hint">A value is marked <span class="badge">from your words</span> when this conversation supplied it, <span class="badge badge-deterministic">remembered</span> when it came from the child's record or their last saved day, and <span class="badge badge-pending">default</span> when nothing supplied it. The middle one is the one worth watching: in the finished form a recalled value is indistinguishable from one the parent typed. Each card also shows which path answered, so a message the classifier sent elsewhere cannot be misread as this workflow's.</p>
   <div id="plan-from-chat-result-list"></div>
 </section>
 {% endblock %}

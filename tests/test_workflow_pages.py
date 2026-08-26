@@ -180,3 +180,46 @@ class EveryPageArmsTheSameWayTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheComparisonIsAgainstTheRealMappingTest(unittest.TestCase):
+    """The fill-the-form page exists to verify that what the workflow collected
+    becomes the right form fields, so the two halves it shows have to come from
+    the code that really does it. A page with its own copy of the mapping could
+    agree with itself while disagreeing with what /plan receives, which is
+    exactly the bug it is meant to catch.
+    """
+
+    def setUp(self):
+        self.page = _script("static/plan-from-chat.js")
+        self.widget = _script("static/chatbot.js")
+
+    def test_the_page_reads_the_shared_mapping(self):
+        # The call, not the name: the page's comments explain the mapping, so
+        # asserting on the word alone passes even after the call is gone.
+        self.assertIn("twtPlanFormFields(form)", self.page)
+
+    def test_the_hand_off_reads_the_same_one(self):
+        self.assertIn("twtPlanFormFields(collected)", self.widget)
+
+    def test_the_page_does_not_flatten_naps_itself(self):
+        # The mapping's own job, and the field most likely to be got wrong:
+        # read_form zips nap_start and nap_duration positionally. Asserted on
+        # the string literal rather than the word, which the page's comments
+        # legitimately mention while explaining what the mapping does.
+        self.assertNotIn('"nap_start"', self.page)
+        self.assertIn('"nap_start"', self.widget)
+
+    def test_it_shows_all_three_provenances(self):
+        # A recalled value is indistinguishable from a supplied one in the
+        # finished form, so collapsing the middle state loses the thing this
+        # page is for. Asserted on each badge as it is rendered, because the
+        # words themselves appear in comments and parameter names too.
+        self.assertIn('["badge", "from your words"]', self.page)
+        self.assertIn('["badge badge-deterministic", "remembered"]', self.page)
+        self.assertIn('["badge badge-pending", "default"]', self.page)
+
+    def test_the_panels_are_laid_out_side_by_side(self):
+        css = _script("static/style.css")
+        self.assertIn(".wf-compare", css)
+        self.assertIn("grid-template-columns", css)
