@@ -94,8 +94,34 @@ CREATE TABLE IF NOT EXISTS venues (
     lat                 REAL,                   -- NULL until a source supplies it
     lng                 REAL,
     notes               TEXT,                   -- what a parent said about it
-    address             TEXT                    -- what the geocoder resolved
+    address             TEXT,                   -- what the geocoder resolved
+    source_url          TEXT,                   -- citation: the record or page a curator used
+    external_id         TEXT,                   -- the source's own id, namespaced:
+                                                -- "osm:node/123", "vanopendata:parks/17"
+    verified_at         TEXT,                   -- when a human last confirmed this row
+    verified_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
+    seed_rank           INTEGER                 -- position in venues.json: see _seed_venues
 );
+
+"""
+
+# Indexes, kept apart from SCHEMA because they must be created after
+# _ensure_columns: on a database that predates a column, an index naming it
+# cannot be created until the ALTER TABLE has run. See create_schema.
+INDEXES = """-- Two curated copies of one place is the duplicate _seed_venues matches on.
+-- Scoped to 'curated' because a curated venue and an imported one are allowed
+-- to coexist, and because user submissions may legitimately repeat a name.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_curated_identity
+    ON venues(name, city) WHERE source = 'curated';
+
+-- What lets a re-run import update its rows instead of duplicating them.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_external_id
+    ON venues(external_id) WHERE external_id IS NOT NULL;
+
+-- Serves the source + city lookups in get_venues_in_city, get_candidate_venues
+-- and get_logged_venues_for_parent. No index on city alone: every city match is
+-- a LIKE with a leading wildcard, which can never use one.
+CREATE INDEX IF NOT EXISTS idx_venues_source_city ON venues(source, city);
 """
 
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
@@ -104,6 +130,14 @@ CANDIDATE_FEATURE_COLUMNS = {
     "kid_friendly", "has_family_room", "has_nursing_room",
     "stroller_accessible", "nap_friendly", "can_eat",
 }
+
+# The venue columns data/venues.json owns, in the order _seed_venues supplies
+# them. Deliberately excludes source, parent_id and the provenance columns: a
+# re-seed must never demote a row or discard a citation a human added.
+SEED_FIELDS = ("type", "neighbourhood", "category",
+               "kid_friendly", "has_family_room", "has_nursing_room",
+               "stroller_accessible", "nap_friendly", "can_eat",
+               "open_time", "close_time", "seed_rank")
 
 # Venue sources trustworthy enough to plan a family's day around: everything
 # that reached the table through review, whether hand-curated or ingested from
@@ -136,15 +170,26 @@ def connect():
     return conn
 
 
+def create_schema(conn):
+    """Bring `conn` up to the current schema: tables, then columns added after
+    a table was first created, then indexes.
+
+    The order is the point. An index that names a column can only be created
+    once that column exists, and on a database predating the column that is
+    _ensure_columns' job. Callers use this rather than executescript(SCHEMA)
+    so they cannot get the order wrong.
+    """
+    conn.executescript(SCHEMA)
+    _ensure_columns(conn)
+    conn.executescript(INDEXES)
+
+
 def init_db():
     """Create the tables if they don't exist and seed initial data once."""
     with closing(connect()) as conn:
-        conn.executescript(SCHEMA)
-        _ensure_columns(conn)
+        create_schema(conn)
         _migrate_trips_ownership(conn)
         _seed_venues(conn)
-        _backfill_venue_details(conn)
-        _backfill_venue_coordinates(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
 
@@ -201,6 +246,20 @@ def _ensure_columns(conn):
             # computed and then dropped for want of anywhere to put it.
             conn.execute("ALTER TABLE venues ADD COLUMN notes TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN address TEXT")
+    if "source_url" not in existing:
+        with conn:
+            # Provenance, so a venue can cite where it came from and who checked
+            # it. Nothing writes these yet: the admin review page and the
+            # importers that will are still to come. Every one is nullable
+            # because the 38 seeded rows have no answer for any of them, and
+            # verified_by additionally has to be, since SQLite only allows
+            # ADD COLUMN with a REFERENCES clause when the default is NULL.
+            conn.execute("ALTER TABLE venues ADD COLUMN source_url TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN external_id TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN verified_at TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN verified_by INTEGER "
+                         "REFERENCES parents(id) ON DELETE SET NULL")
+            conn.execute("ALTER TABLE venues ADD COLUMN seed_rank INTEGER")
 
 
 def _migrate_trips_ownership(conn):
@@ -262,75 +321,43 @@ def _migrate_trips_ownership(conn):
 
 
 def _seed_venues(conn):
-    """Insert any bundled venues not already present (matched by name) as
-    'curated' source. Idempotent: safe to run on every startup, so adding
-    more entries to the seed file always reaches the database on the next
-    run instead of only ever seeding once on a completely empty table."""
-    existing = {row[0] for row in conn.execute("SELECT name FROM venues").fetchall()}
+    """Copy data/venues.json into the venues table as 'curated' rows.
+
+    Runs on every startup: new entries are inserted, entries already there
+    (matched by name) are updated. So a hand edit to the seed file reaches an
+    existing database instead of only ever landing on a fresh one, which is
+    what makes venues.json the seed of record for curated venues.
+
+    A null coordinate in the seed never overwrites one already in the table, so
+    a geocoding pass (scripts/geocode_venues.py) is not undone by the next boot.
+
+    Matching is scoped to curated rows. Comparing against every row instead let
+    a parent's submission of an existing name block the seed entry entirely.
+    """
     venues = json.loads(VENUES_SEED.read_text(encoding="utf-8"))
-    rows = [
-        (v["name"], v["type"], v["neighbourhood"], int(v["kid_friendly"]),
-         int(v["has_family_room"]), int(v["has_nursing_room"]),
-         int(v["stroller_accessible"]), "curated", "Vancouver", v["category"],
-         int(v["nap_friendly"]), int(v["can_eat"]), v["open"], v["close"],
-         v.get("lat"), v.get("lng"))
-        for v in venues if v["name"] not in existing
-    ]
-    if not rows:
-        return
+    assignments = ", ".join(f"{field} = ?" for field in SEED_FIELDS)
+    columns = ", ".join(("name", "source", "city") + SEED_FIELDS + ("lat", "lng"))
+    placeholders = ", ".join("?" for _ in range(len(SEED_FIELDS) + 5))
     with conn:  # single transaction for the whole batch
-        conn.executemany(
-            "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
-            "has_family_room, has_nursing_room, stroller_accessible, source, "
-            "city, category, nap_friendly, can_eat, open_time, close_time, "
-            "lat, lng) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
-
-
-def _backfill_venue_details(conn):
-    """Fill in city/category/hours/nap/eat on curated rows that predate those
-    columns, matched by name against the bundled seed file. Idempotent: rows
-    that already have a city are left untouched, so this is safe to run on
-    every startup."""
-    pending = conn.execute(
-        "SELECT id, name FROM venues WHERE source = 'curated' AND city IS NULL"
-    ).fetchall()
-    if not pending:
-        return
-    by_name = {v["name"]: v for v in json.loads(VENUES_SEED.read_text(encoding="utf-8"))}
-    with conn:
-        for row in pending:
-            v = by_name.get(row["name"])
-            if not v:
-                continue
-            conn.execute(
-                "UPDATE venues SET city = ?, category = ?, nap_friendly = ?, "
-                "can_eat = ?, open_time = ?, close_time = ? WHERE id = ?",
-                ("Vancouver", v["category"], int(v["nap_friendly"]),
-                 int(v["can_eat"]), v["open"], v["close"], row["id"]))
-
-
-def _backfill_venue_coordinates(conn):
-    """Copy lat/lng from the seed file onto rows that don't have them yet.
-
-    Needed as its own step because _seed_venues only ever INSERTs (it skips any
-    name already in the table), so coordinates added to venues.json never reach
-    an existing database through it. Guarded on `lat IS NULL` rather than
-    reusing _backfill_venue_details' `city IS NULL`, which is already false on
-    every live row. Idempotent, and skips seed entries whose coordinates are
-    still null so a later geocoding pass can fill them in."""
-    pending = conn.execute(
-        "SELECT id, name FROM venues WHERE lat IS NULL").fetchall()
-    if not pending:
-        return
-    by_name = {v["name"]: v for v in json.loads(VENUES_SEED.read_text(encoding="utf-8"))}
-    with conn:
-        for row in pending:
-            v = by_name.get(row["name"])
-            if not v or v.get("lat") is None or v.get("lng") is None:
-                continue
-            conn.execute("UPDATE venues SET lat = ?, lng = ? WHERE id = ?",
-                         (v["lat"], v["lng"], row["id"]))
+        for rank, v in enumerate(venues):
+            values = (v["type"], v["neighbourhood"], v["category"],
+                      int(v["kid_friendly"]), int(v["has_family_room"]),
+                      int(v["has_nursing_room"]), int(v["stroller_accessible"]),
+                      int(v["nap_friendly"]), int(v["can_eat"]),
+                      v["open"], v["close"], rank)
+            coords = (v.get("lat"), v.get("lng"))
+            existing = conn.execute(
+                "SELECT id FROM venues WHERE name = ? AND source = 'curated'",
+                (v["name"],)).fetchone()
+            if existing:
+                conn.execute(
+                    f"UPDATE venues SET {assignments}, "
+                    "lat = COALESCE(?, lat), lng = COALESCE(?, lng) WHERE id = ?",
+                    values + coords + (existing["id"],))
+            else:
+                conn.execute(
+                    f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
+                    (v["name"], "curated", "Vancouver") + values + coords)
 
 
 def _seed_sample_data(conn):

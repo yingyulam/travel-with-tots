@@ -1,5 +1,10 @@
+import os
+import tempfile
 import unittest
+from contextlib import closing
 from unittest import mock
+
+from src import db
 
 from src.agents import ReplanningAgent, ReplanningAgentError
 from src.components.replan_trip import replan_trip
@@ -23,7 +28,31 @@ def _sample_plan():
     }
 
 
-class ReplanTripTest(unittest.TestCase):
+class _SeededDBTest(unittest.TestCase):
+    """A temp database seeded from data/venues.json.
+
+    Needed because the planner now reads venues from SQLite. Without this these
+    tests would read the developer's own data/app.db, which they never create,
+    so they passed only where one already existed and failed on a fresh clone.
+    Seeding from the real seed file keeps the venue set the same as production's.
+    """
+
+    def setUp(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        self.db_path = tmp.name
+        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher.start()
+        with closing(db.connect()) as conn:
+            db.create_schema(conn)
+            db._seed_venues(conn)
+
+    def tearDown(self):
+        self.patcher.stop()
+        os.unlink(self.db_path)
+
+
+class ReplanTripTest(_SeededDBTest):
     def test_adjusted_true_on_success(self):
         plan = _sample_plan()
         adjustment = {

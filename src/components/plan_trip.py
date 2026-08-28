@@ -10,7 +10,7 @@ instead of each having their own copy.
 import requests
 
 from ..agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
-from ..data_loader import VENUES
+from ..data_loader import get_venues
 from ..itinerary import generate_plans
 
 
@@ -40,7 +40,7 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
         "accommodation": accommodation, "preferred_lunch_time": preferred_lunch_time,
         "transit_nap": transit_nap,
     }
-    plan = generate_plans(VENUES, inputs)[0]
+    plan = generate_plans(get_venues(), inputs)[0]
     adjusted = True
     try:
         adjustment = PlanningAgent(model).adjust_plan(

@@ -757,10 +757,10 @@ datasets (Tomahawk Restaurant is in North Vancouver). Add those by hand if you
 want them, or leave them: the code degrades to neighbourhood matching for any
 venue without coordinates.
 
-New coordinates reach an existing database through
-`db._backfill_venue_coordinates`, which runs on startup. It is a separate step
-because `_seed_venues` only ever inserts and skips names already present, so
-edits to `venues.json` would otherwise never reach a populated `app.db`.
+New coordinates reach an existing database through `db._seed_venues`, which
+runs on startup and updates venues already in the table as well as inserting
+new ones. A null coordinate in the seed file never overwrites one already
+found, so re-running the script is safe and so is re-booting after it.
 
 ## Project structure
 
@@ -937,6 +937,14 @@ transactional.
 
 ## Data model
 
+Venues live in the `venues` table in `data/app.db`, which is what the app
+reads at runtime. `data/venues.json` is its seed: `db._seed_venues` copies the
+file into the table on every boot, inserting new entries and updating existing
+ones, so the file stays hand-editable and remains the version-controlled record
+of the curated set. Its order matters -- the rule-based planner takes the first
+venue that fits a slot, so position in the file is a priority ranking, carried
+into the table as `seed_rank`.
+
 Each venue in `data/venues.json` has:
 
 | Field                 | Meaning                                               |
@@ -953,15 +961,28 @@ Each venue in `data/venues.json` has:
 | `can_eat`              | true/false: food is available at this stop                 |
 | `open`, `close`        | representative daily hours (`HH:MM`)                       |
 
-A `maps_url` (Google Maps search link) is generated from the venue name at
-load time.
+The table adds columns the seed file does not carry: `city`, `lat`/`lng`,
+`min_age_months`/`max_age_months`, `source`, and, for a venue's provenance,
+`source_url` (the record or page it was taken from), `external_id` (its id at
+that source, namespaced, e.g. `osm:node/123`), and `verified_at`/`verified_by`
+(who last confirmed it). The provenance columns are not yet written: they are
+there for the admin review page and the open-data importers still to come.
+
+`data_loader.get_venues()` is the boundary between the table and the planners.
+It reads verified venues only (`source` in `curated`/`municipal_open_data`, so
+unreviewed submissions never reach a plan), returns plain dicts rather than
+database rows, generates each venue's `maps_url` from its name, and keeps the
+seed file's ordering. It reads per call, so a venue added to the table shows up
+in the next plan without a restart.
 
 ## Designed to grow
 
 The pieces are intentionally modular:
 
-- **Richer data**: replace `data/venues.json` (and `data_loader.py`) with a
-  database or a real venues API.
+- **Richer data**: the venues table is the source of truth and carries
+  provenance columns, so open-data importers (Vancouver Open Data, OSM
+  Overpass) and an admin review queue for user submissions can be added
+  without touching the planners.
 - **Real routing**: venues carry lat/lng now, but no routing API does, so
   travel time between stops is still a soft, LLM-judgment heuristic in the AI
   planner and a flat per-mode buffer in the rule-based one

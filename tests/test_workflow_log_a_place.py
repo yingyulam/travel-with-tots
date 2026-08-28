@@ -21,7 +21,7 @@ class _VenueDbTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            conn.executescript(db.SCHEMA)
+            db.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.other_id = db.add_parent("q@example.com", "hash", name="Q")
 

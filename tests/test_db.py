@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
@@ -31,7 +32,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            conn.executescript(db.SCHEMA)
+            db.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()
@@ -124,7 +125,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
 
 class EnsureColumnsMigrationTest(unittest.TestCase):
     """The migration path had no coverage: every other test builds its schema
-    with executescript(db.SCHEMA), which already has every column, so
+    with create_schema, which already has every column, so
     _ensure_columns never ran. This starts from a pre-lat/lng venues table."""
 
     OLD_VENUES_SCHEMA = """
@@ -196,29 +197,154 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
         self.assertEqual([r["name"] for r in rows], ["Already Here"])
         self.assertIsNone(rows[0]["lat"])
 
-    def test_backfill_copies_coordinates_from_the_seed_file(self):
+    def test_adds_the_provenance_columns_to_an_older_database(self):
         with closing(db.connect()) as conn:
             db._ensure_columns(conn)
-        # A real seed-file venue that the geocoding pass resolved.
-        with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Science World")
+        columns = self._venue_columns()
+        for column in ("source_url", "external_id", "verified_at",
+                       "verified_by", "seed_rank"):
+            self.assertIn(column, columns)
+
+    def test_seeding_fills_coordinates_an_older_row_is_missing(self):
+        # What _backfill_venue_coordinates used to do, now a side effect of
+        # seeding: a row already in the table gets updated, not skipped.
         with closing(db.connect()) as conn:
-            db._backfill_venue_coordinates(conn)
+            db._ensure_columns(conn)
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Science World")  # a real seed-file venue
+        with closing(db.connect()) as conn:
+            db._seed_venues(conn)
             row = conn.execute(
                 "SELECT lat, lng FROM venues WHERE name = 'Science World'").fetchone()
         self.assertIsNotNone(row["lat"])
         self.assertIsNotNone(row["lng"])
 
-    def test_backfill_leaves_unknown_venues_alone(self):
+    def test_seeding_leaves_venues_not_in_the_seed_file_alone(self):
         with closing(db.connect()) as conn:
             db._ensure_columns(conn)
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "Not In The Seed File")
         with closing(db.connect()) as conn:
-            db._backfill_venue_coordinates(conn)
-            row = conn.execute(
-                "SELECT lat FROM venues WHERE name = 'Not In The Seed File'").fetchone()
+            db._seed_venues(conn)
+            row = conn.execute("SELECT lat, seed_rank FROM venues "
+                               "WHERE name = 'Not In The Seed File'").fetchone()
         self.assertIsNone(row["lat"])
+        self.assertIsNone(row["seed_rank"])
+
+    def test_seeding_updates_a_field_edited_in_the_seed_file(self):
+        # The case the old insert-only seed could not express at all: an edit to
+        # an existing venue in venues.json never reached a populated database.
+        with closing(db.connect()) as conn:
+            db._ensure_columns(conn)
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Science World", neighbourhood="Wrong Place")
+        with closing(db.connect()) as conn:
+            db._seed_venues(conn)
+            row = conn.execute("SELECT neighbourhood FROM venues "
+                               "WHERE name = 'Science World'").fetchone()
+        self.assertNotEqual(row["neighbourhood"], "Wrong Place")
+
+    def test_a_user_submission_does_not_block_a_curated_seed_entry(self):
+        # The live database has three user-submitted "Science World" rows. The
+        # old seed matched names against every row, so they suppressed the
+        # curated entry entirely.
+        with closing(db.connect()) as conn:
+            db._ensure_columns(conn)
+        with closing(db.connect()) as conn, conn:
+            conn.execute("INSERT INTO venues (name, city, source) "
+                         "VALUES ('Science World', 'Vancouver', 'user_submitted')")
+        with closing(db.connect()) as conn:
+            db._seed_venues(conn)
+            sources = [r["source"] for r in conn.execute(
+                "SELECT source FROM venues WHERE name = 'Science World'")]
+        self.assertIn("curated", sources)
+        self.assertIn("user_submitted", sources)
+
+
+class SeedVenuesTest(unittest.TestCase):
+    """Seeding against a current schema, where the indexes exist."""
+
+    def setUp(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        self.db_path = tmp.name
+        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher.start()
+        with closing(db.connect()) as conn:
+            db.create_schema(conn)
+
+    def tearDown(self):
+        self.patcher.stop()
+        os.unlink(self.db_path)
+
+    def _seed(self):
+        with closing(db.connect()) as conn:
+            db._seed_venues(conn)
+
+    def test_is_idempotent(self):
+        self._seed()
+        with closing(db.connect()) as conn:
+            first = conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]
+        self._seed()
+        with closing(db.connect()) as conn:
+            second = conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]
+        self.assertEqual(first, second)
+        self.assertGreater(first, 0)
+
+    def test_seed_rank_follows_the_order_of_the_seed_file(self):
+        # The planner takes the first venue that fits a slot, so this order is
+        # a ranking. Without it the database's ORDER BY name would quietly
+        # demote the venues the curator put first.
+        import json
+        self._seed()
+        names = [v["name"] for v in json.loads(
+            db.VENUES_SEED.read_text(encoding="utf-8"))]
+        with closing(db.connect()) as conn:
+            seeded = [r["name"] for r in conn.execute(
+                "SELECT name FROM venues WHERE source = 'curated' "
+                "ORDER BY seed_rank")]
+        self.assertEqual(seeded, names)
+
+    def test_a_duplicate_external_id_is_refused(self):
+        with closing(db.connect()) as conn, conn:
+            conn.execute("INSERT INTO venues (name, source, external_id) "
+                         "VALUES ('A', 'curated', 'osm:node/1')")
+        with self.assertRaises(sqlite3.IntegrityError):
+            with closing(db.connect()) as conn, conn:
+                conn.execute("INSERT INTO venues (name, source, external_id) "
+                             "VALUES ('B', 'curated', 'osm:node/1')")
+
+    def test_rows_without_an_external_id_are_not_treated_as_duplicates(self):
+        with closing(db.connect()) as conn, conn:
+            conn.execute("INSERT INTO venues (name, source) VALUES ('A', 'curated')")
+            conn.execute("INSERT INTO venues (name, source) VALUES ('B', 'curated')")
+        with closing(db.connect()) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0], 2)
+
+    def test_two_curated_copies_of_one_place_are_refused(self):
+        with closing(db.connect()) as conn, conn:
+            conn.execute("INSERT INTO venues (name, city, source) "
+                         "VALUES ('Dup Park', 'Vancouver', 'curated')")
+        with self.assertRaises(sqlite3.IntegrityError):
+            with closing(db.connect()) as conn, conn:
+                conn.execute("INSERT INTO venues (name, city, source) "
+                             "VALUES ('Dup Park', 'Vancouver', 'curated')")
+
+    def test_the_provenance_columns_round_trip(self):
+        with closing(db.connect()) as conn, conn:
+            conn.execute(
+                "INSERT INTO venues (name, city, source, source_url, external_id, "
+                "verified_at, verified_by) VALUES ('Cited', 'Vancouver', "
+                "'municipal_open_data', 'https://example.org/r/1', "
+                "'vanopendata:parks/1', '2026-08-27', NULL)")
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT source_url, external_id, verified_at, "
+                               "verified_by FROM venues WHERE name = 'Cited'").fetchone()
+        self.assertEqual(row["source_url"], "https://example.org/r/1")
+        self.assertEqual(row["external_id"], "vanopendata:parks/1")
+        self.assertEqual(row["verified_at"], "2026-08-27")
+        self.assertIsNone(row["verified_by"])
 
 
 if __name__ == "__main__":

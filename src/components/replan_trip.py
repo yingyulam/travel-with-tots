@@ -9,7 +9,7 @@ and agents.py (AI adjustment) -- this file only composes them, so app.py's
 import requests
 
 from ..agents import DEFAULT_MODEL, ReplanningAgent, ReplanningAgentError
-from ..data_loader import VENUES
+from ..data_loader import get_venues
 from ..interactions import replan
 
 
@@ -27,7 +27,7 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
 
     `model` is the one the parent picked in the chat widget's dropdown, the
     same as planning, so one choice governs every AI call the app makes."""
-    draft = replan(plan, situation, current_time, VENUES, features or [],
+    draft = replan(plan, situation, current_time, get_venues(), features or [],
                     bedtime=bedtime, minutes=minutes, theme=theme)
     adjusted = True
     try:

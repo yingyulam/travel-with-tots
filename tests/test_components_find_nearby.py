@@ -55,7 +55,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            conn.executescript(db.SCHEMA)
+            db.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()

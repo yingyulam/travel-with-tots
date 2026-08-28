@@ -45,7 +45,7 @@ from src.components.place_search import PlaceSearchError, search_places
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
-from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, VENUES
+from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, get_venues
 from src.dates import compute_age
 from src.db import (
     TRIP_FIELDS,
@@ -1140,7 +1140,7 @@ def replan_route():
     if not plan or not current_time:
         return jsonify({"error": "plan and current_time are required"}), 400
     return jsonify(replan(plan, data.get("situation", ""), current_time,
-                          VENUES, data.get("features") or [],
+                          get_venues(), data.get("features") or [],
                           bedtime=data.get("bedtime"), minutes=data.get("minutes"),
                           theme=data.get("theme")))
 
