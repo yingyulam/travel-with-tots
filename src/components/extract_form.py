@@ -16,7 +16,7 @@ formed and in range.
 
 The model's choice vocabularies are constrained by the JSON schema rather than
 checked afterwards, because read_form deliberately does not validate transit,
-dining or themes against the option lists.
+dining or interest against the option lists.
 """
 
 import os
@@ -25,6 +25,7 @@ import re
 from werkzeug.datastructures import MultiDict
 
 from ..agents import call_openrouter, parse_json_reply
+from ..data_loader import VENUE_TYPES
 from ..form_helpers import (
     DINING_OPTIONS,
     MAX_AGE_YEARS,
@@ -35,7 +36,6 @@ from ..form_helpers import (
     TRANSIT_OPTIONS,
     read_form,
 )
-from ..itinerary import THEMES
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 EXTRACT_FORM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "extract_form.txt")
@@ -65,13 +65,11 @@ EXTRACTOR_MODEL = "openai/gpt-4o-mini"
 
 DINING_KEYS = [key for key, _ in DINING_OPTIONS]
 TRANSIT_NAP_KEYS = [key for key, _ in TRANSIT_NAP_OPTIONS]
-THEME_LABELS = [theme["label"] for theme in THEMES]
-
-# A bare label like "Culture" doesn't tell a model that a museum belongs to it,
-# so the prompt gets each theme's own blurb alongside its label. Derived from
-# THEMES so the two can't drift.
-THEME_CHOICES = ", ".join(
-    f"{theme['label']} ({theme['blurb'].rstrip('.').lower()})" for theme in THEMES)
+# The kinds of place a parent can ask for. The venue types themselves, so
+# there is no second vocabulary to drift from VENUE_TYPES -- which is how the
+# themes this replaced ended up with 10 of the 14 types in no theme at all.
+INTEREST_LABELS = list(VENUE_TYPES)
+INTEREST_CHOICES = ", ".join(VENUE_TYPES)
 
 # The form fields worth asking a model for. Excludes child_ids and
 # plan_child_id (database ids the parent picks in the UI) and revise_feedback
@@ -97,7 +95,7 @@ EXTRACTED_FORM_PROPERTIES = {
     **{field: _nullable("integer") for field in COUNT_FIELDS},
     "strict_schedule": _nullable("boolean"),
     "transit": _enum_array(TRANSIT_OPTIONS),
-    "themes": _enum_array(THEME_LABELS),
+    "interest": _enum_array(INTEREST_LABELS),
     "dining": {"type": ["string", "null"], "enum": [*DINING_KEYS, None]},
     "transit_nap": {"type": ["string", "null"], "enum": [*TRANSIT_NAP_KEYS, None]},
     "naps": {
@@ -162,7 +160,7 @@ def _build_messages(description: str) -> list[dict]:
         .replace("{transit_options}", ", ".join(TRANSIT_OPTIONS))
         .replace("{dining_options}", ", ".join(DINING_KEYS))
         .replace("{transit_nap_options}", ", ".join(TRANSIT_NAP_KEYS))
-        .replace("{theme_options}", THEME_CHOICES)
+        .replace("{interest_options}", INTEREST_CHOICES)
     )
     return [{"role": "system", "content": prompt}]
 
@@ -174,7 +172,7 @@ def _build_messages(description: str) -> list[dict]:
 # deliberately does not validate these fields either, so nothing else would.
 ALLOWED_VALUES = {
     "transit": set(TRANSIT_OPTIONS),
-    "themes": set(THEME_LABELS),
+    "interest": set(INTEREST_LABELS),
     "dining": set(DINING_KEYS),
     "transit_nap": set(TRANSIT_NAP_KEYS),
 }
@@ -254,7 +252,7 @@ def _grounded(extracted: dict, description: str) -> dict:
     from their own words.
 
     Only fields whose support is decidable from the text are checked. The
-    vocabulary fields (transit, themes, dining, transit_nap) are
+    vocabulary fields (transit, interest, dining, transit_nap) are
     legitimately inferred from words they do not share, "we'll drive" meaning
     car, so there is nothing here to compare them against. They stay the
     prompt's problem.
@@ -340,7 +338,7 @@ def extract_form(description: str, model: str = EXTRACTOR_MODEL) -> dict:
 
     Two things to know before wiring this into a prefilled form:
 
-    Multi-choice fields (transit, themes) come back empty rather than
+    Multi-choice fields (transit, interest) come back empty rather than
     at their DEFAULTS value when the description didn't mention them, because
     that is exactly what read_form returns for a submitted form with those
     boxes unchecked. Honest, but it means a prefill wanting the form's usual

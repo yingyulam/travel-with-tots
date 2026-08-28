@@ -4,6 +4,7 @@ the raw form dict app.py's routes already parse, no Flask dependency."""
 from datetime import date
 
 from .dates import parse_date, compute_age
+from .data_loader import VENUE_TYPES
 from .db import get_children
 
 # Age is capped at this many years, 0 months.
@@ -60,7 +61,7 @@ DEFAULTS = {
     "revise_feedback": "",
     "strict_schedule": False,
     "features": [],
-    "themes": [],
+    "interest": [],
     "child_ids": [],
     "plan_child_id": "",
 }
@@ -132,7 +133,10 @@ def read_form(form):
         "revise_feedback": form.get("revise_feedback", ""),
         "strict_schedule": form.get("strict_schedule") == "on",
         "features": form.getlist("features"),
-        "themes": form.getlist("themes"),
+        # Only kinds of place the app knows. An unrecognised value is
+        # dropped rather than carried, so a stale form or a hand-made
+        # post cannot ask for something nothing can satisfy.
+        "interest": [k for k in form.getlist("interest") if k in VENUE_TYPES],
         "child_ids": form.getlist("child_ids"),
         "plan_child_id": form.get("plan_child_id", ""),
     }

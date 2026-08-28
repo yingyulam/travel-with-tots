@@ -1,7 +1,7 @@
 """Generate a few candidate day plans for the parent to pick from.
 
 ``generate_plans`` is the single entry point for all plan generation and is a
-deliberate placeholder. Today it returns short, themed, deterministic plans,
+deliberate placeholder. Today it returns short, deterministic plans,
 but its inputs and outputs are shaped so a real LLM call can replace the body
 later without touching the rest of the app. It does not read the free-text
 notes yet.
@@ -109,39 +109,39 @@ MAX_STOP_COUNT = 4
 # appends the lunch stop after the requested-count stops already exist).
 MAX_MEAL_STOPS = 1
 
-# Candidate themes. Each biases activity choices toward certain venue types;
-# food and nap stops aren't restricted to these types, but are sorted to
-# prefer a theme match when one exists (see _build_plan).
-THEMES = [
-    {"label": "Outdoorsy", "types": {"park", "attraction"},
-     "blurb": "Parks and fresh air, with stroller-friendly strolls."},
-    {"label": "Rainy-day", "types": {"museum", "mall", "cafe"},
-     "blurb": "Indoor stops that stay dry and cosy."},
-    {"label": "Culture", "types": {"museum", "attraction"},
-     "blurb": "Museums and sights for curious little minds."},
-]
+# Themes are gone. They bundled three unrelated dimensions into one control --
+# "Rainy-day" was a weather condition, "Outdoorsy" a physical setting, "Culture"
+# an activity interest -- so a day could not be both outdoor and cultural, and a
+# garden matched none of the three at all. Two structural faults came with them:
+# selecting no theme silently applied "Mixed", which was the union of the three
+# type sets and therefore deprioritised 10 of the 14 types; and asking for
+# Rainy-day *and* Outdoorsy produced a preference for indoor and outdoor
+# equally, which says nothing.
+#
+# What replaced them:
+#   Outdoorsy   -> nothing. Shelter is `setting` on the venue, and weather is
+#                  context attached to a time, not a preference for a whole day.
+#                  A parent wants a mixed day, and no preference already gives
+#                  one, because the curated ranking alternates indoor and out.
+#   Rainy-day   -> the "it's raining" replan path (interactions.py), which reads
+#                  `setting` directly, plus a forecast if one is ever wired in.
+#   Culture     -> `interest` below.
 
 
-def resolve_themes(labels):
-    """The THEMES entries matching `labels`, in THEMES order; falls back to
-    all three ("Mixed", see combine_themes) when none were selected or none
-    of the submitted labels matched a real theme."""
-    selected = [t for t in THEMES if t["label"] in (labels or [])]
-    return selected or list(THEMES)
+def interest_label(interest):
+    """A plan's name, from what the parent asked for. "A day out" when they
+    asked for nothing in particular, which is the common case."""
+    kinds = [k for k in (interest or []) if k]
+    if not kinds:
+        return "A day out"
+    return " and ".join(kinds).capitalize()
 
 
-def combine_themes(themes):
-    """Merge one or more THEMES entries into a single theme-shaped dict, so
-    a plan can draw from several themes across the day instead of exactly
-    one. Same shape as a THEMES entry, so every existing theme-aware helper
-    below (_matches_theme, _reason, the food/nap theme-biased sorts) works
-    on it unchanged."""
-    label = "Mixed" if len(themes) == len(THEMES) else ", ".join(t["label"] for t in themes)
-    return {
-        "label": label,
-        "blurb": " ".join(t["blurb"] for t in themes),
-        "types": set().union(*(t["types"] for t in themes)),
-    }
+def interest_blurb(interest):
+    kinds = [k for k in (interest or []) if k]
+    if not kinds:
+        return "A mix of places, paced around your child's day."
+    return f"Leaning towards {' and '.join(kinds)}, paced around your child's day."
 
 
 def _parse(t):
@@ -231,7 +231,7 @@ def _pick(pool, used, start_min=None, duration_min=0):
     return None
 
 
-def _reason(venue, kind, theme):
+def _reason(venue, kind, wanted):
     """One-line, deterministic explanation of why this stop was chosen."""
     if venue is None:
         return "No venue matched your chosen features for this slot."
@@ -244,7 +244,10 @@ def _reason(venue, kind, theme):
         fit = ("somewhere a rest fits easily" if venue.get("nap_friendly")
                else "the best fit open at this hour")
         return f"Timed around the nap you expect -- a {venue['type']}, {fit}."
-    return f"{theme['label']} pick: {venue['type']} in {venue['neighbourhood']}."
+    if wanted and venue["type"] in wanted:
+        return f"A {venue['type']}, which is what you asked for."
+    place = venue.get("neighbourhood") or ""
+    return f"A {venue['type']} in {place}." if place else f"A {venue['type']}."
 
 
 def _lunch_time(stops, naps, preferred_lunch_min=None):
@@ -346,30 +349,28 @@ def _nap_minutes(naps):
     return found
 
 
-def _build_plan(matches, wake, bedtime, naps, count, theme, dining,
+def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                 preferred_lunch_min=None, nap_minutes=None):
-    """Build one themed plan: an ordered list of timed stops.
+    """Build one day plan: an ordered list of timed stops.
+
+    ``wanted`` is the set of venue types the parent asked for, empty when they
+    asked for nothing in particular. It only ever sorts.
 
     ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
     food stop -- the family eats during transit or at an activity).
     """
-    def _matches_theme(venue):
-        return venue["type"] in theme["types"]
+    def _wanted(venue):
+        return bool(wanted) and venue["type"] in wanted
 
-    # Theme-matching venues come first, rather than being the only ones. A
-    # filter here discarded every venue whose type no theme names, and ten of
-    # the fourteen allowed types name no theme: aquarium, community centre,
-    # farm, market, pool, library, playground, garden, beach, seawall. The
-    # `or list(matches)` fallback below only rescued a day where *nothing*
-    # matched, so one museum in the pool was enough to throw the other five
-    # venues away -- six open venues and a request for three stops returned a
-    # one-stop day.
+    # What the parent asked for comes first, and nothing is excluded. Sorting
+    # rather than filtering is what keeps a preference from emptying a day: the
+    # old theme filter discarded every venue whose type no theme named, and ten
+    # of the fourteen types named none, so one museum in the pool was enough to
+    # throw five other open venues away and return a one-stop day.
     #
-    # Sorting is what makes the type list safe to extend: a type nobody
-    # remembered to map is deprioritised, never invisible. Same idiom the nap
-    # pool below already uses, and Python's sort is stable, so the curator's
-    # seed_rank order survives inside each group.
-    activities = sorted(matches, key=lambda v: 0 if _matches_theme(v) else 1)
+    # An empty `wanted` sorts nothing, so "no preference" really is neutral.
+    # Python's sort is stable, so the curator's seed_rank order survives.
+    activities = sorted(matches, key=lambda v: 0 if _wanted(v) else 1)
 
     # No lunch pool: lunch is taken at a stop the day already includes, or it
     # is a block with a handoff. See _lunch_stop.
@@ -384,11 +385,11 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining,
     # enough to exclude every other option, and if that one venue happened to
     # be shut at nap time the whole stop silently vanished from the day.
     #
-    # Nap-friendliness first, theme match second, so a rainy-day nap is still
-    # an indoor mall stroll rather than an outdoor park. Stable sort, so the
-    # curator's seed_rank order survives inside each group.
+    # Nap-friendliness first, what the parent asked for second, so a nap lands
+    # somewhere restful and, among restful options, somewhere they wanted.
+    # Stable sort, so the curator's seed_rank order survives inside each group.
     naps_pool = sorted(matches, key=lambda v: (0 if v.get("nap_friendly") else 1,
-                                               0 if _matches_theme(v) else 1))
+                                               0 if _wanted(v) else 1))
 
     # Lay out the stop times, then anchor naps: each nap retimes its nearest
     # still-unassigned stop so a nap-friendly venue lands in the nap window.
@@ -423,7 +424,7 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining,
             "time": _format(slot["time"]),
             "kind": slot["kind"],
             "venue": venue,
-            "reason": _reason(venue, slot["kind"], theme),
+            "reason": _reason(venue, slot["kind"], wanted),
         })
 
     # Dining out adds a lunch to fit in around midday -- a meal, not one of the
@@ -438,11 +439,12 @@ def generate_plans(venues, inputs):
     """Return a single candidate day plan for the parent to review.
 
     ``inputs`` is the normalised form dict (wake_up, bedtime, naps, stop_count,
-    age_years, age_months, features, themes, ...). Returns a one-item list
-    holding a ``Plan`` (label, blurb, ordered stops) that draws from whichever
-    themes were selected in ``inputs["themes"]`` (or all three, "Mixed", if
-    none were). Kept as a list (rather than returning the ``Plan`` directly)
-    so callers that loop over "candidate plans" don't need to change.
+    age_years, age_months, interest, ...). Returns a one-item list holding a
+    ``Plan`` (label, blurb, ordered stops). ``inputs["interest"]`` is the venue
+    types the parent asked for, and it only ever sorts: an empty list plans a
+    natural mix, which is what most parents want. Kept as a list (rather than
+    returning the ``Plan`` directly) so callers that loop over "candidate
+    plans" don't need to change.
 
     Placeholder logic: filter venues by the chosen features, decide how many
     stops fit the child's age and the parent's requested count, then arrange
@@ -466,14 +468,15 @@ def generate_plans(venues, inputs):
     preferred_lunch_time = inputs.get("preferred_lunch_time") or ""
     preferred_lunch_min = hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
-    theme = combine_themes(resolve_themes(inputs.get("themes")))
-    stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining,
+    wanted = set(inputs.get("interest") or ())
+    stops = _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                         preferred_lunch_min, nap_minutes)
     leave = _leave_stop(accommodation, stops)
     if leave:
         stops = [leave] + stops
-    blurb = theme["blurb"]
+    blurb = interest_blurb(inputs.get("interest"))
     if count != requested_count:
         blurb += (f" You asked for {requested_count} stops; we planned {count} "
                   "instead, a more realistic pace for this age.")
-    return [Plan(label=theme["label"], blurb=blurb, stops=stops)]
+    return [Plan(label=interest_label(inputs.get("interest")),
+                 blurb=blurb, stops=stops)]

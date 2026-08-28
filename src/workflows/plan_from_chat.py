@@ -605,7 +605,7 @@ def run(message: str, state: dict | None = None,
 
         # Nothing about the day in the message, so it really was just "plan a
         # trip". Tested against the fields this conversation asks about rather
-        # than `found` being empty, because the extractor still reports themes
+        # than `found` being empty, because the extractor still reports interests
         # and transit modes it inferred from nothing, and those must not be able
         # to skip the offer.
         if remembered and not _missing(found, skipped, remembered):

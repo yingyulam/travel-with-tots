@@ -3,13 +3,22 @@ import unittest
 from src.interactions import replan
 
 
+# Fixture convenience only: the app never derives setting from type, but a
+# test venue is easier to read when "museum" implies indoors.
+_FIXTURE_SETTING = {"museum": "indoor", "mall": "indoor", "aquarium": "indoor",
+                    "cafe": "indoor", "market": "indoor"}
+
+
 def _venue(name, category="activity", **overrides):
-    # Wide hours by default: these tests are about replan timing and themes,
-    # not opening hours, and a venue with no hours is now unschedulable.
+    # Wide hours by default: these tests are about replan timing and
+    # preferences, not opening hours, and a venue with no hours is now
+    # unschedulable.
     base = {"name": name, "category": category, "kid_friendly": True,
             "can_eat": category == "food", "nap_friendly": False,
             "open": "06:00", "close": "23:00"}
     base.update(overrides)
+    base.setdefault("setting",
+                    _FIXTURE_SETTING.get(base.get("type"), "outdoor"))
     return base
 
 
@@ -57,8 +66,16 @@ class ReplanSkipNextTest(unittest.TestCase):
         self.assertEqual(result["stops"], [])
 
 
-class ReplanThemeTest(unittest.TestCase):
-    def test_weather_rain_swaps_outdoor_stop_for_indoor_one(self):
+class ReplanWeatherTest(unittest.TestCase):
+    """"It's raining" reads each venue's `setting`.
+
+    It used to look for a "Rainy-day" theme whose type set was
+    {museum, mall, cafe}, so it reached 8 of 39 indoor venues, could not offer
+    the Aquarium, the Conservatory, the Lookout or any of 27 community centres,
+    and one of its three targets was a type that no longer exists.
+    """
+
+    def test_rain_swaps_an_outdoor_stop_for_a_sheltered_one(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "2:00 PM", "kind": "activity",
              "venue": _venue("Stanley Park", type="park"), "reason": "kept"},
@@ -67,22 +84,44 @@ class ReplanThemeTest(unittest.TestCase):
                   _venue("Science World", type="museum")]
         result = replan(plan, "weather_rain", "13:00", venues=venues)
         self.assertEqual(result["stops"][0]["venue"]["name"], "Science World")
-        self.assertIn("Swapped for the new theme", result["stops"][0]["reason"])
+        self.assertIn("under cover", result["stops"][0]["reason"])
 
-    def test_change_theme_targets_the_chosen_theme(self):
+    def test_rain_finds_shelter_the_old_type_set_could_not(self):
+        # An aquarium and a community centre are indoors and were both
+        # invisible to the Rainy-day theme.
+        for kind in ("aquarium", "community centre", "library"):
+            with self.subTest(type=kind):
+                plan = {"label": "P", "blurb": "b", "stops": [
+                    {"time": "2:00 PM", "kind": "activity",
+                     "venue": _venue("A Park", type="park"), "reason": "kept"},
+                ]}
+                venues = [_venue("A Park", type="park"),
+                          _venue("Indoors", type=kind, setting="indoor")]
+                result = replan(plan, "weather_rain", "13:00", venues=venues)
+                self.assertEqual(result["stops"][0]["venue"]["name"], "Indoors")
+
+    def test_a_both_venue_counts_as_shelter(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "2:00 PM", "kind": "activity",
-             "venue": _venue("Science World", type="museum"), "reason": "kept"},
+             "venue": _venue("A Park", type="park"), "reason": "kept"},
         ]}
-        venues = [_venue("Science World", type="museum"),
-                  _venue("Stanley Park", type="park")]
-        result = replan(plan, "change_theme", "13:00", venues=venues, theme="Outdoorsy")
-        self.assertEqual(result["stops"][0]["venue"]["name"], "Stanley Park")
+        venues = [_venue("A Park", type="park"),
+                  _venue("Grouse Mountain", type="attraction", setting="both")]
+        result = replan(plan, "weather_rain", "13:00", venues=venues)
+        self.assertEqual(result["stops"][0]["venue"]["name"], "Grouse Mountain")
 
-    def test_already_on_theme_venue_is_kept_but_may_move_earlier(self):
-        # 2:00 PM is further off than the 30-min wrap-up buffer from 1:00 PM,
-        # so the stop gets pulled forward -- the venue itself, already on
-        # theme, is left as-is.
+    def test_a_venue_with_no_setting_is_not_offered_as_shelter(self):
+        # Not knowing is a reason to leave it out, never to include it.
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "2:00 PM", "kind": "activity",
+             "venue": _venue("A Park", type="park"), "reason": "kept"},
+        ]}
+        venues = [_venue("A Park", type="park"),
+                  _venue("Unknown", type="attraction", setting=None)]
+        result = replan(plan, "weather_rain", "13:00", venues=venues)
+        self.assertEqual(result["stops"][0]["venue"]["name"], "A Park")
+
+    def test_an_already_sheltered_venue_is_kept_but_may_move_earlier(self):
         stop = {"time": "2:00 PM", "kind": "activity",
                 "venue": _venue("Science World", type="museum"), "reason": "kept"}
         plan = {"label": "P", "blurb": "b", "stops": [stop]}
@@ -91,7 +130,7 @@ class ReplanThemeTest(unittest.TestCase):
         result = replan(plan, "weather_rain", "13:00", venues=venues)
         self.assertEqual(result["stops"][0]["venue"]["name"], "Science World")
         self.assertEqual(result["stops"][0]["time"], "1:30 PM")
-        self.assertIn("Moved earlier for the theme change.", result["stops"][0]["reason"])
+        self.assertIn("Moved earlier.", result["stops"][0]["reason"])
 
     def test_stop_already_within_the_wrap_up_buffer_is_untouched(self):
         stop = {"time": "1:15 PM", "kind": "activity",
@@ -102,7 +141,7 @@ class ReplanThemeTest(unittest.TestCase):
         self.assertEqual(result["stops"][0]["time"], "1:15 PM")
         self.assertEqual(result["stops"][0]["reason"], "kept")
 
-    def test_meal_and_nap_stops_are_never_rethemed(self):
+    def test_meal_and_nap_stops_are_never_swapped(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "12:00 PM", "kind": "meal",
              "venue": _venue("Picnic Spot", type="park", category="food"), "reason": "lunch"},
@@ -114,43 +153,23 @@ class ReplanThemeTest(unittest.TestCase):
         self.assertEqual(result["stops"][0]["venue"]["name"], "Picnic Spot")
         self.assertEqual(result["stops"][1]["venue"]["name"], "Nap Park")
 
-    def test_meal_stop_time_is_never_pulled_earlier(self):
-        # Regression: the earlier-shift for weather_rain/change_theme once
-        # dragged a meal stop along with everything else, landing "lunch"
-        # absurdly early (e.g. 9:40 AM). The meal must keep its own time;
-        # only the activity stop is eligible to be pulled into the gap.
-        plan = {"label": "P", "blurb": "b", "stops": [
-            {"time": "12:00 PM", "kind": "meal",
-             "venue": _venue("Lunch Spot", type="cafe", category="food"), "reason": "lunch"},
-            {"time": "2:00 PM", "kind": "activity",
-             "venue": _venue("Afternoon Park", type="park"), "reason": "afternoon"},
-        ]}
-        venues = [_venue("Lunch Spot", type="cafe", category="food"),
-                  _venue("Afternoon Park", type="park"),
-                  _venue("Rainy Museum", type="museum")]
-        result = replan(plan, "change_theme", "09:10", venues=venues,
-                        bedtime="20:00", theme="Rainy-day")
-        meal = next(s for s in result["stops"] if s["kind"] == "meal")
-        activity = next(s for s in result["stops"] if s["kind"] == "activity")
-        self.assertEqual(meal["time"], "12:00 PM")
-        self.assertEqual(meal["reason"], "lunch")
-        self.assertEqual(activity["time"], "9:40 AM")
-
-    def test_no_matching_theme_venue_leaves_venue_unchanged(self):
+    def test_no_shelter_available_leaves_the_venue_unchanged(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "2:00 PM", "kind": "activity",
              "venue": _venue("Stanley Park", type="park"), "reason": "kept"},
         ]}
-        result = replan(plan, "weather_rain", "13:00", venues=[_venue("Stanley Park", type="park")])
+        result = replan(plan, "weather_rain", "13:00",
+                        venues=[_venue("Stanley Park", type="park")])
         self.assertEqual(result["stops"][0]["venue"]["name"], "Stanley Park")
         self.assertEqual(result["stops"][0]["time"], "1:30 PM")
 
-    def test_no_remaining_stops_inserts_a_themed_bonus_stop(self):
+    def test_no_remaining_stops_inserts_a_sheltered_bonus_stop(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "1:00 PM", "kind": "activity",
              "venue": _venue("Stanley Park", type="park"), "reason": "kept"},
         ]}
-        venues = [_venue("Stanley Park", type="park"), _venue("Science World", type="museum")]
+        venues = [_venue("Stanley Park", type="park"),
+                  _venue("Science World", type="museum")]
         result = replan(plan, "weather_rain", "13:00", venues=venues, bedtime="20:00")
         self.assertEqual(len(result["stops"]), 2)
         bonus = result["stops"][1]
@@ -158,13 +177,64 @@ class ReplanThemeTest(unittest.TestCase):
         self.assertEqual(bonus["time"], "1:30 PM")
         self.assertEqual(bonus["venue"]["name"], "Science World")
 
+
+class ReplanChangeInterestTest(unittest.TestCase):
+    """"Do something else" reads `type`, which is what the parent picked."""
+
+    def test_it_targets_the_kind_of_place_asked_for(self):
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "2:00 PM", "kind": "activity",
+             "venue": _venue("Science World", type="museum"), "reason": "kept"},
+        ]}
+        venues = [_venue("Science World", type="museum"),
+                  _venue("Stanley Park", type="park")]
+        result = replan(plan, "change_interest", "13:00", venues=venues,
+                        interest=["park"])
+        self.assertEqual(result["stops"][0]["venue"]["name"], "Stanley Park")
+        self.assertIn("what you asked for", result["stops"][0]["reason"])
+
+    def test_asking_for_nothing_in_particular_swaps_nothing(self):
+        # The day still shifts earlier, but no venue is replaced: with no
+        # preference there is nothing to prefer.
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "2:00 PM", "kind": "activity",
+             "venue": _venue("Science World", type="museum"), "reason": "kept"},
+        ]}
+        venues = [_venue("Science World", type="museum"),
+                  _venue("Stanley Park", type="park")]
+        result = replan(plan, "change_interest", "13:00", venues=venues,
+                        interest=[])
+        self.assertEqual(result["stops"][0]["venue"]["name"], "Science World")
+
+    def test_a_meal_stop_time_is_never_pulled_earlier(self):
+        # Regression: the earlier-shift once dragged a meal stop along with
+        # everything else, landing "lunch" absurdly early.
+        plan = {"label": "P", "blurb": "b", "stops": [
+            {"time": "12:00 PM", "kind": "meal",
+             "venue": _venue("Lunch Spot", type="market", category="food"), "reason": "lunch"},
+            {"time": "2:00 PM", "kind": "activity",
+             "venue": _venue("Afternoon Park", type="park"), "reason": "afternoon"},
+        ]}
+        venues = [_venue("Lunch Spot", type="market", category="food"),
+                  _venue("Afternoon Park", type="park"),
+                  _venue("A Museum", type="museum")]
+        result = replan(plan, "change_interest", "09:10", venues=venues,
+                        bedtime="20:00", interest=["museum"])
+        meal = next(s for s in result["stops"] if s["kind"] == "meal")
+        activity = next(s for s in result["stops"] if s["kind"] == "activity")
+        self.assertEqual(meal["time"], "12:00 PM")
+        self.assertEqual(meal["reason"], "lunch")
+        self.assertEqual(activity["time"], "9:40 AM")
+
     def test_stale_adjusted_flag_is_stripped(self):
         plan = {"label": "P", "blurb": "b", "stops": [
             {"time": "1:00 PM", "kind": "activity",
-             "venue": _venue("Stanley Park", type="park"), "reason": "kept", "adjusted": True},
+             "venue": _venue("Stanley Park", type="park"), "reason": "kept",
+             "adjusted": True},
         ]}
-        result = replan(plan, "change_theme", "13:30", venues=[_venue("Stanley Park", type="park")],
-                        theme="Outdoorsy")
+        result = replan(plan, "change_interest", "13:30",
+                        venues=[_venue("Stanley Park", type="park")],
+                        interest=["park"])
         self.assertNotIn("adjusted", result["stops"][0])
 
 

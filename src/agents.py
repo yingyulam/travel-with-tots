@@ -634,11 +634,11 @@ def reload_replan_adjust_prompt() -> None:
 
 
 # What the parent actually asked for, in words, for the two situations that
-# carry a number or a theme. Neither reached the adjuster before: it was told
+# carry a number or a list of interests. Neither reached the adjuster before: it was told
 # "nap happened here" without being told the nap was three hours, so it was free
 # to nudge stops back inside its 60-minute allowance and undo the request; and
-# for a theme change it never learned the target theme, so a "better fit" swap
-# could put an outdoor venue back into a day rethemed for rain.
+# for a change of plan it never learned what was now wanted, so a "better fit"
+# swap could put an outdoor venue back into a day moved indoors for rain.
 def _duration_asked(situation: str, minutes) -> str:
     if situation == "nap_happened" and minutes:
         return f"The nap is expected to last about {minutes} minutes."
@@ -649,14 +649,15 @@ def _duration_asked(situation: str, minutes) -> str:
     return "They did not give a duration."
 
 
-def _theme_asked(situation: str, theme) -> str:
+def _change_asked(situation: str, interest) -> str:
     if situation == "weather_rain":
-        return ("It started raining, so the rest of the day has been rethemed for "
+        return ("It started raining, so the rest of the day has been moved under "
                 "indoors. Any venue you swap in must work in the rain.")
-    if situation == "change_theme" and theme:
-        return (f"They asked for a \u201c{theme}\u201d day, and the draft has been "
-                "rethemed to match. Any venue you swap in must fit that theme.")
-    return "No theme change was asked for."
+    if situation == "change_interest" and interest:
+        kinds = ", ".join(interest) if not isinstance(interest, str) else interest
+        return (f"They now want {kinds}, and the draft has been changed to match. "
+                "Any venue you swap in should be one of those kinds of place.")
+    return "No change of plan was asked for."
 
 
 def _format_stops_for_prompt(stops: list) -> str:
@@ -701,7 +702,7 @@ class ReplanningAgent:
             .replace("{nap_notes}", ctx.get("nap_notes") or "none")
             .replace("{extra_notes}", ctx.get("extra_notes") or "none")
             .replace("{duration_asked}", _duration_asked(situation, ctx.get("minutes")))
-            .replace("{theme_asked}", _theme_asked(situation, ctx.get("theme")))
+            .replace("{change_asked}", _change_asked(situation, ctx.get("interest")))
             .replace("{kept_stops}", _format_stops_for_prompt(kept))
             .replace("{remaining_stops}", _format_draft_stops_for_prompt(remaining))
             .replace("{candidate_venues}", _format_venue_candidates(candidates))
@@ -711,7 +712,7 @@ class ReplanningAgent:
     def adjust_replan(self, draft_plan, *, current_time, destination, age_months,
                        features=None, transit=None, dining=None, bedtime=None,
                        nap_notes="", extra_notes="", situation="",
-                       minutes=None, theme=None):
+                       minutes=None, interest=None):
         """Given an already-valid rule-based replan draft, proposes a short
         list of edits (never a full regeneration) to the stops still ahead
         of `current_time`, mirroring PlanningAgent.adjust_plan() for the
@@ -744,7 +745,7 @@ class ReplanningAgent:
         ctx = dict(destination=destination, age_months=age_months,
                    current_time=current_time, bedtime=bedtime, dining=dining,
                    nap_notes=nap_notes, extra_notes=extra_notes, transit=transit,
-                   minutes=minutes, theme=theme,
+                   minutes=minutes, interest=interest,
                    strict_schedule=False,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),

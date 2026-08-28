@@ -43,8 +43,11 @@ SITUATION_WORDS = (
                         "quicker than")),
     ("running_behind", ("longer", "running behind", "behind", "late",
                         "delayed", "stay here", "stay put", "overran")),
-    ("change_theme", ("theme", "something different", "change the day",
-                      "indoors instead")),
+    # "indoors instead" is deliberately not here: rain is its own situation
+    # above, and shelter is read from each venue's setting rather than asked
+    # for as a category.
+    ("change_interest", ("something different", "change the day",
+                         "something else", "rather do")),
 )
 
 # Situations the day's shape depends on a number for. The trip page asks with a

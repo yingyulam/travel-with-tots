@@ -54,6 +54,7 @@ from src.data_loader import (
     SUPPORTED_CITIES,
     VENUE_TYPES,
     get_venues,
+    interest_options,
 )
 from src.dates import DAY_TYPES, SEASONS, compute_age, parse_date
 from src.db import (
@@ -111,7 +112,6 @@ from src.interactions import (
     SITUATION_OPTIONS,
     replan,
 )
-from src.itinerary import THEMES
 from src.agent import handle_message
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
@@ -146,7 +146,9 @@ rag.init_index_async()
 # Choice lists the template renders. The vocabularies themselves live in
 # src/form_helpers.py (see TRANSIT_OPTIONS and friends); these two are derived
 # from data the app already owns.
-THEME_OPTIONS = [t["label"] for t in THEMES]
+# The kinds of place a parent can ask for, read from the venues that exist so
+# the form never offers something nothing can satisfy. Computed per request
+# rather than at import, because an import or an approval changes it.
 FEATURE_OPTIONS = list(FEATURE_LABELS.items())
 
 # How many times a parent can say "something's off" and get the plan
@@ -1081,7 +1083,7 @@ def replan_trip_page():
     """The Replan a trip component's own page -- build a sample day, then
     re-plan it for a situation. Reuses /plan-trip/run for the first step."""
     return render_template("replan_trip.html", situation_options=SITUATION_OPTIONS,
-                           theme_options=THEME_OPTIONS)
+                           interest_options=interest_options())
 
 
 @app.route("/replan-trip/run", methods=["POST"])
@@ -1098,7 +1100,7 @@ def replan_trip_run_route():
     result = replan_trip(
         plan=plan, situation=situation, current_time=current_time,
         destination="Vancouver", age_months=24,
-        minutes=data.get("minutes"), theme=data.get("theme"),
+        minutes=data.get("minutes"), interest=data.get("interest"),
     )
     return jsonify(result)
 
@@ -1464,7 +1466,7 @@ def plan():
             nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
             transit=form["transit"], accommodation=form["accommodation"],
             features=form["features"], strict_schedule=form["strict_schedule"],
-            themes=form["themes"], transit_nap=form["transit_nap"],
+            interest=form["interest"], transit_nap=form["transit_nap"],
             model=_chosen_model(request.form.get("model")),
         )
         plans = [Plan.from_dict(result)]
@@ -1508,7 +1510,7 @@ def plan():
         transit_options=TRANSIT_OPTIONS,
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
-        theme_options=THEME_OPTIONS,
+        interest_options=interest_options(),
         transit_nap_options=TRANSIT_NAP_OPTIONS,
         max_naps=MAX_NAPS,
         nap_duration_min=NAP_DURATION_MIN_MINUTES,
@@ -1549,6 +1551,7 @@ def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
         conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
         feature_options=FEATURE_OPTIONS,
         situation_options=SITUATION_OPTIONS,
+        interest_options=interest_options(),
         need_options=NEED_OPTIONS,
         # The custom-duration inputs' min/max come from the same constants the
         # server clamps to, so the browser and the clamp cannot disagree.
@@ -1664,7 +1667,7 @@ def replan_route():
                           get_venues(on_date=parse_date(data.get("trip_date"))),
                           data.get("features") or [],
                           bedtime=data.get("bedtime"), minutes=data.get("minutes"),
-                          theme=data.get("theme")))
+                          interest=data.get("interest")))
 
 
 @app.route("/replan/adjust", methods=["POST"])
@@ -1693,7 +1696,7 @@ def replan_adjust_route():
         destination=data.get("destination", ""), age_months=int(data.get("age_months") or 0),
         features=data.get("features") or [], transit=data.get("transit") or [],
         dining=data.get("dining"), bedtime=data.get("bedtime"),
-        minutes=data.get("minutes"), theme=data.get("theme"),
+        minutes=data.get("minutes"), interest=data.get("interest"),
         nap_notes=data.get("nap_notes", ""), extra_notes=extra_notes,
         model=_chosen_model(data.get("model")),
     )

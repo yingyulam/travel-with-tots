@@ -20,7 +20,7 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
                stop_count=3, dining="dine_out", features=None, naps=None,
                preferred_lunch_time="", nap_notes="", extra_notes="",
                transit=None, accommodation="", strict_schedule=False,
-               themes=None, transit_nap="", model=DEFAULT_MODEL) -> dict:
+               interest=None, transit_nap="", model=DEFAULT_MODEL) -> dict:
     """Build a full day plan: a rule-based draft, then AI-smoothed. Always
     returns a usable plan -- if the AI step fails, falls back to the
     unadjusted draft rather than raising, so every caller gets that
@@ -38,7 +38,7 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
         "wake_up": wake_up, "bedtime": bedtime, "naps": naps or [],
         "age_years": str(age_months // 12), "age_months": str(age_months % 12),
         "destination": destination, "stop_count": stop_count,
-        "features": features or [], "themes": themes or [], "dining": dining,
+        "features": features or [], "interest": interest or [], "dining": dining,
         "accommodation": accommodation, "preferred_lunch_time": preferred_lunch_time,
         "transit_nap": transit_nap,
     }

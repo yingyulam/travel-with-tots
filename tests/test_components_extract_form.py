@@ -21,7 +21,7 @@ from src.form_helpers import (
 EXTRACTABLE_FIELDS = (
     "wake_up", "bedtime", "age_years", "age_months", "destination",
     "accommodation", "stop_count", "preferred_lunch_time", "strict_schedule",
-    "transit", "dining", "transit_nap", "features", "themes", "naps",
+    "transit", "dining", "transit_nap", "features", "interest", "naps",
     "nap_notes", "extra_notes",
 )
 
@@ -60,14 +60,14 @@ class ExtractFormTest(unittest.TestCase):
     def test_populates_what_the_description_supplied(self):
         result, _ = _run(_reply(
             wake_up="07:30", bedtime="19:00", destination="Kitsilano",
-            transit=["stroller"], dining="on_the_go", themes=["Outdoorsy"]))
+            transit=["stroller"], dining="on_the_go", interest=["park"]))
         form = result["form"]
         self.assertEqual(form["wake_up"], "07:30")
         self.assertEqual(form["bedtime"], "19:00")
         self.assertEqual(form["destination"], "Kitsilano")
         self.assertEqual(form["transit"], ["stroller"])
         self.assertEqual(form["dining"], "on_the_go")
-        self.assertEqual(form["themes"], ["Outdoorsy"])
+        self.assertEqual(form["interest"], ["park"])
 
     def test_reports_only_the_fields_actually_supplied(self):
         result, _ = _run(_reply(destination="Vancouver", nap_notes="light sleeper"))
@@ -172,10 +172,10 @@ class ExtractionRegressionTest(unittest.TestCase):
         self.assertGreater(naps[0]["duration_min"], 0)  # defaulted, not dropped
         self.assertIn("naps", result["found"])
 
-    def test_several_themes_are_kept(self):
-        # "a park and a museum" is two themes, not one.
-        result, _ = _run(_reply(themes=["Outdoorsy", "Culture"]))
-        self.assertEqual(result["form"]["themes"], ["Outdoorsy", "Culture"])
+    def test_several_interests_are_kept(self):
+        # "a park and a museum" is two kinds of place, not one.
+        result, _ = _run(_reply(interest=["park", "museum"]))
+        self.assertEqual(result["form"]["interest"], ["park", "museum"])
 
     def test_a_city_destination_reaches_real_venues(self):
         # The quiet one: a destination the venue table cannot match leaves the
@@ -198,9 +198,14 @@ class ExtractionRegressionTest(unittest.TestCase):
         # invents one produces a plausible wrong nap rather than a blank.
         self.assertIn("never a number you picked yourself", prompt)
         self.assertIn("only the city", prompt)
-        self.assertIn("a park is Outdoorsy", prompt)
+        # The interest field names the kinds of place directly, so the
+        # instruction has to say "use the word for the place itself" -- the
+        # themes it replaced needed a mapping ("a park is Outdoorsy") that was
+        # exactly the second vocabulary this design removed.
+        self.assertIn("using only these words", prompt)
+        self.assertIn("Leave it empty when they did not ask", prompt)
         # Known unfixed: rule 1 ("nothing may be dropped") beats rule 2 in
-        # practice, so a clause already captured by stop_count, themes and
+        # practice, so a clause already captured by stop_count, interest and
         # features is copied into extra_notes as well. Rewording rule 2 to
         # quote the offending sentence made it worse, not better: the model
         # echoed the quoted string back and started duplicating transit too.
@@ -222,9 +227,9 @@ class VocabularyGuardTest(unittest.TestCase):
     def test_invented_list_values_are_dropped_but_valid_ones_kept(self):
         result, _ = _run(_reply(
             transit=["stroller", "helicopter"],
-            themes=["Outdoorsy", "Extreme Sports"]))
+            interest=["park", "Extreme Sports"]))
         self.assertEqual(result["form"]["transit"], ["stroller"])
-        self.assertEqual(result["form"]["themes"], ["Outdoorsy"])
+        self.assertEqual(result["form"]["interest"], ["park"])
 
     def test_a_wholly_invented_list_is_not_reported_as_found(self):
         result, _ = _run(_reply(transit=["helicopter", "submarine"]))
@@ -292,7 +297,7 @@ class ExtractedFormDrivesThePlannerTest(unittest.TestCase):
                 stop_count=int(form["stop_count"]), dining=form["dining"],
                 features=form["features"], naps=form["naps"],
                 nap_notes=form["nap_notes"], extra_notes=form["extra_notes"],
-                transit=form["transit"], themes=form["themes"])
+                transit=form["transit"], interest=form["interest"])
         self.assertTrue(plan["stops"])
 
 
@@ -441,8 +446,8 @@ class GroundingTest(unittest.TestCase):
         # there is nothing to compare these against. The prompt is what keeps
         # them honest. Asserted so nobody "fixes" this into dropping them.
         result, _ = _run(_reply(transit=["car"], transit_nap="yes",
-                                themes=["Outdoorsy"]),
+                                interest=["park"]),
                          description="we'll drive and he sleeps in the buggy")
         self.assertEqual(result["form"]["transit"], ["car"])
         self.assertEqual(result["form"]["transit_nap"], "yes")
-        self.assertEqual(result["form"]["themes"], ["Outdoorsy"])
+        self.assertEqual(result["form"]["interest"], ["park"])

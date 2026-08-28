@@ -49,7 +49,8 @@ class ReadingTheSituationTest(unittest.TestCase):
             ("we finished early", "finished_early"),
             ("we want to stay here longer", "running_behind"),
             ("we're running behind", "running_behind"),
-            ("let's change the theme", "change_theme"),
+            ("let's do something different", "change_interest"),
+            ("we'd rather do something else", "change_interest"),
         ):
             with self.subTest(message=message):
                 self.assertEqual(read_situation(message), expected)

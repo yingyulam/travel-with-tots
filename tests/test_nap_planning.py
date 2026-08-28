@@ -29,7 +29,7 @@ ON = date(2026, 9, 15)
 BASE = {"wake_up": "07:00", "bedtime": "19:30", "transit_nap": "yes",
         "destination": "Vancouver", "transit": ["car"], "stop_count": "2",
         "dining": "on_the_go", "preferred_lunch_time": "11:30", "features": [],
-        "age_months": 18, "age_years": 1, "themes": [],
+        "age_months": 18, "age_years": 1, "interest": [],
         "trip_date": ON.isoformat()}
 
 
@@ -83,12 +83,15 @@ class NapIsAPreferenceTest(unittest.TestCase):
         self.assertIsNotNone(nap)
         self.assertEqual(nap["venue"]["name"], "Gallery Open Late")
 
-    def test_a_rainy_day_nap_is_still_indoors(self):
-        # Nap-friendliness first, theme second, so the preference order that
-        # made a rainy-day nap a mall stroll rather than a park is preserved.
-        pool = [_venue("A Park", "park", True), _venue("A Mall", "mall", True)]
-        self.assertEqual(_nap(pool, themes=["Rainy-day"])["venue"]["name"],
-                         "A Mall")
+    def test_a_nap_prefers_what_the_parent_asked_for_among_restful_options(self):
+        # Nap-friendliness first, interest second. Two malls, because the
+        # morning activity slot picks before the nap slot does and takes the
+        # first interest match -- so with one mall the nap only ever gets the
+        # park, whatever the tiebreak says.
+        pool = [_venue("A Park", "park", True),
+                _venue("Mall One", "mall", True),
+                _venue("Mall Two", "mall", True)]
+        self.assertEqual(_nap(pool, interest=["mall"])["venue"]["type"], "mall")
 
 
 class NapDurationTest(unittest.TestCase):

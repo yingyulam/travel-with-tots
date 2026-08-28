@@ -62,8 +62,8 @@ class ReplanTripTest(_SeededDBTest):
             "input_tokens": 1, "output_tokens": 1,
         }
         with mock.patch.object(ReplanningAgent, "adjust_replan", return_value=adjustment):
-            result = replan_trip(plan=plan, situation="change_theme",
-                                 current_time="11:00", theme="Rainy-day")
+            result = replan_trip(plan=plan, situation="change_interest",
+                                 current_time="11:00", interest=["museum"])
         self.assertTrue(result["adjusted"])
         self.assertEqual(result["stops"][1]["reason"], "adjusted")
 

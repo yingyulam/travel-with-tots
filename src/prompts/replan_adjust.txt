@@ -10,7 +10,7 @@ Trip context:
 - Situation just now: {situation_label}
 - Current time: {current_time}
 - What they asked for: {duration_asked}
-- Theme: {theme_asked}
+- Change asked for: {change_asked}
 - Destination: {destination}
 - Child's age: {age_months} months
 - Bedtime: {bedtime}

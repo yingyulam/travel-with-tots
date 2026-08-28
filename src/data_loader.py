@@ -139,6 +139,24 @@ def is_nap_friendly(venue):
 UNRANKED = 10 ** 6
 
 
+def interest_options():
+    """The kinds of place a parent can ask for, in VENUE_TYPES order.
+
+    This is the whole of what replaced the theme system, and it is deliberately
+    the type list itself rather than a grouping over it. Groups were tried on
+    paper and added nothing: because an interest only ever *sorts*, asking for
+    "museum" still reaches the aquarium a few places down, so the extra
+    vocabulary would only have been another thing to keep in sync with
+    VENUE_TYPES -- which is exactly how the themes rotted, with 10 of 14 types
+    ending up in no theme at all.
+
+    Only types with venues behind them, because a choice that returns nothing
+    is worse than not offering it.
+    """
+    in_use = db.get_venue_types_in_use()
+    return [t for t in VENUE_TYPES if t in in_use]
+
+
 def maps_url(name, city=SUPPORTED_CITIES[0]):
     """Build a Google Maps search link from a venue name and city."""
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"

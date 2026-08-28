@@ -201,7 +201,7 @@ if __name__ == "__main__":
 
 class ReplanContextTest(unittest.TestCase):
     """What the adjuster is told. It used to be given the situation's label but
-    neither the duration nor the theme, so it could quietly undo the parent's
+    neither the duration nor what was asked for, so it could quietly undo the parent's
     explicit request while staying inside its own nudge allowance."""
 
     def setUp(self):
@@ -237,9 +237,9 @@ class ReplanContextTest(unittest.TestCase):
         self.assertIn("90 minutes", prompt)
         self.assertIn("Do not pull stops back", prompt)
 
-    def test_the_target_theme_reaches_the_prompt(self):
-        prompt = self._prompt(situation="change_theme", theme="Rainy-day")
-        self.assertIn("Rainy-day", prompt)
+    def test_what_the_parent_now_wants_reaches_the_prompt(self):
+        prompt = self._prompt(situation="change_interest", interest=["museum"])
+        self.assertIn("museum", prompt)
 
     def test_rain_says_the_venue_must_work_indoors(self):
         prompt = self._prompt(situation="weather_rain")
@@ -249,10 +249,10 @@ class ReplanContextTest(unittest.TestCase):
         prompt = self._prompt(situation="skip_next")
         self.assertIn("did not give a duration", prompt)
 
-    def test_the_note_only_situation_carries_no_theme_or_duration(self):
+    def test_the_note_only_situation_carries_no_change_or_duration(self):
         prompt = self._prompt(situation="something_else")
         self.assertIn("did not give a duration", prompt)
-        self.assertIn("No theme change", prompt)
+        self.assertIn("No change of plan", prompt)
 
 
 class ReplanPastTimeGuardTest(unittest.TestCase):

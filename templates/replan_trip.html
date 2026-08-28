@@ -29,11 +29,11 @@
       <input type="number" id="replan-trip-minutes" min="0">
     </label>
     <label class="field">
-      <span>Theme <em>(for "Change the theme", optional)</em></span>
-      <select id="replan-trip-theme">
+      <span>Kind of place <em>(for "Do something else", optional)</em></span>
+      <select id="replan-trip-interest">
         <option value="">--</option>
-        {% for theme in theme_options %}
-        <option value="{{ theme }}">{{ theme }}</option>
+        {% for kind in interest_options|sort %}
+        <option value="{{ kind }}">{{ kind }}</option>
         {% endfor %}
       </select>
     </label>

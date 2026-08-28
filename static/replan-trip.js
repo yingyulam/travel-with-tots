@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const currentTimeInput = document.getElementById("replan-trip-current-time");
   const situationSelect = document.getElementById("replan-trip-situation");
   const minutesInput = document.getElementById("replan-trip-minutes");
-  const themeSelect = document.getElementById("replan-trip-theme");
+  const interestSelect = document.getElementById("replan-trip-interest");
   const runBtn = document.getElementById("replan-trip-run");
   const heading = document.getElementById("replan-trip-heading");
   const originalList = document.getElementById("replan-trip-original-list");
@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
           situation: situationSelect.value,
           current_time: currentTimeInput.value,
           minutes: minutesInput.value ? Number(minutesInput.value) : null,
-          theme: themeSelect.value || null,
+          interest: interestSelect.value ? [interestSelect.value] : null,
         }),
       });
       const data = await res.json();

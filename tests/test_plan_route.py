@@ -16,8 +16,9 @@ BASE_FORM = {
 class PlanRouteFormWiringTest(unittest.TestCase):
     """The /plan route hands the form to plan_trip field by field, so a field
     can be collected, validated, rendered, and still never reach the planner.
-    That happened to `themes`: selecting one had no effect on the plan for as
-    long as the argument was missing from the call, with nothing failing.
+    That happened to `themes` (now `interest`): selecting one had no effect on
+    the plan for as long as the argument was missing from the call, with
+    nothing failing.
     """
 
     def setUp(self):
@@ -34,12 +35,17 @@ class PlanRouteFormWiringTest(unittest.TestCase):
         match = re.search(r'class="plan-option-title">([^<]+)<', html)
         return match.group(1).strip() if match else None
 
-    def test_no_theme_gives_a_mixed_day(self):
-        self.assertEqual(self._plan_label(), "Mixed")
+    def test_asking_for_nothing_gives_a_plain_day_out(self):
+        self.assertEqual(self._plan_label(), "A day out")
 
-    def test_a_chosen_theme_reaches_the_planner(self):
-        self.assertEqual(self._plan_label(themes=["Outdoorsy"]), "Outdoorsy")
-        self.assertEqual(self._plan_label(themes=["Culture"]), "Culture")
+    def test_a_chosen_interest_reaches_the_planner(self):
+        self.assertEqual(self._plan_label(interest=["museum"]), "Museum")
+        self.assertEqual(self._plan_label(interest=["garden"]), "Garden")
+
+    def test_an_interest_the_app_does_not_know_is_dropped(self):
+        # read_form validates against VENUE_TYPES, so a stale form or a
+        # hand-made post cannot ask for something nothing can satisfy.
+        self.assertEqual(self._plan_label(interest=["Culture"]), "A day out")
 
     def test_transit_nap_reaches_the_adjuster_prompt(self):
         # Being passed to plan_trip is not enough: this field only matters if
@@ -61,7 +67,7 @@ class PlanRouteFormWiringTest(unittest.TestCase):
                               captured["prompt"])
 
     def test_every_form_field_the_planner_accepts_is_actually_passed(self):
-        # Guards the whole class of bug rather than just themes: if plan_trip
+        # Guards the whole class of bug rather than just interest: if plan_trip
         # grows a parameter that read_form already collects, wire it up or add
         # it to the exemptions below with a reason. Asserts on the real call
         # rather than on the route's source text, so how the value is spelled

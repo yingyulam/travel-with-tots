@@ -1,6 +1,6 @@
 """Domain objects for the two-page flow.
 
-``Plan``: one candidate day (theme label, blurb, ordered stops). The planning
+``Plan``: one candidate day (label, blurb, ordered stops). The planning
             page compares several of these; ``generate_plans`` produces them.
 ``Trip``: created when the parent picks a plan to start. It holds the chosen
             plan as the immutable original plus any re-planned versions and the
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Plan:
-    """A single candidate day: a theme label, a blurb, and ordered stops."""
+    """A single candidate day: a label, a blurb, and ordered stops."""
 
     label: str
     blurb: str

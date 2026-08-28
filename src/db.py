@@ -1214,6 +1214,21 @@ def _candidate_where_clause(city):
             "AND close_time != ''"), source_params + [f"%{city}%"]
 
 
+def get_venue_types_in_use():
+    """The venue types at least one searchable venue actually has.
+
+    Read from the table rather than hardcoded, so the plan form never offers a
+    kind of place there is nothing behind, and a type starts being offered the
+    moment a venue uses it. Same idea as data_loader.SUPPORTED_CITIES: offer
+    what the data can support.
+    """
+    source_clause, source_params = _verified_source_clause()
+    with closing(connect()) as conn:
+        return {row["type"] for row in conn.execute(
+            f"SELECT DISTINCT type FROM venues WHERE {source_clause} "
+            "AND type IS NOT NULL AND type != ''", source_params)}
+
+
 def get_venues_in_city(city):
     """Every verified venue in `city` (substring match, same as
     get_candidate_venues). Deliberately unfiltered beyond the city: callers

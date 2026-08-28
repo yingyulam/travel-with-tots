@@ -15,7 +15,7 @@ from ..interactions import replan
 
 def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
                  features=None, transit=None, dining=None, bedtime=None,
-                 minutes=None, theme=None, nap_notes="", extra_notes="",
+                 minutes=None, interest=None, nap_notes="", extra_notes="",
                  model=DEFAULT_MODEL) -> dict:
     """Re-plan the rest of the day: a rule-based draft (stops at/before
     current_time kept as-is, remaining stops re-decided for the situation),
@@ -28,7 +28,7 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
     `model` is the one the parent picked in the chat widget's dropdown, the
     same as planning, so one choice governs every AI call the app makes."""
     draft = replan(plan, situation, current_time, get_venues(), features or [],
-                    bedtime=bedtime, minutes=minutes, theme=theme)
+                    bedtime=bedtime, minutes=minutes, interest=interest)
     adjusted = True
     try:
         adjustment = ReplanningAgent(model).adjust_replan(
@@ -38,8 +38,8 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
             extra_notes=extra_notes, situation=situation,
             # Also to the AI pass, not just the rule-based one: without these
             # it cannot tell a three-hour nap from a twenty-minute one, or know
-            # which theme the draft was rebuilt for.
-            minutes=minutes, theme=theme,
+            # what the draft was rebuilt for.
+            minutes=minutes, interest=interest,
         )
         draft["stops"] = adjustment["stops"]
     except (ReplanningAgentError, requests.exceptions.RequestException, KeyError) as e:

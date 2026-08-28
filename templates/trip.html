@@ -92,12 +92,12 @@
         <button type="button" class="tap-btn" id="behind-custom-go">Use this</button>
       </div>
     </div>
-    <div class="nap-prompt" id="theme-prompt" hidden>
-      <p>What kind of day instead?</p>
-      <div class="chips" id="theme-choice-bar">
-        <button type="button" class="tap-btn" data-theme="Outdoorsy">Outdoorsy</button>
-        <button type="button" class="tap-btn" data-theme="Rainy-day">Rainy-day</button>
-        <button type="button" class="tap-btn" data-theme="Culture">Culture</button>
+    <div class="nap-prompt" id="interest-prompt" hidden>
+      <p>What would you rather do?</p>
+      <div class="chips" id="interest-choice-bar">
+        {% for kind in interest_options|sort %}
+        <button type="button" class="tap-btn" data-interest="{{ kind }}">{{ kind }}</button>
+        {% endfor %}
       </div>
     </div>
     <div class="nap-prompt" id="replan-confirm" hidden>
@@ -452,10 +452,12 @@
   // smooth it, in one request -- same draft-then-adjust pattern the
   // planning page uses. Always installs the result as the single
   // "Updated" version. minutes is the parent-entered duration (nap
-  // length / how far behind); theme is the parent-picked target for
-  // "change_theme"; note is an optional one-off addition to extra_notes
-  // for weather_rain/change_theme, never stored back into tripData.
-  async function runReplan(situation, minutes, theme, note) {
+  // length / how far behind); interest is the kind of place the parent
+  // picked for "change_interest"; note is an optional one-off addition to
+  // extra_notes, never stored back into tripData. "It's raining" needs no
+  // pick: it reads each venue's setting, because rain calls for shelter
+  // rather than for a category.
+  async function runReplan(situation, minutes, interest, note) {
     if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
     status.hidden = false;
     status.textContent = "Updating your plan…";
@@ -476,7 +478,7 @@
           // Not `minutes || null`: that turned a typed 0 into "no answer",
           // which the server then read as its 45 or 90 minute default.
           minutes: (minutes === null || minutes === undefined) ? null : minutes,
-          theme: theme || null,
+          interest: interest ? [interest] : null,
           nap_notes: tripData.nap_notes,
           extra_notes: tripData.extra_notes,
           // The chat widget's dropdown is where a model is picked, and this
@@ -524,7 +526,7 @@
   const napAsk = document.getElementById("nap-ask");
   const napDuration = document.getElementById("nap-duration");
   const behindPrompt = document.getElementById("behind-prompt");
-  const themePrompt = document.getElementById("theme-prompt");
+  const interestPrompt = document.getElementById("interest-prompt");
   const replanConfirm = document.getElementById("replan-confirm");
   const replanConfirmText = document.getElementById("replan-confirm-text");
   const replanNoteText = document.getElementById("replan-note-text");
@@ -533,7 +535,7 @@
     napAsk.hidden = false;      // reset the nap prompt to its first step
     napDuration.hidden = true;
     behindPrompt.hidden = true;
-    themePrompt.hidden = true;
+    interestPrompt.hidden = true;
     replanConfirm.hidden = true;
     // The note is a panel-level field now, not part of any prompt, so it is
     // deliberately not cleared here: typing a note and then picking a duration
@@ -550,13 +552,13 @@
   // Nothing re-plans until the parent confirms and picks a method.
   let pendingSituation = null;
   let pendingMinutes = null;
-  let pendingTheme = null;
-  function showReplanConfirm(situation, minutes, theme) {
+  let pendingInterest = null;
+  function showReplanConfirm(situation, minutes, interest) {
     pendingSituation = situation;
     pendingMinutes = minutes;
-    pendingTheme = theme || null;
-    const label = pendingTheme
-      ? `Change the theme to “${pendingTheme}”`
+    pendingInterest = interest || null;
+    const label = pendingInterest
+      ? `Look for a ${pendingInterest} instead`
       : (SITUATION_LABELS_JS[situation] || "Something happened");
     replanConfirmText.textContent = `${label}. Want to replan?`;
     replanConfirm.hidden = false;
@@ -583,11 +585,11 @@
   document.getElementById("replan-confirm-yes").addEventListener("click", () => {
     const note = replanNoteText.value.trim();
     hidePrompts();
-    runReplan(pendingSituation, pendingMinutes, pendingTheme, note);
+    runReplan(pendingSituation, pendingMinutes, pendingInterest, note);
   });
 
   // Situation buttons. "Nap happened here" and "Running behind" ask for a
-  // duration first; "Change the theme" asks which theme first; the rest go
+  // duration first; "Do something else" asks what instead first; the rest go
   // straight to the replan confirm prompt.
   document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -598,8 +600,8 @@
         (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
         return;
       }
-      if (situation === "change_theme") {
-        themePrompt.hidden = false;
+      if (situation === "change_interest") {
+        interestPrompt.hidden = false;
         return;
       }
       showReplanConfirm(situation, null);
@@ -628,11 +630,11 @@
   wireCustomMinutes("nap-custom-mins", "nap-custom-go", "nap_happened");
   wireCustomMinutes("behind-custom-mins", "behind-custom-go", "running_behind");
 
-  // Pick a theme -> confirm before re-picking the remaining stops toward it.
-  document.getElementById("theme-choice-bar").querySelectorAll("[data-theme]").forEach((btn) => {
+  // Pick a kind of place -> confirm before re-picking the remaining stops.
+  document.getElementById("interest-choice-bar").querySelectorAll("[data-interest]").forEach((btn) => {
     btn.addEventListener("click", () => {
       hidePrompts();
-      showReplanConfirm("change_theme", null, btn.dataset.theme);
+      showReplanConfirm("change_interest", null, btn.dataset.interest);
     });
   });
 

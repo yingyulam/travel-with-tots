@@ -176,13 +176,15 @@
     </label>
 
     <fieldset class="group">
-      <legend>Themes <em>(optional -- defaults to a mix of all three)</em></legend>
+      <legend>Any particular kind of place? <em>(optional)</em></legend>
+      <p class="field-hint">Leave it blank for a mix, which is usually the best
+        answer. Picking some just brings them forward.</p>
       <div class="chips">
-        {% for theme_label in theme_options %}
+        {% for kind in interest_options|sort %}
         <label class="chip">
-          <input type="checkbox" name="themes" value="{{ theme_label }}"
-                 {% if theme_label in form.themes %}checked{% endif %}>
-          <span>{{ theme_label }}</span>
+          <input type="checkbox" name="interest" value="{{ kind }}"
+                 {% if kind in form.interest %}checked{% endif %}>
+          <span>{{ kind }}</span>
         </label>
         {% endfor %}
       </div>
@@ -224,7 +226,7 @@
   <p class="meta">Built from the hours we hold, which can be out of date. Check a stop's map link before you go.</p>
   <div class="plan-grid" id="plan-grid">
     {% for plan in plans %}
-    <div class="plan-option" data-theme="{{ plan.label }}" data-source="{{ plan.source }}">
+    <div class="plan-option" data-plan="{{ plan.label }}" data-source="{{ plan.source }}">
       <h3 class="plan-option-title">{{ plan.label }}</h3>
       <p class="plan-blurb">{{ plan.blurb }}</p>
       <ol class="preview-list">
