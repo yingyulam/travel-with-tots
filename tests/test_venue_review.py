@@ -156,7 +156,7 @@ class ReviewPageTest(_ReviewTest):
 
 class CandidateBatchTest(_ReviewTest):
     def _propose(self, name="Bloedel Conservatory", **fields):
-        candidates.add([{"name": name, "type": "garden", "category": "activity",
+        candidates.add([{"name": name, "type": "garden",
                          "city": "Vancouver", "lat": 49.24, "lng": -123.11,
                          "source_url": "https://example.org/b",
                          "evidence": "domed garden", **fields}])
@@ -171,7 +171,6 @@ class CandidateBatchTest(_ReviewTest):
         row = self._propose()
         self._post("approve", [row["id"]], **{
             f"{row['id']}-name": row["name"],
-            f"{row['id']}-category": "activity",
             f"{row['id']}-city": "Vancouver",
             f"{row['id']}-open_time": "10:00",
             f"{row['id']}-close_time": "17:00",
@@ -187,19 +186,10 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["kid_friendly"], 1)
         self.assertEqual(candidates.load()[0]["status"], candidates.APPROVED)
 
-    def test_approving_without_a_category_is_refused(self):
-        # A venue with no category fills neither an activity nor a food slot,
-        # but would still be eligible as a nap stop.
-        row = self._propose(category="")
-        self._post("approve", [row["id"]], **{f"{row['id']}-category": ""})
-        self.assertIsNone(self._venue("Bloedel Conservatory"))
-        self.assertEqual(candidates.load()[0]["status"], candidates.PENDING)
-
     def test_an_unticked_candidate_stays_pending(self):
         keep = self._propose("Keep Pending")
         other = self._propose("Approve Me")
         self._post("approve", [other["id"]], **{
-            f"{other['id']}-category": "activity",
             f"{other['id']}-city": "Vancouver",
         })
         by_name = {r["name"]: r["status"] for r in candidates.load()}
@@ -266,7 +256,6 @@ class CandidateBatchTest(_ReviewTest):
         # flags, which looks like the data was never entered.
         row = self._propose()
         self._post("approve", [row["id"]], **{
-            f"{row['id']}-category": "activity",
             f"{row['id']}-city": "Vancouver",
             f"{row['id']}-open_time": "10:00",
             f"{row['id']}-close_time": "17:00",

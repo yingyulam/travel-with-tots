@@ -12,17 +12,17 @@ from src.components.geocode import GeocodeError, geocode, reverse_geocode
 
 
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
-                   category="activity", venue_type="park", source="curated",
+                   venue_type="park", source="curated",
                    lat=None, lng=None, **flags):
     columns = {"kid_friendly": 1, "has_family_room": 0, "has_nursing_room": 0,
                "stroller_accessible": 0, "nap_friendly": 0, "can_eat": 0}
     columns.update({k: int(v) for k, v in flags.items()})
     conn.execute(
-        "INSERT INTO venues (name, city, neighbourhood, category, type, source, "
+        "INSERT INTO venues (name, city, neighbourhood, type, source, "
         "can_eat, kid_friendly, has_family_room, has_nursing_room, "
         "stroller_accessible, nap_friendly, lat, lng) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (name, city, neighbourhood, category, venue_type, source,
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, city, neighbourhood, venue_type, source,
          columns["can_eat"], columns["kid_friendly"], columns["has_family_room"],
          columns["has_nursing_room"], columns["stroller_accessible"],
          columns["nap_friendly"], lat, lng))

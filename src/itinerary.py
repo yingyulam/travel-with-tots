@@ -251,25 +251,48 @@ def _lunch_time(stops, naps, preferred_lunch_min=None):
     return datetime(1900, 1, 1, target // 60, target % 60)
 
 
-def _lunch_stop(food_pool, used, stops, naps, preferred_lunch_min=None):
+def _stop_before(stops, when):
+    """The last stop starting before `when`, so a lunch block can say where to
+    look. None when lunch lands before anything else."""
+    earlier = [s for s in stops if _parse_display(s["time"]) <= when and s.get("venue")]
+    return earlier[-1]["venue"] if earlier else None
+
+
+def _lunch_stop(stops, naps, preferred_lunch_min=None):
     """A lunch to fit in -- a meal, not one of the day's stops.
 
-    Picks a place you can eat at (restaurant, cafe, or a mall food court) that
-    is open for the whole lunch block at the chosen time. Returns None if
-    nothing suitable is open.
+    Lunch happens at a stop the day already includes, when one of them serves
+    food and is open for the whole block. Eating where you already are removes
+    a travel leg, which is worth more to a tired parent than a nicer lunch
+    across town.
+
+    Otherwise the block names no venue. The planner used to insert the nearest
+    venue that served food, which sent a parent standing at Stanley Park to a
+    mall seven kilometres south; the table holds attractions, not restaurants,
+    so it has no good answer and says so. Finding somewhere is a live search
+    from where they actually are, which has current hours and reviews.
     """
     when = _lunch_time(stops, naps, preferred_lunch_min)
     start_min = when.hour * 60 + when.minute
-    venue = _pick(food_pool, used, start_min, stop_duration("meal"))
-    if venue is None:
-        return None
-    spot = "food court" if venue["type"] == "mall" else venue["type"]
+    on_the_day = [s["venue"] for s in stops
+                  if s.get("venue") and s["venue"].get("can_eat")]
+    venue = next((v for v in on_the_day
+                  if venue_open_for(v, start_min, stop_duration("meal"))), None)
+
+    if venue is not None:
+        spot = "food court" if venue["type"] == "mall" else venue["type"]
+        reason = (f"Eat at the {spot} at {venue['name']} -- you are already "
+                  f"there, so no extra travel. Plan {LUNCH_DURATION_LABEL}.")
+    else:
+        near = _stop_before(stops, when)
+        where = f" near {near['name']}" if near else " nearby"
+        reason = (f"Find lunch{where} -- plan {LUNCH_DURATION_LABEL}. "
+                  "Use Find nearby for somewhere open now.")
     return {
         "time": _format(when),
         "kind": "meal",
         "venue": venue,
-        "reason": (f"Lunch break at this {spot} in {venue['neighbourhood']} "
-                   f"-- plan {LUNCH_DURATION_LABEL}. Fit it in around your stops."),
+        "reason": reason,
         "duration": LUNCH_DURATION_LABEL,
     }
 
@@ -283,23 +306,17 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
     def _matches_theme(venue):
         return venue["type"] in theme["types"]
 
-    activities = [v for v in matches
-                  if v["category"] == "activity" and _matches_theme(v)]
-    activities = activities or [v for v in matches if v["category"] == "activity"]
+    activities = [v for v in matches if _matches_theme(v)]
+    activities = activities or list(matches)
 
-    # Lunch spots: anything you can eat at -- restaurants, cafes, and a mall
-    # food court. Prefer venues that fit the theme (a cosy cafe on a rainy day),
-    # then real food venues over a food court.
-    food = sorted((v for v in matches if v.get("can_eat")),
-                  key=lambda v: (0 if _matches_theme(v) else 1,
-                                 0 if v["category"] == "food" else 1))
+    # No lunch pool: lunch is taken at a stop the day already includes, or it
+    # is a block with a handoff. See _lunch_stop.
 
-    # Nap spots are stroller/carrier rests at parks, gardens or a mall stroll --
-    # never a dining venue. Theme-matching spots come first, so a rainy-day nap
-    # is an indoor mall stroll rather than an outdoor park (with parks as a
-    # graceful fallback so a nap is never dropped for lack of a themed spot).
-    nap_candidates = [v for v in matches
-                      if v.get("nap_friendly") and v["category"] != "food"]
+    # Nap spots are stroller/carrier rests at parks, gardens or a mall stroll.
+    # Theme-matching spots come first, so a rainy-day nap is an indoor mall
+    # stroll rather than an outdoor park (with parks as a graceful fallback so
+    # a nap is never dropped for lack of a themed spot).
+    nap_candidates = [v for v in matches if v.get("nap_friendly")]
     naps_pool = sorted(nap_candidates,
                        key=lambda v: 0 if _matches_theme(v) else 1) or activities
 
@@ -336,10 +353,8 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
     # Dining out adds a lunch to fit in around midday -- a meal, not one of the
     # day's stops, so it never displaces an activity.
     if dining == "dine_out":
-        lunch = _lunch_stop(food, used, stops, naps, preferred_lunch_min)
-        if lunch:
-            stops.append(lunch)
-            stops.sort(key=lambda s: _parse_display(s["time"]))
+        stops.append(_lunch_stop(stops, naps, preferred_lunch_min))
+        stops.sort(key=lambda s: _parse_display(s["time"]))
     return stops
 
 

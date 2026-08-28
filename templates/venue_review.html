@@ -55,12 +55,6 @@
           <input type="text" name="{{ c.id }}-name" value="{{ c.name }}"></label>
         <label class="field"><span>Type</span>
           <input type="text" name="{{ c.id }}-type" value="{{ c.type }}" placeholder="park, cafe, museum"></label>
-        <label class="field"><span>Category</span>
-          <select name="{{ c.id }}-category">
-            <option value="" {{ 'selected' if not c.category }}>choose one</option>
-            <option value="activity" {{ 'selected' if c.category == 'activity' }}>activity</option>
-            <option value="food" {{ 'selected' if c.category == 'food' }}>food</option>
-          </select></label>
         <label class="field"><span>Neighbourhood</span>
           <input type="text" name="{{ c.id }}-neighbourhood" value="{{ c.neighbourhood }}"></label>
         <label class="field"><span>City</span>

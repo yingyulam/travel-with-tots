@@ -1,88 +1,7 @@
 [
   {
-    "name": "Rocky Mountain Flatbread",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "Kitsilano",
-    "kid_friendly": true,
-    "has_family_room": true,
-    "has_nursing_room": true,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "11:00",
-    "close": "22:00",
-    "lat": null,
-    "lng": null
-  },
-  {
-    "name": "Nourish Kitchen",
-    "type": "cafe",
-    "category": "food",
-    "neighbourhood": "Mount Pleasant",
-    "kid_friendly": true,
-    "has_family_room": false,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": true,
-    "can_eat": true,
-    "open": "08:00",
-    "close": "16:00",
-    "lat": null,
-    "lng": null
-  },
-  {
-    "name": "Tacofino Gastown",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "Gastown",
-    "kid_friendly": true,
-    "has_family_room": false,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "11:00",
-    "close": "23:00",
-    "lat": null,
-    "lng": null
-  },
-  {
-    "name": "Medina Cafe",
-    "type": "cafe",
-    "category": "food",
-    "neighbourhood": "Downtown",
-    "kid_friendly": false,
-    "has_family_room": false,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "08:00",
-    "close": "15:00",
-    "lat": null,
-    "lng": null
-  },
-  {
-    "name": "Kokomo Foods",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "Chinatown",
-    "kid_friendly": true,
-    "has_family_room": false,
-    "has_nursing_room": true,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "11:00",
-    "close": "21:00",
-    "lat": null,
-    "lng": null
-  },
-  {
     "name": "Science World",
     "type": "museum",
-    "category": "activity",
     "neighbourhood": "False Creek",
     "kid_friendly": true,
     "has_family_room": true,
@@ -98,7 +17,6 @@
   {
     "name": "Vancouver Aquarium",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "Stanley Park",
     "kid_friendly": true,
     "has_family_room": true,
@@ -114,7 +32,6 @@
   {
     "name": "Stanley Park Seawall",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "West End",
     "kid_friendly": true,
     "has_family_room": false,
@@ -130,7 +47,6 @@
   {
     "name": "Queen Elizabeth Park",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Riley Park",
     "kid_friendly": true,
     "has_family_room": false,
@@ -146,7 +62,6 @@
   {
     "name": "Oakridge Park Mall",
     "type": "mall",
-    "category": "activity",
     "neighbourhood": "Oakridge",
     "kid_friendly": true,
     "has_family_room": true,
@@ -162,7 +77,6 @@
   {
     "name": "VanDusen Botanical Garden",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Shaughnessy",
     "kid_friendly": true,
     "has_family_room": false,
@@ -178,7 +92,6 @@
   {
     "name": "Museum of Vancouver",
     "type": "museum",
-    "category": "activity",
     "neighbourhood": "Kitsilano",
     "kid_friendly": true,
     "has_family_room": false,
@@ -194,7 +107,6 @@
   {
     "name": "Grouse Mountain",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "North Vancouver",
     "kid_friendly": true,
     "has_family_room": false,
@@ -210,7 +122,6 @@
   {
     "name": "Kitsilano Beach Park",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Kitsilano",
     "kid_friendly": true,
     "has_family_room": false,
@@ -226,7 +137,6 @@
   {
     "name": "HR MacMillan Space Centre",
     "type": "museum",
-    "category": "activity",
     "neighbourhood": "Kitsilano",
     "kid_friendly": true,
     "has_family_room": false,
@@ -242,7 +152,6 @@
   {
     "name": "Vancouver Maritime Museum",
     "type": "museum",
-    "category": "activity",
     "neighbourhood": "Kitsilano",
     "kid_friendly": true,
     "has_family_room": false,
@@ -258,7 +167,6 @@
   {
     "name": "Granville Island Kids Market",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "Granville Island",
     "kid_friendly": true,
     "has_family_room": true,
@@ -274,7 +182,6 @@
   {
     "name": "Granville Island Public Market",
     "type": "mall",
-    "category": "activity",
     "neighbourhood": "Granville Island",
     "kid_friendly": true,
     "has_family_room": true,
@@ -290,7 +197,6 @@
   {
     "name": "Bloedel Conservatory",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "Riley Park",
     "kid_friendly": true,
     "has_family_room": false,
@@ -306,7 +212,6 @@
   {
     "name": "Capilano Suspension Bridge Park",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "North Vancouver",
     "kid_friendly": true,
     "has_family_room": false,
@@ -322,7 +227,6 @@
   {
     "name": "Lynn Canyon Park",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "North Vancouver",
     "kid_friendly": true,
     "has_family_room": false,
@@ -338,7 +242,6 @@
   {
     "name": "Playland at the PNE",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "Hastings-Sunrise",
     "kid_friendly": true,
     "has_family_room": true,
@@ -354,7 +257,6 @@
   {
     "name": "Trout Lake (John Hendry Park)",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Kensington-Cedar Cottage",
     "kid_friendly": true,
     "has_family_room": false,
@@ -370,7 +272,6 @@
   {
     "name": "David Lam Park",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Yaletown",
     "kid_friendly": true,
     "has_family_room": false,
@@ -386,7 +287,6 @@
   {
     "name": "English Bay Beach",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "West End",
     "kid_friendly": true,
     "has_family_room": false,
@@ -400,57 +300,8 @@
     "lng": -123.143317
   },
   {
-    "name": "White Spot English Bay",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "West End",
-    "kid_friendly": true,
-    "has_family_room": true,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "08:00",
-    "close": "22:00",
-    "lat": null,
-    "lng": null
-  },
-  {
-    "name": "Sophie's Cosmic Cafe",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "Kitsilano",
-    "kid_friendly": true,
-    "has_family_room": false,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "08:00",
-    "close": "21:00",
-    "lat": 49.2683917722019,
-    "lng": -123.152465182004
-  },
-  {
-    "name": "Cartems Donuterie",
-    "type": "cafe",
-    "category": "food",
-    "neighbourhood": "Mount Pleasant",
-    "kid_friendly": true,
-    "has_family_room": false,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "08:00",
-    "close": "18:00",
-    "lat": 49.265641776426,
-    "lng": -123.10037627194
-  },
-  {
     "name": "Vancouver Art Gallery",
     "type": "museum",
-    "category": "activity",
     "neighbourhood": "Downtown",
     "kid_friendly": true,
     "has_family_room": true,
@@ -466,7 +317,6 @@
   {
     "name": "Pacific Centre",
     "type": "mall",
-    "category": "activity",
     "neighbourhood": "Downtown",
     "kid_friendly": true,
     "has_family_room": true,
@@ -482,7 +332,6 @@
   {
     "name": "Second Beach",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Stanley Park",
     "kid_friendly": true,
     "has_family_room": true,
@@ -498,7 +347,6 @@
   {
     "name": "Jericho Beach Park",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Point Grey",
     "kid_friendly": true,
     "has_family_room": false,
@@ -514,7 +362,6 @@
   {
     "name": "UBC Botanical Garden",
     "type": "park",
-    "category": "activity",
     "neighbourhood": "Point Grey",
     "kid_friendly": true,
     "has_family_room": false,
@@ -530,7 +377,6 @@
   {
     "name": "Vancouver Lookout",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "Downtown",
     "kid_friendly": true,
     "has_family_room": false,
@@ -544,41 +390,8 @@
     "lng": -123.112316
   },
   {
-    "name": "Cactus Club Cafe English Bay",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "West End",
-    "kid_friendly": true,
-    "has_family_room": true,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "11:00",
-    "close": "23:00",
-    "lat": 49.2862192525897,
-    "lng": -123.143827946106
-  },
-  {
-    "name": "Tomahawk Restaurant",
-    "type": "restaurant",
-    "category": "food",
-    "neighbourhood": "North Vancouver",
-    "kid_friendly": true,
-    "has_family_room": true,
-    "has_nursing_room": false,
-    "stroller_accessible": true,
-    "nap_friendly": false,
-    "can_eat": true,
-    "open": "08:00",
-    "close": "21:00",
-    "lat": null,
-    "lng": null
-  },
-  {
     "name": "Dr. Sun Yat-Sen Classical Chinese Garden",
     "type": "attraction",
-    "category": "activity",
     "neighbourhood": "Chinatown",
     "kid_friendly": true,
     "has_family_room": false,
@@ -594,7 +407,6 @@
   {
     "name": "Marine Gateway",
     "type": "mall",
-    "category": "activity",
     "neighbourhood": "Marpole",
     "kid_friendly": true,
     "has_family_room": true,

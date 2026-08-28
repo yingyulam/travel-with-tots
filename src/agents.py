@@ -236,7 +236,7 @@ def _format_venue_candidates(venues: list) -> str:
         tags = [key for key in ("kid_friendly", "has_family_room", "has_nursing_room",
                                  "stroller_accessible") if v[key]]
         blocks.append(
-            f"[venue_id {v['id']}] {v['name']} -- {v['category']} ({v['type']}), {v['neighbourhood']}\n"
+            f"[venue_id {v['id']}] {v['name']} -- {v['type']}, {v['neighbourhood']}\n"
             f"Hours: {v['open_time'] or '?'}-{v['close_time'] or '?'} | "
             f"Ages: {v['min_age_months']}-{v['max_age_months']} months\n"
             f"Nap-friendly: {'yes' if v['nap_friendly'] else 'no'} | "

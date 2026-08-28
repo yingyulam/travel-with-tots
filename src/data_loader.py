@@ -27,7 +27,7 @@ SUPPORTED_CITIES = ("Vancouver",)
 # The venue dict the planners consume. Listed explicitly rather than taking
 # whole rows, so a new column on the venues table cannot silently end up in a
 # saved trip's plan_json or in the JSON sent to the browser.
-VENUE_KEYS = ("name", "type", "category", "neighbourhood",
+VENUE_KEYS = ("name", "type", "neighbourhood",
               "kid_friendly", "has_family_room", "has_nursing_room",
               "stroller_accessible", "nap_friendly", "can_eat", "lat", "lng")
 

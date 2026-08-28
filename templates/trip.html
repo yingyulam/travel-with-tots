@@ -280,6 +280,22 @@
       if (link) body.appendChild(link);
       return body;
     }
+    if (stop.kind === "meal") {
+      // A lunch block with nowhere named: the venue table holds attractions,
+      // not restaurants, so finding somewhere is a live search from here.
+      const body = el("div", "stop-body meal-body");
+      body.append(
+        el("h3", null, "🍽 Lunch break" + (stop.duration ? " · ⏱ " + stop.duration : "")),
+        el("p", "reason", stop.reason));
+      const findBtn = el("button", "cta-secondary", "🔎 Find lunch nearby");
+      findBtn.type = "button";
+      findBtn.addEventListener("click", () => {
+        runNeed("restaurant");
+        document.getElementById("need-bar").scrollIntoView({ behavior: "smooth" });
+      });
+      body.appendChild(findBtn);
+      return body;
+    }
     if (v) {
       const body = el("div", "stop-body");
       const heading = el("h3", null, v.name);

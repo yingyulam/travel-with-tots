@@ -108,7 +108,6 @@ def _bonus_stop(minutes, venues, features, used_names, theme_types=None, reason=
     pick = None
     if theme_types:
         pick = next((v for v in open_unused if v.get("type") in theme_types), None)
-    pick = pick or next((v for v in open_unused if v["category"] == "activity"), None)
     pick = pick or (open_unused[0] if open_unused else None)
     if pick:
         used_names.add(pick["name"])
@@ -131,13 +130,11 @@ def _open_alternative(kind, venues, features, used, start_min, duration_min):
     """An unused, feature-matched venue of the right sort that's open now."""
     pool = list(venues or [])
     if kind == "nap":
-        candidates = [v for v in pool
-                      if v.get("nap_friendly") and v["category"] != "food"]
+        candidates = [v for v in pool if v.get("nap_friendly")]
     elif kind == "meal":
-        candidates = sorted((v for v in pool if v.get("can_eat")),
-                            key=lambda v: 0 if v["category"] == "food" else 1)
+        candidates = [v for v in pool if v.get("can_eat")]
     else:  # activity / bonus
-        candidates = [v for v in pool if v["category"] == "activity"]
+        candidates = list(pool)
     for venue in candidates:
         if venue["name"] not in used and venue_open_for(venue, start_min, duration_min):
             return venue

@@ -68,7 +68,6 @@ MAX_PER_QUERY = 6
 VENUE_PROPERTIES = {
     "name": {"type": "string"},
     "type": {"type": ["string", "null"]},
-    "category": {"type": ["string", "null"], "enum": ["food", "activity", None]},
     "neighbourhood": {"type": ["string", "null"]},
     "evidence": {"type": ["string", "null"]},
 }
@@ -172,14 +171,12 @@ def _grounded(venue, said) -> dict:
     if name.strip().casefold() in GENERIC_NAMES:
         return {}
     kept = {"name": name}
-    for field in ("type", "category", "neighbourhood", "evidence"):
+    for field in ("type", "neighbourhood", "evidence"):
         value = (venue.get(field) or "").strip()
         kept[field] = value
     # A neighbourhood the results never mention is a guess from the name.
     if kept["neighbourhood"] and not (_words(kept["neighbourhood"]) & said):
         kept["neighbourhood"] = ""
-    if kept["category"] not in ("food", "activity"):
-        kept["category"] = ""
     # A name identical to its own type says nothing: "Museum", type museum.
     if kept["type"] and candidates.normalize_name(name) == candidates.normalize_name(kept["type"]):
         return {}

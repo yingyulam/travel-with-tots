@@ -27,7 +27,7 @@ RESULTS = [
 def _reply(*venues):
     import json
     return json.dumps({"venues": [
-        {"name": None, "type": None, "category": None,
+        {"name": None, "type": None,
          "neighbourhood": None, "evidence": None, **v} for v in venues]})
 
 
@@ -59,14 +59,13 @@ class ProposeVenuesTest(unittest.TestCase):
 
     def test_it_never_writes_to_the_venues_table(self):
         before = self._venue_count()
-        self._run(_reply({"name": "Beaty Biodiversity Museum", "category": "activity"}))
+        self._run(_reply({"name": "Beaty Biodiversity Museum"}))
         self.assertEqual(self._venue_count(), before)
         self.assertTrue(candidates.load())
 
     def test_a_proposal_the_search_did_not_mention_is_dropped(self):
         # Invention is the failure that makes a reviewer stop trusting a batch.
-        result = self._run(_reply({"name": "Totally Fabricated Play Barn",
-                                   "category": "activity"}))
+        result = self._run(_reply({"name": "Totally Fabricated Play Barn"}))
         self.assertEqual(result["proposed"], 0)
         self.assertGreater(result["skipped"], 0)
         self.assertEqual(candidates.load(), [])
@@ -78,27 +77,20 @@ class ProposeVenuesTest(unittest.TestCase):
         self.assertEqual(candidates.load()[0]["name"], "Beaty Biodiversity Museum")
 
     def test_a_listicle_title_is_not_a_venue(self):
-        result = self._run(_reply({"name": "Best rainy day things to do in Vancouver",
-                                   "category": "activity"}))
+        result = self._run(_reply({"name": "Best rainy day things to do in Vancouver"}))
         self.assertEqual(result["proposed"], 0)
 
     def test_a_neighbourhood_the_search_never_mentioned_is_dropped(self):
         # Otherwise it is a guess from the name, presented as a finding.
-        self._run(_reply({"name": "Beaty Biodiversity Museum", "category": "activity",
-                          "neighbourhood": "Yaletown"}))
+        self._run(_reply({"name": "Beaty Biodiversity Museum", "neighbourhood": "Yaletown"}))
         self.assertEqual(candidates.load()[0]["neighbourhood"], "")
 
     def test_a_neighbourhood_the_search_mentioned_is_kept(self):
-        self._run(_reply({"name": "Kokomo Foods", "category": "food",
-                          "neighbourhood": "Kitsilano"}))
+        self._run(_reply({"name": "Kokomo Foods", "neighbourhood": "Kitsilano"}))
         self.assertEqual(candidates.load()[0]["neighbourhood"], "Kitsilano")
 
-    def test_a_category_outside_the_two_is_dropped(self):
-        self._run(_reply({"name": "Beaty Biodiversity Museum", "category": "nightclub"}))
-        self.assertEqual(candidates.load()[0]["category"], "")
-
     def test_every_candidate_carries_a_url(self):
-        self._run(_reply({"name": "Beaty Biodiversity Museum", "category": "activity"}))
+        self._run(_reply({"name": "Beaty Biodiversity Museum"}))
         self.assertTrue(candidates.load()[0]["source_url"].startswith("https://"))
 
     def test_a_venue_already_in_the_database_is_not_proposed(self):
@@ -108,7 +100,7 @@ class ProposeVenuesTest(unittest.TestCase):
         self.assertEqual(result["proposed"], 0)
 
     def test_a_rejected_venue_is_not_proposed_again(self):
-        reply = _reply({"name": "Beaty Biodiversity Museum", "category": "activity"})
+        reply = _reply({"name": "Beaty Biodiversity Museum"})
         self.assertEqual(self._run(reply)["proposed"], 1)
         candidates.set_status(candidates.load()[0]["id"], candidates.REJECTED,
                               decided_by=1)
@@ -116,16 +108,15 @@ class ProposeVenuesTest(unittest.TestCase):
 
     def test_the_batch_size_is_a_ceiling(self):
         reply = _reply(
-            {"name": "Beaty Biodiversity Museum", "category": "activity"},
-            {"name": "Kokomo Foods", "category": "food"})
+            {"name": "Beaty Biodiversity Museum"},
+            {"name": "Kokomo Foods"})
         self.assertEqual(self._run(reply, batch_size=1)["proposed"], 1)
 
     def test_a_place_lookup_failure_costs_coordinates_not_the_candidate(self):
         from src.components.place_search import PlaceSearchError
         with mock.patch.object(propose_venues, "search_web", return_value=RESULTS), \
              mock.patch.object(propose_venues, "call_openrouter",
-                               return_value=(_reply({"name": "Beaty Biodiversity Museum",
-                                                     "category": "activity"}), {}, 0.4)), \
+                               return_value=(_reply({"name": "Beaty Biodiversity Museum"}), {}, 0.4)), \
              mock.patch.object(propose_venues, "search_places",
                                side_effect=PlaceSearchError("down")):
             result = propose_venues.propose(batch_size=1)
@@ -133,7 +124,7 @@ class ProposeVenuesTest(unittest.TestCase):
         self.assertEqual(candidates.load()[0]["lat"], "")
 
     def test_coordinates_are_attached_when_the_lookup_works(self):
-        self._run(_reply({"name": "Beaty Biodiversity Museum", "category": "activity"}),
+        self._run(_reply({"name": "Beaty Biodiversity Museum"}),
                   places=[{"name": "Beaty", "address": "2212 Main Mall",
                            "lat": 49.2646, "lng": -123.25, "city": "Vancouver",
                            "neighbourhood": "Point Grey", "type": "museum"}])
@@ -167,7 +158,7 @@ class ProposeVenuesTest(unittest.TestCase):
         # A search for "Vancouver" reaches Vancouver, Washington. A live run
         # proposed Fort Vancouver, at latitude 45.6, in another country.
         result = self._run(
-            _reply({"name": "Beaty Biodiversity Museum", "category": "activity"}),
+            _reply({"name": "Beaty Biodiversity Museum"}),
             batch_size=1,
             places=[{"name": "Fort Vancouver", "address": "1501 E Evergreen Blvd",
                      "lat": 45.6261838, "lng": -122.6566053, "city": "Vancouver",
@@ -177,17 +168,14 @@ class ProposeVenuesTest(unittest.TestCase):
 
     def test_a_name_that_is_only_a_kind_of_place_is_dropped(self):
         # A live run proposed "Library". No reviewer can act on that.
-        self.assertEqual(self._run(_reply({"name": "Library",
-                                           "category": "activity"}))["proposed"], 0)
+        self.assertEqual(self._run(_reply({"name": "Library"}))["proposed"], 0)
 
     def test_a_name_identical_to_its_type_is_dropped(self):
-        self.assertEqual(self._run(_reply({"name": "Museum", "type": "museum",
-                                           "category": "activity"}))["proposed"], 0)
+        self.assertEqual(self._run(_reply({"name": "Museum", "type": "museum"}))["proposed"], 0)
 
     def test_a_spelling_variant_of_an_existing_venue_is_not_proposed(self):
         db.add_venue("Beaty Biodiversity Museum", source="curated", city="Vancouver")
-        result = self._run(_reply({"name": "Beaty  Biodiversity-Museum",
-                                   "category": "activity"}))
+        result = self._run(_reply({"name": "Beaty  Biodiversity-Museum"}))
         self.assertEqual(result["proposed"], 0)
 
     def test_it_is_kept_out_of_the_chat_router(self):

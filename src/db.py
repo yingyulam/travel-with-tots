@@ -84,7 +84,6 @@ CREATE TABLE IF NOT EXISTS venues (
     parent_id           INTEGER REFERENCES parents(id) ON DELETE CASCADE,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     city                TEXT,
-    category            TEXT,
     nap_friendly        INTEGER NOT NULL DEFAULT 0,
     can_eat             INTEGER NOT NULL DEFAULT 0,
     open_time           TEXT,
@@ -141,7 +140,7 @@ CANDIDATE_FEATURE_COLUMNS = {
 # The venue columns data/venues.json owns, in the order _seed_venues supplies
 # them. Deliberately excludes source, parent_id and the provenance columns: a
 # re-seed must never demote a row or discard a citation a human added.
-SEED_FIELDS = ("type", "neighbourhood", "category",
+SEED_FIELDS = ("type", "neighbourhood",
                "kid_friendly", "has_family_room", "has_nursing_room",
                "stroller_accessible", "nap_friendly", "can_eat",
                "open_time", "close_time", "seed_rank")
@@ -195,6 +194,7 @@ def init_db():
     """Create the tables if they don't exist and seed initial data once."""
     with closing(connect()) as conn:
         create_schema(conn)
+        _drop_dead_columns(conn)
         _migrate_trips_ownership(conn)
         _seed_venues(conn)
         _seed_sample_data(conn)
@@ -234,7 +234,6 @@ def _ensure_columns(conn):
     if "city" not in existing:
         with conn:
             conn.execute("ALTER TABLE venues ADD COLUMN city TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN category TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN nap_friendly INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE venues ADD COLUMN can_eat INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE venues ADD COLUMN open_time TEXT")
@@ -267,6 +266,23 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN verified_by INTEGER "
                          "REFERENCES parents(id) ON DELETE SET NULL")
             conn.execute("ALTER TABLE venues ADD COLUMN seed_rank INTEGER")
+
+
+def _drop_dead_columns(conn):
+    """Remove columns that ask a question the data cannot answer.
+
+    `venues.category` was 'food' or 'activity'. The table now holds attractions
+    only, so it is a tautology: `can_eat` marks the ones with food, which is all
+    the planner ever needed it for.
+
+    Guarded per column and idempotent, like the additions above. Needs SQLite
+    3.35+ for DROP COLUMN.
+    """
+    for table, column in (("venues", "category"),):
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column in existing:
+            with conn:
+                conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
 
 
 def _migrate_trips_ownership(conn):
@@ -347,7 +363,7 @@ def _seed_venues(conn):
     placeholders = ", ".join("?" for _ in range(len(SEED_FIELDS) + 5))
     with conn:  # single transaction for the whole batch
         for rank, v in enumerate(venues):
-            values = (v["type"], v["neighbourhood"], v["category"],
+            values = (v["type"], v["neighbourhood"],
                       int(v["kid_friendly"]), int(v["has_family_room"]),
                       int(v["has_nursing_room"]), int(v["stroller_accessible"]),
                       int(v["nap_friendly"]), int(v["can_eat"]),
@@ -453,7 +469,7 @@ def delete_trip(trip_id, parent_id):
 # Columns add_venue will set beyond `name`, `source` and the flags. Whitelisted
 # so an unknown keyword fails loudly rather than being dropped, the same
 # discipline update_venue uses.
-ADD_VENUE_FIELDS = ("type", "neighbourhood", "category", "city", "notes",
+ADD_VENUE_FIELDS = ("type", "neighbourhood", "city", "notes",
                     "address", "open_time", "close_time", "min_age_months",
                     "max_age_months", "lat", "lng", "parent_id", "source_url",
                     "external_id", "verified_at", "verified_by")
@@ -474,7 +490,7 @@ def add_venue(name, *, source, venue_type=None, **fields):
 
     Takes `**fields` rather than one parameter per column because the callers
     now want very different subsets: a parent's submission sets a handful, while
-    an approved candidate carries hours, a category and a citation. `venue_type`
+    an approved candidate carries hours and a citation. `venue_type`
     stays an explicit keyword because `type` shadows a builtin and every caller
     already spells it that way.
     """

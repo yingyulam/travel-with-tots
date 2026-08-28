@@ -39,7 +39,7 @@ REJECTED = "rejected"
 STATUSES = (PENDING, APPROVED, REJECTED)
 
 # What the agent writes: what it found, and where it found it.
-PROPOSED_COLUMNS = ("name", "type", "category", "neighbourhood", "city",
+PROPOSED_COLUMNS = ("name", "type", "neighbourhood", "city",
                     "address", "lat", "lng", "source_url", "evidence")
 
 # What only review writes. Hours are absent from web search results entirely,

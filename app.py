@@ -421,7 +421,6 @@ def venue_review_candidates():
     picked = set(request.form.getlist("picked"))
     admin_id = _current_parent()["id"]
     saved = approved = rejected = 0
-    refused = []
 
     for row in candidates.load(candidates.PENDING):
         edits = _candidate_edits(row["id"], request.form)
@@ -434,14 +433,7 @@ def venue_review_candidates():
             candidates.set_status(row["id"], candidates.REJECTED, decided_by=admin_id)
             rejected += 1
         elif action == "approve":
-            merged = {**row, **edits}
-            # A venue with no category cannot fill an activity slot or a food
-            # slot, and would still be eligible as a nap stop. Refusing is
-            # clearer than inserting something the planner half-understands.
-            if not merged.get("category"):
-                refused.append(merged.get("name") or "a venue")
-                continue
-            _approve_candidate(merged, admin_id)
+            _approve_candidate({**row, **edits}, admin_id)
             approved += 1
 
     parts = []
@@ -451,8 +443,6 @@ def venue_review_candidates():
         parts.append(f"approved {approved}")
     if rejected:
         parts.append(f"rejected {rejected}")
-    if refused:
-        parts.append(f"{', '.join(refused)} needs a category before it can be approved")
     flash(("; ".join(parts) or "Nothing selected") + ".")
     return redirect(url_for("venue_review"))
 
@@ -483,7 +473,6 @@ def _approve_candidate(row, admin_id):
         row["name"],
         source="curated",
         venue_type=row.get("type") or None,
-        category=row.get("category") or None,
         neighbourhood=row.get("neighbourhood") or None,
         city=row.get("city") or None,
         address=row.get("address") or None,

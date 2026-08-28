@@ -24,7 +24,7 @@ class CandidateStoreTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def _add_one(self, name="Bloedel Conservatory", **fields):
-        candidates.add([{"name": name, "type": "garden", "category": "activity",
+        candidates.add([{"name": name, "type": "garden",
                          "source_url": "https://example.org/b", **fields}])
         return candidates.load()[-1]
 
