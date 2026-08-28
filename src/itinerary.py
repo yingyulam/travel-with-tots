@@ -323,8 +323,20 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
     def _matches_theme(venue):
         return venue["type"] in theme["types"]
 
-    activities = [v for v in matches if _matches_theme(v)]
-    activities = activities or list(matches)
+    # Theme-matching venues come first, rather than being the only ones. A
+    # filter here discarded every venue whose type no theme names, and ten of
+    # the fourteen allowed types name no theme: aquarium, community centre,
+    # farm, market, pool, library, playground, garden, beach, seawall. The
+    # `or list(matches)` fallback below only rescued a day where *nothing*
+    # matched, so one museum in the pool was enough to throw the other five
+    # venues away -- six open venues and a request for three stops returned a
+    # one-stop day.
+    #
+    # Sorting is what makes the type list safe to extend: a type nobody
+    # remembered to map is deprioritised, never invisible. Same idiom the nap
+    # pool below already uses, and Python's sort is stable, so the curator's
+    # seed_rank order survives inside each group.
+    activities = sorted(matches, key=lambda v: 0 if _matches_theme(v) else 1)
 
     # No lunch pool: lunch is taken at a stop the day already includes, or it
     # is a block with a handoff. See _lunch_stop.
