@@ -768,6 +768,62 @@ runs on startup and updates venues already in the table as well as inserting
 new ones. A null coordinate in the seed file never overwrites one already
 found, so re-running the script is safe and so is re-booting after it.
 
+## Growing the venue database
+
+The venue set grows through a loop, not an import: the agent proposes a small
+batch, a person checks it, and approving is what puts a venue in the database.
+
+```
+python3 scripts/propose_venues.py --batch 10   # searches, writes candidates
+open /venues/review                            # correct, tick, approve
+```
+
+**The agent never writes a venue.** It writes `data/venue_candidates.csv` and
+nothing else. `/venues/review` is the only path from a candidate to a row in
+`venues`, and it runs because a person clicked.
+
+**It proposes no opening hours and no amenities.** Search results do not
+establish them, so it reports only what it found and the URL it found it in. You
+set hours and the six planner flags at review, which is also where `category`
+gets decided: without one a venue fills neither an activity slot nor a food slot,
+so approving without it is refused.
+
+**Rejections are remembered.** `candidates.known_names()` covers rejected rows,
+so a place you turn down is never proposed again. Without that the agent
+re-proposes the same venues every run and review capacity goes on re-rejecting
+them. It is the difference between a loop that converges and one that spins.
+
+**Batches are small on purpose.** Capacity is one person's attention. Proposing
+a hundred venues does not grow the database faster, it grows a backlog, which is
+also why nothing runs this on a timer: you invoke it when you have an hour.
+
+Three guards exist because a live run needed them. A search for "Vancouver"
+reaches Vancouver, Washington, and one run proposed Fort Vancouver at latitude
+45.6, so a located venue outside Metro Vancouver is dropped. One run proposed
+"Library", which no reviewer can act on, so a name that is only a kind of place
+is dropped. And one proposed "Van Dusen Botanical Garden" when the database
+already held "VanDusen Botanical Garden", so identity ignores spacing and
+punctuation.
+
+### Provenance is not trust
+
+`source` records where a venue came from. `verified_at` records that a person
+checked it. Today the planner gates on `source`, which means the 38 seeded demo
+venues are trusted purely because of how they were typed in: none of them
+carries a `verified_at`, because nobody ever verified them. They appear in the
+review queue's third section for exactly that reason.
+
+The intended end state is gating on `verified_at IS NOT NULL`, at which point
+unchecked venues drop out of plans on their own. That flip waits until enough
+venues are verified to still build a day, or it would empty every plan.
+
+### Rebuilding
+
+`data/app.db` is gitignored; `data/venues.json` and `data/venue_candidates.csv`
+are tracked. So a fresh clone rebuilds in two steps: booting seeds the 38, and
+`python3 scripts/replay_candidates.py --write` puts back everything you
+approved. That is what makes the CSV a real record rather than a comforting one.
+
 ## Project structure
 
 ```

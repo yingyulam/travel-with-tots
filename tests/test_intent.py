@@ -116,8 +116,11 @@ class OfferedWorkflowsTest(unittest.TestCase):
         self.assertNotIn("Started by something else", offered)
 
     def test_the_registry_still_lists_every_workflow(self):
-        # runnable_message_workflows filters; WORKFLOWS must not.
-        self.assertEqual(len(WORKFLOWS), 4)
+        # runnable_message_workflows filters; WORKFLOWS must not. Asserted
+        # against the module list rather than a fixed count, so adding a
+        # workflow does not fail a test that is about filtering.
+        self.assertEqual(len(WORKFLOWS), len(workflows_module._MODULES))
+        self.assertGreater(len(WORKFLOWS), len(list(runnable_message_workflows())))
 
 
 class LogTest(unittest.TestCase):

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Propose venues{% endblock %}
+{% block heading %}Propose venues{% endblock %}
+{% block tagline %}Search the web for real places a parent could take a toddler.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <p class="meta">Isolated test page for the venue proposal workflow. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+
+  <p class="meta">
+    Writes candidates to <code>data/venue_candidates.csv</code> and nothing else.
+    A candidate becomes a venue when a person approves it in the
+    <a href="{{ url_for('venue_review') }}">review queue</a>.
+  </p>
+  <p class="meta">
+    On file now: {{ counts.pending }} pending, {{ counts.approved }} approved,
+    {{ counts.rejected }} rejected. Rejected names are never proposed again.
+  </p>
+  <p class="field-hint">
+    Small batches here, since each candidate costs a search, a model call and a
+    place lookup. For a full batch use
+    <code>python3 scripts/propose_venues.py --batch 30</code>.
+  </p>
+
+  <div class="search-web-action-row">
+    <label class="field"><span>Batch size</span>
+      <input type="number" id="propose-batch" min="1" max="10" value="{{ batch_size }}"></label>
+    <button type="button" class="cta" id="propose-run">▶ Run</button>
+  </div>
+
+  <p id="propose-heading" class="meta">No run yet.</p>
+  <div id="propose-result-list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='propose-venues.js') }}"></script>
+{% endblock %}

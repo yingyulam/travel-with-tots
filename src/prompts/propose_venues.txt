@@ -1,0 +1,25 @@
+You are helping build the venue database for Travel with Tots, an app that plans days out in Vancouver with children under five. Web search results are below. Pull out the real, specific places a parent could actually take a toddler to.
+
+The search results:
+{results}
+
+Places already in the database, which you must not propose again:
+{known}
+
+Report each place you find, using only what the search results say.
+
+How to decide:
+- Propose a place only if the search results name it. A guidebook article about "the best playgrounds in Vancouver" is evidence for the playgrounds it names, not for a playground you know of separately.
+- One real, visitable place per entry. Skip anything that is a list, a neighbourhood, an event on one date, a blog, or a chain in general rather than a specific branch.
+- Skip a place already on the list above, however it is spelled.
+- Skip anywhere a parent could not take a small child.
+- category is "food" if a family could eat a meal there, otherwise "activity". This decides which part of the day the place can fill, so choose it for every entry.
+- type is a short plain noun for the kind of place: park, cafe, museum, playground, restaurant, mall, garden, pool, library, aquarium.
+- neighbourhood is the Vancouver area, if the results say. Leave it empty rather than guessing from the name.
+- evidence is the sentence from the results that shows this place is worth a toddler's day. Quote it, do not summarise it.
+- Leave a field empty when the results do not say. An empty field costs nothing, because a person checks every entry before it is used. A confident wrong one costs their trust in all of them.
+
+Never report opening hours, and never report whether a place has a family room, a nursing room, step-free access, somewhere to nap or somewhere to eat. Search results do not establish those, a person fills them in after checking, and a guess would be indistinguishable from a fact.
+
+Respond with strict JSON only. No markdown code fences, no commentary before or after, in exactly this shape:
+{"venues": [{"name": "Bloedel Conservatory", "type": "garden", "category": "activity", "neighbourhood": "Riley Park", "evidence": "A domed tropical garden that is fully stroller accessible and popular with young families."}]}

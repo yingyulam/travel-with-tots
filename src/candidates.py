@@ -1,0 +1,191 @@
+"""Venues an agent proposed, and what a human decided about each one.
+
+Two jobs in one file, `data/venue_candidates.csv`:
+
+1. The review artifact. What the agent found, with the evidence and the URL it
+   came from, so a human can judge it.
+2. The agent's memory. `known_names()` covers rejected rows as well as approved
+   ones, so a place you turned down is never proposed again. Without that the
+   agent re-proposes the same venues every run and a reviewer's limited capacity
+   goes on re-rejecting them, which is the difference between a loop that
+   converges and one that spins.
+
+The agent only ever writes here, never to the venues table. A row becomes a
+venue when a human approves it, and that is the whole of the gate.
+
+CSV rather than JSON, against the grain of the rest of `data/`, because this is
+a flat table someone may want to sort, diff or read outside the app. It is
+tracked in git, unlike `data/app.db`, so it is also the durable record of which
+venues were verified: see scripts/replay_candidates.py.
+"""
+
+import csv
+import re
+import threading
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .db import CANDIDATE_FEATURE_COLUMNS
+
+CANDIDATES_PATH = Path(__file__).resolve().parent.parent / "data" / "venue_candidates.csv"
+_lock = threading.Lock()
+
+PENDING = "pending"
+APPROVED = "approved"
+REJECTED = "rejected"
+# Approving inserts the venue and stamps the candidate in one action, so there
+# is no "approved but not yet imported" state to get stuck in.
+STATUSES = (PENDING, APPROVED, REJECTED)
+
+# What the agent writes: what it found, and where it found it.
+PROPOSED_COLUMNS = ("name", "type", "category", "neighbourhood", "city",
+                    "address", "lat", "lng", "source_url", "evidence")
+
+# What only review writes. Hours are absent from web search results entirely,
+# and an amenity nobody checked is a claim rather than a fact, so the agent
+# leaves every one of these blank. Built from CANDIDATE_FEATURE_COLUMNS rather
+# than typed out, so the review form and the planner's filters cannot drift.
+REVIEWED_COLUMNS = ("open_time", "close_time") + tuple(sorted(CANDIDATE_FEATURE_COLUMNS))
+
+COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
+           + ("proposed_at", "decided_at", "decided_by"))
+
+# Fields review may change. Everything the agent proposed is correctable, since
+# a wrong neighbourhood is exactly what a human is there to fix, except the
+# coordinates and the citation: coordinates come from the Places API and a
+# hand-typed one is worse than none (a wrong coordinate silently mis-ranks
+# distance, a missing one falls back to neighbourhood matching), and rewriting
+# the source URL would break the one thing making the row checkable.
+EDITABLE = tuple(c for c in PROPOSED_COLUMNS
+                 if c not in ("lat", "lng", "source_url", "evidence")) + REVIEWED_COLUMNS
+
+
+def normalize_name(name) -> str:
+    """A venue name reduced to a comparison key.
+
+    Spacing and punctuation carry no meaning for identity: "VanDusen Botanical
+    Garden" and "Van Dusen Botanical Garden" are one place, and a proposal
+    differing only that way is a duplicate a reviewer should not have to catch.
+    """
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def _read_all() -> list[dict]:
+    """Every candidate, oldest first. Missing or unreadable file reads as empty
+    rather than raising, so a first run needs no setup step."""
+    if not CANDIDATES_PATH.exists():
+        return []
+    try:
+        with open(CANDIDATES_PATH, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except (csv.Error, OSError):
+        return []
+    for row in rows:
+        # A blank status reads as pending, so a truncated or hand-edited file
+        # degrades to "needs review" rather than to a wrong decision.
+        if not (row.get("status") or "").strip():
+            row["status"] = PENDING
+    return rows
+
+
+def _write_all(rows) -> None:
+    """Rewrite the whole file. Callers hold _lock."""
+    CANDIDATES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CANDIDATES_PATH, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in COLUMNS})
+
+
+def load(status=None) -> list[dict]:
+    """Candidates, optionally only those with `status`."""
+    rows = _read_all()
+    if status is None:
+        return rows
+    return [row for row in rows if row["status"] == status]
+
+
+def known_names() -> set:
+    """Every name ever proposed, whatever was decided about it.
+
+    Includes rejected names on purpose: that is what stops the agent proposing
+    a place you have already turned down.
+    """
+    return {normalize_name(row.get("name"))
+            for row in _read_all() if normalize_name(row.get("name"))}
+
+
+def add(proposals) -> int:
+    """Append proposals as pending, skipping names already on file. Returns how
+    many were actually new.
+
+    Deduplicates within the batch as well as against the file, since two search
+    queries can easily surface the same venue.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock:
+        rows = _read_all()
+        seen = {normalize_name(row.get("name")) for row in rows}
+        added = 0
+        for proposal in proposals:
+            name = (proposal.get("name") or "").strip()
+            key = normalize_name(name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            row = {column: "" for column in COLUMNS}
+            row.update({column: proposal.get(column, "") or ""
+                        for column in PROPOSED_COLUMNS})
+            row.update({"id": uuid.uuid4().hex, "status": PENDING,
+                        "name": name, "proposed_at": now})
+            rows.append(row)
+            added += 1
+        if added:
+            _write_all(rows)
+    return added
+
+
+def update(candidate_id, **fields) -> None:
+    """Apply review's edits to one candidate.
+
+    Unknown or non-editable field names raise rather than being ignored, so a
+    renamed form input fails loudly instead of silently dropping every edit a
+    reviewer made.
+    """
+    unknown = set(fields) - set(EDITABLE)
+    if unknown:
+        raise ValueError(f"not editable: {', '.join(sorted(unknown))}")
+    if not fields:
+        return
+    with _lock:
+        rows = _read_all()
+        for row in rows:
+            if row.get("id") == candidate_id:
+                row.update({key: "" if value is None else value
+                            for key, value in fields.items()})
+                _write_all(rows)
+                return
+
+
+def set_status(candidate_id, status, decided_by=None) -> None:
+    """Record a decision. Raises on an unknown status rather than writing it."""
+    if status not in STATUSES:
+        raise ValueError(f"unknown status: {status}")
+    with _lock:
+        rows = _read_all()
+        for row in rows:
+            if row.get("id") == candidate_id:
+                row["status"] = status
+                row["decided_at"] = datetime.now(timezone.utc).isoformat()
+                row["decided_by"] = "" if decided_by is None else str(decided_by)
+                _write_all(rows)
+                return
+
+
+def counts() -> dict:
+    """How many candidates sit in each status, for the review page's summary."""
+    rows = _read_all()
+    return {status: sum(1 for row in rows if row["status"] == status)
+            for status in STATUSES}

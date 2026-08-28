@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Travel with Tots: Review queue{% endblock %}
+{% block heading %}Review queue{% endblock %}
+{% block tagline %}Nothing here has been checked by a person yet.{% endblock %}
+
+{% macro flags(prefix, row) %}
+  <div class="badges">
+    {% for key, label in flag_labels %}
+    <label class="review-flag">
+      <input type="checkbox" name="{{ prefix }}-{{ key }}" {{ 'checked' if row[key] in (1, '1', True) }}>
+      <span>{{ label }}</span>
+    </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+
+<section class="card">
+  <h2>Proposed venues</h2>
+  <p class="meta">
+    Found by the agent, cited but unchecked. Correct anything wrong, tick what
+    the place actually offers, then approve the ones worth keeping. Approving is
+    what puts a venue in the database.
+  </p>
+
+  {% if not proposals %}
+    <p class="meta">
+      Nothing proposed yet. Run <code>python3 scripts/propose_venues.py --batch 10</code>,
+      or try the <a href="{{ url_for('propose_venues_page') }}">component page</a>.
+    </p>
+  {% else %}
+  <form method="post" action="{{ url_for('venue_review_candidates') }}" class="section-form">
+    <p class="meta">{{ proposals|length }} waiting.</p>
+
+    {% for c in proposals %}
+    <div class="plan-option">
+      <label class="review-pick">
+        <input type="checkbox" name="picked" value="{{ c.id }}" {{ 'disabled' if c.already_have }}>
+        <strong>{{ c.name }}</strong>
+      </label>
+
+      {% if c.already_have %}
+        <p class="meta"><strong>Already in the database.</strong> Nothing to do; reject it to clear it from the queue.</p>
+      {% endif %}
+      {% if not c.open_time %}
+        <p class="meta">No hours set, so the planner will treat it as open all day.</p>
+      {% endif %}
+      {% if not c.lat %}
+        <p class="meta">No coordinates, so it cannot be distance-ranked.</p>
+      {% endif %}
+
+      <div class="review-fields">
+        <label class="field"><span>Name</span>
+          <input type="text" name="{{ c.id }}-name" value="{{ c.name }}"></label>
+        <label class="field"><span>Type</span>
+          <input type="text" name="{{ c.id }}-type" value="{{ c.type }}" placeholder="park, cafe, museum"></label>
+        <label class="field"><span>Category</span>
+          <select name="{{ c.id }}-category">
+            <option value="" {{ 'selected' if not c.category }}>choose one</option>
+            <option value="activity" {{ 'selected' if c.category == 'activity' }}>activity</option>
+            <option value="food" {{ 'selected' if c.category == 'food' }}>food</option>
+          </select></label>
+        <label class="field"><span>Neighbourhood</span>
+          <input type="text" name="{{ c.id }}-neighbourhood" value="{{ c.neighbourhood }}"></label>
+        <label class="field"><span>City</span>
+          <input type="text" name="{{ c.id }}-city" value="{{ c.city }}"></label>
+        <label class="field"><span>Opens</span>
+          <input type="text" name="{{ c.id }}-open_time" value="{{ c.open_time }}" placeholder="09:00"></label>
+        <label class="field"><span>Closes</span>
+          <input type="text" name="{{ c.id }}-close_time" value="{{ c.close_time }}" placeholder="17:00"></label>
+      </div>
+
+      {{ flags(c.id, c) }}
+
+      {% if c.address %}<p class="meta">{{ c.address }}</p>{% endif %}
+      {% if c.lat %}<p class="meta">{{ c.lat }}, {{ c.lng }}</p>{% endif %}
+      {% if c.evidence %}<p class="meta">&ldquo;{{ c.evidence }}&rdquo;</p>{% endif %}
+      {% if c.source_link %}
+        <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <button type="submit" name="action" value="save" class="cta-secondary">Save edits</button>
+    <button type="submit" name="action" value="approve" class="cta">Approve checked</button>
+    <button type="submit" name="action" value="reject" class="cta-secondary">Reject checked</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Parent submissions</h2>
+  <p class="meta">Places parents logged. Stored complete, but out of every plan and search until verified.</p>
+
+  {% if not submissions %}
+    <p class="meta">Nothing waiting. Submissions from <a href="{{ url_for('log_place_page') }}">Log a Place</a> land here.</p>
+  {% else %}
+    <p class="meta">{{ submissions|length }} waiting.</p>
+    {% for v in submissions %}
+    <div class="plan-option">
+      <h3 class="plan-option-title">{{ v.name }}</h3>
+
+      {% if v.curated_clash %}
+        <p class="meta"><strong>Already curated.</strong> A verified venue with this
+        name already exists in {{ v.city }}. Reject this one, or rename it first if
+        it is genuinely a different place.</p>
+      {% endif %}
+      {% if not v.city %}
+        <p class="meta"><strong>No city.</strong> It cannot match a search without one,
+        so it cannot be verified yet.</p>
+      {% endif %}
+
+      <p class="meta">
+        {{ v.type or 'type not given' }}
+        {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
+        {%- if v.city %}, {{ v.city }}{% endif %}
+      </p>
+      {% if v.address %}<p class="meta">Geocoded to: {{ v.address }}</p>{% endif %}
+      <p class="meta">
+        {% if v.lat is not none %}{{ '%.4f'|format(v.lat) }}, {{ '%.4f'|format(v.lng) }}
+        {%- else %}No coordinates, so it cannot be distance-ranked{% endif %}
+      </p>
+      <p class="meta">Vouched for:
+        {%- set tags = [] %}
+        {%- for key, label in flag_labels %}{% if v[key] %}{% set _ = tags.append(label) %}{% endif %}{% endfor %}
+        {{ tags|join(', ') if tags else 'nothing' }}
+      </p>
+      {% if v.notes %}<p class="meta">Parent's note: &ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
+      <p class="meta">Submitted by {{ v.submitted_by or 'a deleted account' }} on {{ v.created_at }}.</p>
+
+      <form method="post" action="{{ url_for('venue_review_decide', venue_id=v.id) }}" class="section-form">
+        <button type="submit" name="action" value="approve" class="cta">Verify</button>
+        <button type="submit" name="action" value="reject" class="cta-secondary">Reject</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Unverified venues</h2>
+  <p class="meta">
+    Already used for planning, but nobody has confirmed them. These are the
+    hand-curated demo venues: the app plans around them today on the strength of
+    how they were typed in, not because anyone checked. Confirming one records
+    that you did.
+  </p>
+
+  {% if not unverified %}
+    <p class="meta">All confirmed.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('venue_confirm_batch') }}" class="section-form">
+    <p class="meta">{{ unverified_total }} unconfirmed{% if unverified_total > unverified|length %}, showing {{ unverified|length }}{% endif %}.</p>
+    {% for v in unverified %}
+    <label class="review-pick">
+      <input type="checkbox" name="picked" value="{{ v.id }}">
+      <span><strong>{{ v.name }}</strong> &mdash; {{ v.type or 'no type' }}{% if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
+        {%- if not v.open_time %} (no hours){% endif %}</span>
+    </label>
+    {% endfor %}
+    <button type="submit" class="cta">Confirm checked</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

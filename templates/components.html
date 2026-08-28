@@ -63,7 +63,19 @@
       <a class="cta-secondary" href="{{ url_for('replan_trip_page') }}">Try it</a>
     </div>
     <div class="plan-option">
-      <h3 class="plan-option-title">Form extractor</h3>
+      <h3 class="plan-option-title">Venue proposer</h3>
+      <div class="badges"><span class="badge">AI-backed</span></div>
+      <p>src/workflows/propose_venues.py: searches the web for real places a
+      parent could take a toddler and writes a small batch of candidates with the
+      URL each claim came from. It proposes no amenity and no opening hours,
+      because a search result cannot establish them, and it never writes a venue
+      itself. A person approves candidates in the review queue, and rejections
+      are remembered so a place you turn down is not offered again.</p>
+      <a class="cta-secondary" href="{{ url_for('propose_venues_page') }}">Try it</a>
+    </div>
+
+    <div class="plan-option">
+    <h3 class="plan-option-title">Form extractor</h3>
       <div class="badges"><span class="badge">AI-backed</span></div>
       <p>src/components/extract_form.py: reads a parent's description of their day into the planning form, so they can say it in their own words instead of filling in boxes. The model only proposes; every value goes through the same read_form the /plan route uses, so the clamps and caps are enforced by the real validator. Anything the description does not mention is reported as a default rather than guessed at.</p>
       <a class="cta-secondary" href="{{ url_for('extract_form_page') }}">Try it</a>

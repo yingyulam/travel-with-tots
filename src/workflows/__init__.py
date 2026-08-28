@@ -12,7 +12,8 @@ already exist (the chat bubble and the /trip situation buttons), while scheduled
 has no mechanism in the app at all.
 """
 
-from . import find_nearby_place, log_a_place, plan_from_chat, replan_on_the_go
+from . import (find_nearby_place, log_a_place, plan_from_chat, propose_venues,
+               replan_on_the_go)
 
 # Display order and label for each trigger, so /workflows can group by it.
 TRIGGERS = (
@@ -24,7 +25,8 @@ TRIGGERS = (
 # The modules, in display order, rather than just their declarations: the intent
 # router needs each module's `run` as well as its `WORKFLOW`. Registered by hand
 # rather than discovered, so the order is explicit and a broken import is loud.
-_MODULES = (replan_on_the_go, log_a_place, plan_from_chat, find_nearby_place)
+_MODULES = (replan_on_the_go, log_a_place, plan_from_chat, find_nearby_place,
+            propose_venues)
 
 WORKFLOWS = tuple(module.WORKFLOW for module in _MODULES)
 

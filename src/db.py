@@ -450,30 +450,46 @@ def delete_trip(trip_id, parent_id):
     _write("DELETE FROM trips WHERE id = ? AND parent_id = ?", (trip_id, parent_id))
 
 
-def add_venue(name, *, source, venue_type=None, neighbourhood=None,
-              kid_friendly=False, has_family_room=False,
-              has_nursing_room=False, stroller_accessible=False,
-              parent_id=None, city=None, lat=None, lng=None,
-              notes=None, address=None):
-    """Insert a venue. `city`, `lat` and `lng` are optional so a submission
-    still survives a geocoder that is unreachable or unconfigured, but
-    supplying them is what makes the row verifiable later: without coordinates
-    it can never be distance-ranked, and without a city it never matches a city
-    query.
+# Columns add_venue will set beyond `name`, `source` and the flags. Whitelisted
+# so an unknown keyword fails loudly rather than being dropped, the same
+# discipline update_venue uses.
+ADD_VENUE_FIELDS = ("type", "neighbourhood", "category", "city", "notes",
+                    "address", "open_time", "close_time", "min_age_months",
+                    "max_age_months", "lat", "lng", "parent_id", "source_url",
+                    "external_id", "verified_at", "verified_by")
+
+
+def add_venue(name, *, source, venue_type=None, **fields):
+    """Insert a venue. Returns its id.
+
+    `city`, `lat` and `lng` are optional so a submission still survives a
+    geocoder that is unreachable or unconfigured, but supplying them is what
+    makes the row usable: without coordinates it can never be distance-ranked,
+    and without a city it never matches a city query.
 
     `source` alone decides whether the row is searchable, since only
     VERIFIED_SOURCES are queried. A "user_submitted" row therefore stays out of
     every result however complete it is, which is the human-in-the-loop gate
     rather than a gap.
+
+    Takes `**fields` rather than one parameter per column because the callers
+    now want very different subsets: a parent's submission sets a handful, while
+    an approved candidate carries hours, a category and a citation. `venue_type`
+    stays an explicit keyword because `type` shadows a builtin and every caller
+    already spells it that way.
     """
-    return _write(
-        "INSERT INTO venues (name, type, neighbourhood, kid_friendly, "
-        "has_family_room, has_nursing_room, stroller_accessible, source, "
-        "parent_id, city, lat, lng, notes, address) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (name, venue_type, neighbourhood, int(kid_friendly), int(has_family_room),
-         int(has_nursing_room), int(stroller_accessible), source, parent_id,
-         city, lat, lng, notes, address))
+    unknown = set(fields) - set(ADD_VENUE_FIELDS) - set(CANDIDATE_FEATURE_COLUMNS)
+    if unknown:
+        raise ValueError(f"not a venue field: {', '.join(sorted(unknown))}")
+    if venue_type is not None:
+        fields["type"] = venue_type
+    # Flags are 0/1 in SQLite, and callers pass real booleans.
+    for flag in CANDIDATE_FEATURE_COLUMNS & set(fields):
+        fields[flag] = int(bool(fields[flag]))
+    columns = ", ".join(("name", "source") + tuple(fields))
+    placeholders = ", ".join("?" for _ in range(len(fields) + 2))
+    return _write(f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
+                  (name, source, *fields.values()))
 
 
 # The columns log_a_place.store owns on a submission. Wider than
@@ -558,6 +574,117 @@ def delete_venue(venue_id, parent_id):
     update_venue, and for the same reason."""
     _write("DELETE FROM venues WHERE id = ? AND parent_id = ? "
            "AND source = 'user_submitted'", (venue_id, parent_id))
+
+
+class PromotionError(Exception):
+    """A submission could not be verified into the curated set."""
+
+
+def get_pending_submissions():
+    """Every unverified submission, newest first, for the admin review queue.
+
+    Each row carries `curated_clash`: how many curated venues already cover the
+    same name and city. The queue shows it because promoting into a clash is
+    exactly what idx_venues_curated_identity refuses, and the admin needs to see
+    that before clicking rather than after. The live database has one (a parent
+    submitted Science World, which is already curated).
+    """
+    with closing(connect()) as conn:
+        return conn.execute("""
+            SELECT v.*, p.email AS submitted_by,
+                   (SELECT COUNT(*) FROM venues c
+                    WHERE c.source = 'curated' AND c.name = v.name
+                      AND IFNULL(c.city, '') = IFNULL(v.city, '')) AS curated_clash
+            FROM venues v LEFT JOIN parents p ON p.id = v.parent_id
+            WHERE v.source = 'user_submitted'
+            ORDER BY v.created_at DESC, v.id DESC""").fetchall()
+
+
+def promote_submission(venue_id, admin_id):
+    """Verify one submission into the curated set, so it starts appearing in
+    plans and searches. Records who verified it and when.
+
+    Refuses, rather than half-succeeding, when the row is not promotable:
+
+    - no city, because get_venues_in_city matches on `city LIKE`, so a curated
+      row without one is published and simultaneously invisible. That is worse
+      than a clear refusal.
+    - a curated venue of the same name and city already exists, which the unique
+      index would reject anyway; this turns that into a message an admin can act
+      on.
+    """
+    with closing(connect()) as conn, conn:
+        row = conn.execute(
+            "SELECT name, city FROM venues WHERE id = ? AND source = 'user_submitted'",
+            (venue_id,)).fetchone()
+        if row is None:
+            raise PromotionError("that submission is no longer pending")
+        if not (row["city"] or "").strip():
+            raise PromotionError(
+                f"{row['name']} has no city, so it would never match a search. "
+                "Add one before verifying it")
+        clash = conn.execute(
+            "SELECT 1 FROM venues WHERE source = 'curated' AND name = ? "
+            "AND IFNULL(city, '') = IFNULL(?, '')",
+            (row["name"], row["city"])).fetchone()
+        if clash:
+            raise PromotionError(
+                f"{row['name']} is already a curated venue in {row['city']}. "
+                "Reject this one instead, or rename it if it is a different place")
+        conn.execute(
+            "UPDATE venues SET source = 'curated', verified_at = datetime('now'), "
+            "verified_by = ? WHERE id = ?", (admin_id, venue_id))
+
+
+def reject_submission(venue_id):
+    """Discard one unverified submission.
+
+    Scoped to user_submitted in the SQL, not by the caller, so an admin acting
+    on a stale page cannot delete a venue that has since been verified.
+    """
+    _write("DELETE FROM venues WHERE id = ? AND source = 'user_submitted'",
+           (venue_id,))
+
+
+def get_unverified_venues(limit=None):
+    """Venues in the searchable set that no human has confirmed: verified_at
+    IS NULL.
+
+    One criterion rather than a list of sources, because that is what the trust
+    gate is eventually going to be. Today `source` decides what the planner may
+    use, which means the 38 seeded venues are trusted purely because of how they
+    were typed in: they are labelled 'curated' but nobody ever checked them.
+    Stamping verified_at as they are confirmed is what makes flipping the gate
+    to `verified_at IS NOT NULL` a one-line change later instead of a redesign.
+
+    Excludes user_submitted rows: those are a different queue with different
+    guards (see get_pending_submissions), and showing them twice would invite
+    confirming one without the clash and missing-city checks.
+    """
+    source_clause, source_params = _verified_source_clause()
+    sql = (f"SELECT * FROM venues WHERE {source_clause} AND verified_at IS NULL "
+           "ORDER BY seed_rank IS NULL, seed_rank, name")
+    params = list(source_params)
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    with closing(connect()) as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def mark_verified(venue_id, admin_id):
+    """Record that a human confirmed a venue already in the searchable set.
+
+    Separate from promote_submission, which also changes `source`: this one only
+    ever stamps, so confirming a seeded venue cannot accidentally publish
+    anything. Scoped to VERIFIED_SOURCES so it cannot quietly bless a pending
+    submission that belongs in the other queue.
+    """
+    source_clause, source_params = _verified_source_clause()
+    _write(
+        "UPDATE venues SET verified_at = datetime('now'), verified_by = ? "
+        f"WHERE id = ? AND {source_clause}",
+        [admin_id, venue_id, *source_params])
 
 
 def get_parent_by_email(email):

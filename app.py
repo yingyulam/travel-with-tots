@@ -7,7 +7,7 @@ the src/ package; this file just wires HTTP requests to that logic.
 
 import json
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 from functools import wraps
 
 import openai
@@ -25,7 +25,8 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from src import rag
+from src import candidates, db, rag
+from src.workflows import propose_venues
 from src.agents import (
     ALLOWED_CHAT_MODELS,
     DEFAULT_MODEL,
@@ -48,10 +49,12 @@ from src.components.search_web import WebSearchError, search_web
 from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, get_venues
 from src.dates import compute_age
 from src.db import (
+    PromotionError,
     TRIP_FIELDS,
     add_child,
     add_parent,
     add_trip,
+    add_venue,
     delete_child,
     delete_trip,
     delete_venue,
@@ -59,9 +62,14 @@ from src.db import (
     get_logged_venues_for_parent,
     get_parent,
     get_parent_by_email,
+    get_unverified_venues,
+    mark_verified,
+    get_pending_submissions,
     get_trip_for_parent,
     get_trips_for_parent,
     init_db,
+    promote_submission,
+    reject_submission,
     update_child,
     update_venue,
 )
@@ -307,6 +315,245 @@ def dashboard():
 
     return render_template("dashboard.html", parent=parent, trips=trips,
                            places=places, amenity_options=AMENITY_OPTIONS)
+
+
+@app.route("/venues/review")
+@login_required
+@admin_required
+def venue_review():
+    """Everything no person has checked yet, in one place.
+
+    Three sections because they need three different actions, not because they
+    are three different kinds of thing: agent proposals need correcting before
+    they are usable, parent submissions need publishing, and the seeded demo
+    venues are already being planned around and only need confirming. What they
+    share is the criterion, verified_at IS NULL, which is what the trust gate
+    will eventually be.
+    """
+    unverified = get_unverified_venues()
+    return render_template(
+        "venue_review.html",
+        proposals=_reviewable_candidates(),
+        submissions=get_pending_submissions(),
+        unverified=unverified[:UNVERIFIED_PAGE_SIZE],
+        unverified_total=len(unverified),
+        flag_labels=FLAG_LABELS)
+
+
+@app.route("/venues/review/<int:venue_id>", methods=["POST"])
+@login_required
+@admin_required
+def venue_review_decide(venue_id):
+    """Verify or discard one submission, then redirect back to the queue.
+
+    One route with an action rather than two, because both decisions are the
+    same gesture on the same row. Redirecting after the POST means a refresh
+    re-reads the queue instead of repeating the decision.
+    """
+    action = request.form.get("action")
+    if action == "approve":
+        try:
+            promote_submission(venue_id, _current_parent()["id"])
+        except PromotionError as e:
+            flash(str(e).capitalize() + ".")
+        else:
+            flash("Verified. It can now appear in plans and searches.")
+    elif action == "reject":
+        reject_submission(venue_id)
+        flash("Submission discarded.")
+    else:
+        flash("Unknown action.")
+    return redirect(url_for("venue_review"))
+
+
+# How many unconfirmed venues to show at once. The backlog is 38, and a page
+# offering all of them has the same problem as an oversized proposal batch:
+# more than one person will work through in a sitting.
+UNVERIFIED_PAGE_SIZE = 12
+
+# The venue flags a reviewer can vouch for, as (field, label). Built from the
+# columns the planner can actually filter on, so the form and the filters
+# cannot come to offer different sets.
+FLAG_LABELS = tuple(
+    (key, FEATURE_LABELS.get(key, key.replace("_", " ").capitalize()))
+    for key in sorted(db.CANDIDATE_FEATURE_COLUMNS))
+
+
+def _safe_url(url):
+    """A candidate's citation, or None if it is not a web address.
+
+    The URL came from a model reading the open web and is rendered as a link,
+    and Jinja's escaping does not stop a javascript: href.
+    """
+    return url if (url or "").startswith(("http://", "https://")) else None
+
+
+def _reviewable_candidates():
+    """Pending proposals, each marked if the database already has that name."""
+    have = {(row["name"] or "").strip().casefold()
+            for row in db.get_venues_in_city("")}
+    rows = []
+    for row in candidates.load(candidates.PENDING):
+        row = dict(row)
+        row["already_have"] = (row["name"] or "").strip().casefold() in have
+        row["source_link"] = _safe_url(row.get("source_url"))
+        rows.append(row)
+    return rows
+
+
+@app.route("/venues/review/candidates", methods=["POST"])
+@login_required
+@admin_required
+def venue_review_candidates():
+    """Save edits to the proposed batch, and approve or reject the ticked ones.
+
+    One submit for the whole batch: reviewing a small batch means reading it as
+    a set, and thirty separate posts is thirty chances to lose your place.
+
+    Edits are saved for every row, not only the ticked ones, so a half-finished
+    review survives. That is what makes a batch bigger than one sitting workable.
+    """
+    action = request.form.get("action")
+    if action not in ("save", "approve", "reject"):
+        flash("Unknown action.")
+        return redirect(url_for("venue_review"))
+
+    picked = set(request.form.getlist("picked"))
+    admin_id = _current_parent()["id"]
+    saved = approved = rejected = 0
+    refused = []
+
+    for row in candidates.load(candidates.PENDING):
+        edits = _candidate_edits(row["id"], request.form)
+        if edits:
+            candidates.update(row["id"], **edits)
+            saved += 1
+        if row["id"] not in picked:
+            continue
+        if action == "reject":
+            candidates.set_status(row["id"], candidates.REJECTED, decided_by=admin_id)
+            rejected += 1
+        elif action == "approve":
+            merged = {**row, **edits}
+            # A venue with no category cannot fill an activity slot or a food
+            # slot, and would still be eligible as a nap stop. Refusing is
+            # clearer than inserting something the planner half-understands.
+            if not merged.get("category"):
+                refused.append(merged.get("name") or "a venue")
+                continue
+            _approve_candidate(merged, admin_id)
+            approved += 1
+
+    parts = []
+    if action == "save":
+        parts.append(f"Saved edits to {saved} venue{'s' if saved != 1 else ''}")
+    if approved:
+        parts.append(f"approved {approved}")
+    if rejected:
+        parts.append(f"rejected {rejected}")
+    if refused:
+        parts.append(f"{', '.join(refused)} needs a category before it can be approved")
+    flash(("; ".join(parts) or "Nothing selected") + ".")
+    return redirect(url_for("venue_review"))
+
+
+def _candidate_edits(candidate_id, form):
+    """The reviewer's changes to one candidate, read off the batch form.
+
+    Flags come back as present-or-absent checkboxes, so every one is written
+    every time: unticking has to clear a flag, not leave the old answer standing.
+    """
+    edits = {}
+    for field in candidates.EDITABLE:
+        key = f"{candidate_id}-{field}"
+        if field in db.CANDIDATE_FEATURE_COLUMNS:
+            edits[field] = "1" if form.get(key) else ""
+        elif key in form:
+            edits[field] = (form.get(key) or "").strip()
+    return edits
+
+
+def _approve_candidate(row, admin_id):
+    """Insert an approved candidate as a verified venue, and stamp the record.
+
+    The only path that turns a proposal into a venue, and it runs because a
+    person clicked. The agent writes candidates and nothing else.
+    """
+    add_venue(
+        row["name"],
+        source="curated",
+        venue_type=row.get("type") or None,
+        category=row.get("category") or None,
+        neighbourhood=row.get("neighbourhood") or None,
+        city=row.get("city") or None,
+        address=row.get("address") or None,
+        open_time=row.get("open_time") or None,
+        close_time=row.get("close_time") or None,
+        lat=_as_float(row.get("lat")),
+        lng=_as_float(row.get("lng")),
+        source_url=row.get("source_url") or None,
+        verified_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        verified_by=admin_id,
+        **{flag: row.get(flag) in ("1", 1, True)
+           for flag in db.CANDIDATE_FEATURE_COLUMNS})
+    candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
+
+
+def _as_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route("/venues/confirm", methods=["POST"])
+@login_required
+@admin_required
+def venue_confirm_batch():
+    """Record that a person checked venues the app was already planning around."""
+    admin_id = _current_parent()["id"]
+    picked = request.form.getlist("picked")
+    for venue_id in picked:
+        mark_verified(int(venue_id), admin_id)
+    flash(f"Confirmed {len(picked)} venue{'s' if len(picked) != 1 else ''}."
+          if picked else "Nothing selected.")
+    return redirect(url_for("venue_review"))
+
+
+@app.route("/propose-venues")
+@login_required
+@admin_required
+def propose_venues_page():
+    """The venue proposal component's own page: run a small batch, see it."""
+    return render_template("propose_venues.html",
+                           counts=candidates.counts(),
+                           batch_size=propose_venues.DEFAULT_BATCH_SIZE)
+
+
+@app.route("/propose-venues/run", methods=["POST"])
+@login_required
+@admin_required
+def propose_venues_run_route():
+    """Run one proposal batch, as JSON.
+
+    Kept small from the page: each candidate costs a search, a model call and a
+    place lookup, so a large batch belongs on the command line where nothing
+    times out. scripts/propose_venues.py is that path.
+    """
+    data = request.get_json(silent=True) or {}
+    batch_size = clamp_int(data.get("batch_size"), 1, 10,
+                           propose_venues.DEFAULT_BATCH_SIZE)
+    try:
+        result = propose_venues.propose(batch_size=batch_size)
+    except KeyError:
+        return jsonify({"error": "Set TAVILY_API_KEY and OPENROUTER_API_KEY first."}), 500
+    except propose_venues.ProposalError as e:
+        print(f"Venue proposal failed: {e}")
+        return jsonify({"error": "Couldn't reach the search or model right now."}), 502
+    except requests.exceptions.RequestException as e:
+        print(f"Venue proposal failed: {e}")
+        return jsonify({"error": "Couldn't reach the search or model right now."}), 502
+    return jsonify({**result, "counts": candidates.counts()})
 
 
 @app.route("/settings")
