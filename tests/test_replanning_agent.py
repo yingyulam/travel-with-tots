@@ -28,7 +28,8 @@ def _venue(id, name, neighbourhood="Downtown", **overrides):
 def _draft_venue(name, **overrides):
     """A rule-based-origin venue in a replan draft -- no numeric id, matching
     what interactions.replan() actually produces."""
-    base = {"name": name, "neighbourhood": "Downtown", "type": "park"}
+    base = {"name": name, "neighbourhood": "Downtown", "type": "park",
+            "open": "06:00", "close": "23:00"}
     base.update(overrides)
     return base
 

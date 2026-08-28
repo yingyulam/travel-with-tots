@@ -117,6 +117,48 @@ class VenueHoursTest(unittest.TestCase):
         self.assertEqual(left, 0)
 
 
+class HolidayHoursTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        patcher = mock.patch.object(db, "DB_PATH",
+                                   os.path.join(self._tmp.name, "app.db"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with closing(db.connect()) as conn:
+            db.create_schema(conn)
+        self.venue = db.add_venue("A Museum", source="curated", city="Vancouver",
+                                  venue_type="museum",
+                                  open_time="10:00", close_time="17:00")
+
+    def _venue_on(self, iso):
+        return data_loader.get_venues(on_date=date.fromisoformat(iso))[0]
+
+    def test_a_holiday_does_not_inherit_the_default_pair(self):
+        # The default pair is a statement about ordinary days. Carrying it over
+        # to Christmas Day would be inventing an answer.
+        self.assertEqual(self._venue_on("2026-12-24")["open"], "10:00")
+        self.assertIsNone(self._venue_on("2026-12-25")["open"])
+        self.assertEqual(self._venue_on("2026-12-25")["hours_source"],
+                         "holiday_unknown")
+
+    def test_holiday_hours_once_recorded_are_used(self):
+        db.set_venue_hours(self.venue, "winter", "holiday", "12:00", "16:00")
+        venue = self._venue_on("2026-12-25")
+        self.assertEqual((venue["open"], venue["close"]), ("12:00", "16:00"))
+        self.assertEqual(venue["hours_source"], "slot")
+
+    def test_a_holiday_slot_does_not_leak_into_ordinary_days(self):
+        db.set_venue_hours(self.venue, "winter", "holiday", "12:00", "16:00")
+        self.assertEqual(self._venue_on("2026-12-24")["open"], "10:00")
+
+    def test_a_venue_with_unknown_hours_cannot_be_scheduled(self):
+        from src.itinerary import venue_open_for
+        # The rule requirement 6 asks for: not knowing is a reason to leave a
+        # place out, not to include it. This used to return True.
+        self.assertFalse(venue_open_for(self._venue_on("2026-12-25"), 600, 60))
+
+
 class PlanningWithHoursTest(unittest.TestCase):
     """The point of all of it: the day being planned changes what fits."""
 

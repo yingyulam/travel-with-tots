@@ -1296,6 +1296,7 @@ def plan():
 
     resolve_plan_child(form, _current_parent())
 
+    hours_report = None
     revise_count = clamp_int(request.form.get("revise_count"), 0, MAX_REVISE_ROUNDS, 0)
     is_revise = revise_count > 0
     revise_message, revise_error = None, False
@@ -1322,6 +1323,7 @@ def plan():
             model=_chosen_model(request.form.get("model")),
         )
         plans = [Plan.from_dict(result)]
+        hours_report = result.get("hours")
         # Three outcomes, not two. The AI can improve the day, read it and
         # decide it is already right, or fail outright. Those last two used to
         # look the same to a parent, so an adjuster that agreed was reported as
@@ -1356,6 +1358,7 @@ def plan():
         "plan.html",
         form=form,
         plans=plans,
+        hours_report=hours_report,
         trip_context=trip_context,
         transit_options=TRANSIT_OPTIONS,
         dining_options=DINING_OPTIONS,

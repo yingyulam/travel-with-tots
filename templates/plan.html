@@ -210,6 +210,16 @@
 <section class="card" id="plan-results">
   <h2>Your plan</h2>
   {% if plans %}
+  {% if hours_report and hours_report.note %}
+  <p class="empty-plan">{{ hours_report.note }}</p>
+  {% endif %}
+  {% if hours_report and (hours_report.replaced or hours_report.dropped) %}
+  <p class="meta">
+    Checked against {{ hours_report.day_type }} hours for {{ form.trip_date }}:
+    {%- if hours_report.replaced %} {{ hours_report.replaced|length }} swapped{% endif %}
+    {%- if hours_report.dropped %}{{ ',' if hours_report.replaced }} {{ hours_report.dropped|length }} left free{% endif %}.
+  </p>
+  {% endif %}
   <p class="picker-hint">Tap “Start this day” when you’re ready.</p>
   <div class="plan-grid" id="plan-grid">
     {% for plan in plans %}
@@ -266,7 +276,11 @@
     {% endfor %}
   </div>
   {% else %}
+  {% if hours_report and hours_report.note %}
+  <p class="empty-plan">{{ hours_report.note }}</p>
+  {% else %}
   <p class="empty-plan">We couldn't build a day from those inputs. Try a later bedtime, or fewer stops.</p>
+  {% endif %}
   {% endif %}
 </section>
 {% endif %}

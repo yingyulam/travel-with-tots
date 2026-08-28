@@ -63,7 +63,19 @@
       <a class="cta-secondary" href="{{ url_for('replan_trip_page') }}">Try it</a>
     </div>
     <div class="plan-option">
-      <h3 class="plan-option-title">Venue proposer</h3>
+      <h3 class="plan-option-title">Opening-hours check</h3>
+      <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
+      <p>src/components/validate_hours.py: the last thing a plan passes before a
+      parent sees it. Checks every stop against that venue's hours for the trip
+      date, accounting for summer/winter, weekday/weekend and statutory
+      holidays, then swaps a closed venue for an open one or leaves the slot
+      free. Deterministic on purpose: comparing a time to stored hours is
+      arithmetic. A venue whose hours we do not know is treated as closed, never
+      as open.</p>
+    </div>
+
+    <div class="plan-option">
+    <h3 class="plan-option-title">Venue proposer</h3>
       <div class="badges"><span class="badge">AI-backed</span></div>
       <p>src/workflows/propose_venues.py: searches the web for real places a
       parent could take a toddler and writes a small batch of candidates with the

@@ -118,16 +118,35 @@ def _as_venue(row, reported=None, hours=None, slot=None):
     # nothing reads them for this: a claim needs an author and a date.
     venue.update(reported or {})
     venue["nap_friendly"] = is_nap_friendly(venue)
-    # Hours for the day being planned. A venue whose hours vary by season or by
-    # weekday has a row for that slot; everything else uses its default pair.
-    # Resolved here so venue_open_for and every caller stay date-unaware.
-    opens, closes = row["open_time"], row["close_time"]
-    if hours and slot in hours:
-        opens, closes = hours[slot]
-    venue["open"] = opens
-    venue["close"] = closes
+    venue.update(_hours_for_slot(row, hours, slot))
     venue["maps_url"] = maps_url(row["name"])
     return venue
+
+
+def _hours_for_slot(row, hours, slot):
+    """A venue's open/close for one (season, day_type), and where they came from.
+
+    Three outcomes, and the third is the point:
+
+    - a row for this exact slot: use it, it was entered for this kind of day.
+    - no slot, an ordinary day: use the venue's default pair. That pair is what
+      the venue says its hours are, and an ordinary day is what it means.
+    - no slot, a **holiday**: unknown. A default pair is a statement about
+      ordinary days, and most attractions keep different hours on a holiday or
+      shut altogether, so carrying the weekday pair over would be inventing an
+      answer. Unknown hours mean the venue cannot be scheduled, not that it is
+      open all day.
+    """
+    if hours and slot in hours:
+        opens, closes = hours[slot]
+        return {"open": opens, "close": closes, "hours_source": "slot"}
+    season, day_type = slot
+    if day_type == "holiday":
+        return {"open": None, "close": None, "hours_source": "holiday_unknown"}
+    if not row["open_time"] or not row["close_time"]:
+        return {"open": None, "close": None, "hours_source": "missing"}
+    return {"open": row["open_time"], "close": row["close_time"],
+            "hours_source": "default"}
 
 
 def get_venues(city="", on_date=None):

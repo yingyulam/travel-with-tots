@@ -4,8 +4,11 @@ from src.interactions import replan
 
 
 def _venue(name, category="activity", **overrides):
+    # Wide hours by default: these tests are about replan timing and themes,
+    # not opening hours, and a venue with no hours is now unschedulable.
     base = {"name": name, "category": category, "kid_friendly": True,
-            "can_eat": category == "food", "nap_friendly": False}
+            "can_eat": category == "food", "nap_friendly": False,
+            "open": "06:00", "close": "23:00"}
     base.update(overrides)
     return base
 

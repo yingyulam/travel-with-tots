@@ -1,6 +1,6 @@
 """Date/age utilities, independent of any storage layer."""
 
-from datetime import date
+from datetime import date, timedelta
 
 # Which months count as summer for a venue's opening hours. Vancouver's own
 # park washroom data splits the year this way, and attraction hours follow the
@@ -9,7 +9,11 @@ from datetime import date
 SUMMER_MONTHS = (5, 6, 7, 8, 9)
 
 SEASONS = ("summer", "winter")
-DAY_TYPES = ("weekday", "weekend")
+
+# A holiday is its own day type, not a weekday that happens to be quiet. Most
+# attractions keep different hours or shut entirely, and guessing weekday hours
+# for Christmas Day is exactly the confidently wrong answer to avoid.
+DAY_TYPES = ("weekday", "weekend", "holiday")
 
 
 def compute_age(date_of_birth, on=None):
@@ -21,19 +25,74 @@ def compute_age(date_of_birth, on=None):
     return months // 12, months % 12
 
 
+def _easter(year):
+    """Easter Sunday, by the anonymous Gregorian algorithm.
+
+    Needed because Good Friday is a BC statutory holiday and moves each year.
+    Computed rather than tabulated so the calendar never goes stale.
+    """
+    a, b, c = year % 19, year // 100, year % 100
+    d, e = b // 4, b % 4
+    f, g = (b + 8) // 25, (b - (b + 8) // 25 + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def _nth_weekday(year, month, weekday, nth):
+    """The nth given weekday of a month, e.g. the third Monday in February."""
+    first = date(year, month, 1)
+    offset = (weekday - first.weekday()) % 7
+    return date(year, month, 1 + offset + 7 * (nth - 1))
+
+
+def bc_holidays(year):
+    """British Columbia's statutory holidays for a year, as a set of dates.
+
+    Computed from their rules rather than listed, so it stays correct without
+    anyone remembering to extend a table. Boxing Day and Easter Monday are not
+    statutory here and are left out; a venue that closes on one needs a
+    date-specific entry, which is a gap named in the README.
+    """
+    easter = _easter(year)
+    return {
+        date(year, 1, 1),                              # New Year's Day
+        _nth_weekday(year, 2, 0, 3),                   # Family Day
+        easter - timedelta(days=2),                    # Good Friday
+        _victoria_day(year),                           # Victoria Day
+        date(year, 7, 1),                              # Canada Day
+        _nth_weekday(year, 8, 0, 1),                   # BC Day
+        _nth_weekday(year, 9, 0, 1),                   # Labour Day
+        date(year, 9, 30),                             # Truth and Reconciliation
+        _nth_weekday(year, 10, 0, 2),                  # Thanksgiving
+        date(year, 11, 11),                            # Remembrance Day
+        date(year, 12, 25),                            # Christmas Day
+    }
+
+
+def _victoria_day(year):
+    """The Monday before 25 May."""
+    may25 = date(year, 5, 25)
+    return may25 - timedelta(days=(may25.weekday() - 0) % 7 or 7)
+
+
 def season_for(on):
     """"summer" or "winter" for a date, for picking a venue's hours."""
     return "summer" if on.month in SUMMER_MONTHS else "winter"
 
 
 def day_type_for(on):
-    """"weekend" for Saturday or Sunday, otherwise "weekday".
+    """"holiday", "weekend" or "weekday" for a date.
 
-    Public holidays are not handled: a venue on a holiday Monday may keep its
-    Sunday hours, and nothing here knows the calendar. Named rather than
-    silently wrong, because a plan built on weekday hours for a closed Monday is
-    a confidently wrong plan.
+    Holiday wins over the day of the week: Christmas Day on a Friday is not a
+    weekday for a museum's purposes.
     """
+    if on in bc_holidays(on.year):
+        return "holiday"
     return "weekend" if on.weekday() >= 5 else "weekday"
 
 

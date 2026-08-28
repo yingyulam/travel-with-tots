@@ -882,11 +882,42 @@ by `venue_open_for`, which is how a museum ends up scheduled at eight in the
 evening, and deciding whether a place can be visited at a time is most of what
 the planner does.
 
+### The check before a plan is shown
+
+`src/components/validate_hours.py` runs after the draft and after the AI
+adjuster, and nothing reaches a parent without passing it. For each stop it asks
+whether that venue is open at that time on that date, and then:
+
+- **open** -> the stop stands.
+- **closed** -> swapped for an open venue, using the same `open_alternative` the
+  in-trip replan uses, with the reason written into the stop.
+- **hours unknown** -> treated exactly like closed. A venue nobody has given
+  hours for is not schedulable: `venue_open_for` returns False, where it used to
+  return True. Not knowing is a reason to leave a place out, never to include it.
+- **nothing available** -> the slot is left free and says so. A slot the parent
+  can fill beats a confident wrong answer.
+
+It is deterministic. Comparing a stop time against stored hours is arithmetic,
+and the rule in CLAUDE.md is not to ask a model to do what code already does.
+What no model should be trusted with is whether a venue is open on Christmas
+Day, so this never guesses.
+
+**Holidays are their own day type.** `dates.bc_holidays` computes British
+Columbia's statutory holidays from their rules, including Good Friday via the
+Easter computus, so the calendar cannot go stale. A venue with no holiday hours
+recorded has *unknown* hours for that date rather than inheriting its weekday
+pair, because a default pair is a statement about ordinary days.
+
+The consequence is deliberate and visible: with no holiday hours in the
+database, a Christmas Day plan comes back empty, and says so rather than
+offering a day built on a guess. The fix is data, and the report names exactly
+which venue needs which day's hours.
+
 ### Two known gaps
 
-- **Public holidays.** A venue on a holiday Monday may keep its Sunday hours,
-  and nothing here knows the calendar, so a plan built on weekday hours for a
-  closed Monday is a confidently wrong plan.
+- **Boxing Day and Easter Monday** are not statutory in BC and are not treated
+  as holidays, though many attractions keep special hours. A venue that closes
+  on one needs a date-specific entry, which the model does not support yet.
 - **Nothing records whether a place costs money.** A free park and a $30
   aquarium plan very differently, and it is part of why a paid attraction makes
   a poor nap stop.

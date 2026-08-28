@@ -126,7 +126,7 @@ def _bonus_stop(minutes, venues, features, used_names, theme_types=None, reason=
     }
 
 
-def _open_alternative(kind, venues, features, used, start_min, duration_min):
+def open_alternative(kind, venues, features, used, start_min, duration_min):
     """An unused, feature-matched venue of the right sort that's open now."""
     pool = list(venues or [])
     if kind == "nap":
@@ -185,7 +185,7 @@ def _enforce_hours(stops, venues, features):
             result.append(stop)
             continue
         used.discard(venue["name"])
-        alt = _open_alternative(stop["kind"], venues, features, used, start, dur)
+        alt = open_alternative(stop["kind"], venues, features, used, start, dur)
         if alt:
             used.add(alt["name"])
             swapped = dict(stop)

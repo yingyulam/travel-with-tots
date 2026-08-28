@@ -64,11 +64,18 @@ def stop_duration(kind):
 def venue_hours(venue):
     """Return (open_min, close_min) for the venue, or None if unknown.
 
-    Single open/close pair for now. This is the one place per-day hours would
-    later plug in -- e.g. take a weekday and read venue["hours"][weekday] here,
-    without changing any caller.
+    Already resolved for the day being planned: data_loader.get_venues picks the
+    right pair for the trip date (season, weekday/weekend, holiday) and puts it
+    in "open"/"close", so nothing here needs to know the date.
+
+    Both spellings are accepted because two shapes reach this. Venue dicts from
+    data_loader use open/close; candidate rows from db.get_candidate_venues,
+    which the AI adjuster swaps in, carry the column names. Reading only one
+    meant the adjuster's own "isn't open at" check silently passed every
+    swapped-in venue, since its hours looked unknown.
     """
-    open_t, close_t = venue.get("open"), venue.get("close")
+    open_t = venue.get("open") or venue.get("open_time")
+    close_t = venue.get("close") or venue.get("close_time")
     if not open_t or not close_t:
         return None
     return hhmm_to_min(open_t), hhmm_to_min(close_t)
@@ -77,10 +84,16 @@ def venue_hours(venue):
 def venue_open_for(venue, start_min, duration_min):
     """True if a stop starting at ``start_min`` fits the venue's open hours:
     at or after opening, finishing before close, and not starting within the
-    closing buffer. Venues with no hours are treated as always open."""
+    closing buffer.
+
+    A venue whose hours are unknown is **not** schedulable. It used to be
+    treated as open all day, which is how an unverified venue reached a real
+    family's afternoon: nobody had said it was open, and the app said it for
+    them. Not knowing is a reason to leave a place out, not to include it.
+    """
     hours = venue_hours(venue)
     if hours is None:
-        return True
+        return False
     open_min, close_min = hours
     return (start_min >= open_min
             and start_min + duration_min <= close_min

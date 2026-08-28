@@ -11,6 +11,7 @@ import requests
 
 from ..agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
 from ..data_loader import get_venues
+from ..components.validate_hours import enforce
 from ..dates import parse_date
 from ..itinerary import generate_plans
 
@@ -43,7 +44,9 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
     }
     # The day being planned decides which of each venue's hours apply, so it is
     # resolved once here rather than threaded through the planner.
-    plan = generate_plans(get_venues(on_date=parse_date(trip_date)), inputs)[0]
+    on_date = parse_date(trip_date)
+    venues = get_venues(on_date=on_date)
+    plan = generate_plans(venues, inputs)[0]
     adjusted = True
     try:
         adjustment = PlanningAgent(model).adjust_plan(
@@ -58,7 +61,18 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
     except (PlanningAgentError, requests.exceptions.RequestException, KeyError) as e:
         print(f"Plan adjustment skipped, showing the unadjusted draft: {e}")
         adjusted = False
+    # Last word on hours, after both the draft and the AI adjuster. The draft
+    # only used venues open at their slot, and the adjuster refuses an edit that
+    # moves one outside its hours, but neither is accountable for the finished
+    # plan as a whole: an adjuster failure leaves the draft, a retry can land a
+    # different set of edits, and no earlier step reports *why* a venue could
+    # not be used. Nothing reaches a parent without passing this.
+    checked, hours_report = enforce(plan.to_dict(), venues, on_date,
+                                    features=features)
+    plan.stops = checked["stops"]
+
     result = plan.to_dict()
+    result["hours"] = hours_report
     result["adjusted"] = adjusted
     # Whether the AI actually moved anything. adjust_plan marks every stop it
     # edits, so no marks means it read the day and left it alone. That is the
