@@ -9,19 +9,19 @@ from src import db
 
 
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
-                   min_age_months=0, max_age_months=60, can_eat=False, **flags):
-    columns = {"kid_friendly": 0, "has_family_room": 0, "has_nursing_room": 0,
-               "stroller_accessible": 0, "nap_friendly": 0}
-    columns.update({k: int(v) for k, v in flags.items()})
+                   can_eat=False, venue_type="park", **flags):
+    columns = {"has_family_room": 0, "has_nursing_room": 0,
+               "stroller_accessible": 0}
+    # kid_friendly, nap_friendly and the age range are no longer columns:
+    # accepted and ignored so callers written against the old shape still read.
+    columns.update({k: int(v) for k, v in flags.items() if k in columns})
     conn.execute(
-        "INSERT INTO venues (name, city, neighbourhood, min_age_months, "
-        "max_age_months, can_eat, source, kid_friendly, has_family_room, "
-        "has_nursing_room, stroller_accessible, nap_friendly) "
-        "VALUES (?, ?, ?, ?, ?, ?, 'curated', ?, ?, ?, ?, ?)",
-        (name, city, neighbourhood, min_age_months, max_age_months, int(can_eat),
-         columns["kid_friendly"], columns["has_family_room"],
-         columns["has_nursing_room"], columns["stroller_accessible"],
-         columns["nap_friendly"]))
+        "INSERT INTO venues (name, city, neighbourhood, type, can_eat, source, "
+        "has_family_room, has_nursing_room, stroller_accessible) "
+        "VALUES (?, ?, ?, ?, ?, 'curated', ?, ?, ?)",
+        (name, city, neighbourhood, venue_type, int(can_eat),
+         columns["has_family_room"], columns["has_nursing_room"],
+         columns["stroller_accessible"]))
 
 
 class GetCandidateVenuesTest(unittest.TestCase):
@@ -50,8 +50,8 @@ class GetCandidateVenuesTest(unittest.TestCase):
         # excluded anything. Age paces the day (realistic_stop_count), it does
         # not filter venues. The argument stays so agents.py needs no change.
         with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "For Babies", min_age_months=0, max_age_months=12)
-            _insert_venue(conn, "For Big Kids", min_age_months=48, max_age_months=60)
+            _insert_venue(conn, "For Babies")
+            _insert_venue(conn, "For Big Kids")
         names = {v["name"] for v in db.get_candidate_venues("Vancouver", age_months=12)}
         self.assertEqual(names, {"For Babies", "For Big Kids"})
 
@@ -127,10 +127,10 @@ class GetCandidateVenuesTest(unittest.TestCase):
 
     def test_user_submitted_venues_are_never_planned_around(self):
         with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Reviewed", kid_friendly=True)
+            _insert_venue(conn, "Reviewed")
             conn.execute(
-                "INSERT INTO venues (name, city, neighbourhood, source, kid_friendly) "
-                "VALUES ('Unreviewed', 'Vancouver', 'Downtown', 'user_submitted', 1)")
+                "INSERT INTO venues (name, city, neighbourhood, source) "
+                "VALUES ('Unreviewed', 'Vancouver', 'Downtown', 'user_submitted')")
         rows = db.get_candidate_venues("Vancouver", age_months=12)
         self.assertEqual([v["name"] for v in rows], ["Reviewed"])
 

@@ -25,10 +25,6 @@
               <span>Date of birth</span>
               <input type="date" name="date_of_birth" value="{{ child.date_of_birth }}" required>
             </label>
-            <label class="field">
-              <span>Gender <em>(optional)</em></span>
-              <input type="text" name="gender" value="{{ child.gender or '' }}">
-            </label>
             <button type="submit" class="cta-secondary">Save changes</button>
           </form>
         </details>
@@ -54,10 +50,6 @@
       <label class="field">
         <span>Date of birth</span>
         <input type="date" name="date_of_birth" required>
-      </label>
-      <label class="field">
-        <span>Gender <em>(optional)</em></span>
-        <input type="text" name="gender">
       </label>
     </div>
     <button type="submit" class="cta">Add child</button>

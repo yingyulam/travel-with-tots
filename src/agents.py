@@ -9,7 +9,7 @@ import requests
 from dotenv import load_dotenv
 
 from . import db, rag
-from .data_loader import maps_url
+from .data_loader import is_nap_friendly, maps_url
 from .interactions import SITUATION_LABELS
 from .itinerary import (
     DEFAULT_LUNCH_TARGET_MIN, LUNCH_SEARCH_RADIUS_MIN, display_to_min,
@@ -233,13 +233,12 @@ def _format_venue_candidates(venues: list) -> str:
         return "No venues matched this trip's destination, age, and features."
     blocks = []
     for v in venues:
-        tags = [key for key in ("kid_friendly", "has_family_room", "has_nursing_room",
+        tags = [key for key in ("has_family_room", "has_nursing_room",
                                  "stroller_accessible") if v[key]]
         blocks.append(
             f"[venue_id {v['id']}] {v['name']} -- {v['type']}, {v['neighbourhood']}\n"
-            f"Hours: {v['open_time'] or '?'}-{v['close_time'] or '?'} | "
-            f"Ages: {v['min_age_months']}-{v['max_age_months']} months\n"
-            f"Nap-friendly: {'yes' if v['nap_friendly'] else 'no'} | "
+            f"Hours: {v['open_time'] or '?'}-{v['close_time'] or '?'}\n"
+            f"Nap-friendly: {'yes' if is_nap_friendly(v) else 'no'} | "
             f"Can eat here: {'yes' if v['can_eat'] else 'no'}\n"
             f"Features: {', '.join(tags) or 'none'}")
     return "\n\n".join(blocks)
@@ -436,7 +435,7 @@ def _validate_plan_edits(edits, draft_stops: list, by_id: dict, ctx: dict):
                 return None, (
                     f"venue_id {new_venue_id!r} isn't a venue where a meal is "
                     f"possible, needed for the meal stop at {name!r}.")
-            if target["kind"] == "nap" and not candidate.get("nap_friendly"):
+            if target["kind"] == "nap" and not is_nap_friendly(candidate):
                 return None, (
                     f"venue_id {new_venue_id!r} isn't nap-friendly, needed for "
                     f"the nap stop at {name!r}.")

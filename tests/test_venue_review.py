@@ -174,7 +174,7 @@ class CandidateBatchTest(_ReviewTest):
             f"{row['id']}-city": "Vancouver",
             f"{row['id']}-open_time": "10:00",
             f"{row['id']}-close_time": "17:00",
-            f"{row['id']}-kid_friendly": "on",
+            f"{row['id']}-has_family_room": "on",
         })
         venue = self._venue("Bloedel Conservatory")
         self.assertIsNotNone(venue)
@@ -183,7 +183,7 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["verified_by"], self.admin_id)
         self.assertTrue(venue["verified_at"])
         self.assertEqual(venue["open_time"], "10:00")
-        self.assertEqual(venue["kid_friendly"], 1)
+        self.assertEqual(venue["has_family_room"], 1)
         self.assertEqual(candidates.load()[0]["status"], candidates.APPROVED)
 
     def test_an_unticked_candidate_stays_pending(self):
@@ -259,15 +259,15 @@ class CandidateBatchTest(_ReviewTest):
             f"{row['id']}-city": "Vancouver",
             f"{row['id']}-open_time": "10:00",
             f"{row['id']}-close_time": "17:00",
-            f"{row['id']}-kid_friendly": "on",
-            f"{row['id']}-nap_friendly": "on",
+            f"{row['id']}-has_family_room": "on",
+
         })
         record = candidates.load()[0]
         self.assertEqual(record["status"], candidates.APPROVED)
         self.assertEqual(record["open_time"], "10:00")
         self.assertEqual(record["close_time"], "17:00")
-        self.assertEqual(record["kid_friendly"], "1")
-        self.assertEqual(record["nap_friendly"], "1")
+        self.assertEqual(record["has_family_room"], "1")
+
         self.assertEqual(record["can_eat"], "")
 
     def test_confirming_the_backlog_in_a_batch(self):

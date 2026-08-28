@@ -65,7 +65,7 @@ class AddVenueStorageTest(_VenueDbTest):
         # The guard that matters. A complete submission is still held back by
         # source alone, which is the human-in-the-loop gate.
         db.add_venue("Secret Playground", source="user_submitted",
-                     city="Vancouver", lat=49.28, lng=-123.12, kid_friendly=True)
+                     city="Vancouver", lat=49.28, lng=-123.12)
         self.assertNotIn("Secret Playground",
                          [v["name"] for v in db.get_venues_in_city("Vancouver")])
         self.assertNotIn("Secret Playground",
@@ -76,7 +76,7 @@ class AddVenueStorageTest(_VenueDbTest):
         # Same row, promoted: proves the previous test failed on source rather
         # than on something missing from the record.
         db.add_venue("Promoted Park", source="curated", city="Vancouver",
-                     lat=49.28, lng=-123.12, kid_friendly=True)
+                     lat=49.28, lng=-123.12)
         self.assertIn("Promoted Park",
                       [v["name"] for v in db.get_venues_in_city("Vancouver")])
 
@@ -86,7 +86,7 @@ class UpdateVenueTest(_VenueDbTest):
         super().setUp()
         self.place_id = db.add_venue(
             "Old Name", source="user_submitted", parent_id=self.parent_id,
-            city="Vancouver", lat=49.28, lng=-123.12, kid_friendly=True)
+            city="Vancouver", lat=49.28, lng=-123.12)
 
     def test_an_owner_can_correct_their_own(self):
         db.update_venue(self.place_id, self.parent_id, name="New Name",
@@ -118,8 +118,7 @@ class UpdateVenueTest(_VenueDbTest):
             db.update_venue(self.place_id, self.parent_id, nmae="typo")
 
     def test_editing_leaves_it_unsearchable(self):
-        db.update_venue(self.place_id, self.parent_id, name="Edited",
-                        kid_friendly=1)
+        db.update_venue(self.place_id, self.parent_id, name="Edited")
         self.assertNotIn("Edited",
                          [v["name"] for v in
                           db.get_candidate_venues("Vancouver", age_months=24)])
@@ -255,7 +254,7 @@ class PrefillTest(_VenueDbTest):
         html = response.get_data(as_text=True)
         self.assertIn('name="has_family_room" checked', html)
         self.assertIn('name="has_nursing_room" checked', html)
-        self.assertIn('name="kid_friendly">', html)
+        self.assertIn('name="stroller_accessible">', html)
 
     def test_the_pin_travels_too(self):
         # Without these the parent would land on the page and have to find the
@@ -415,7 +414,7 @@ class ResubmittingAPlaceTest(_VenueDbTest):
         self.assertEqual(first["id"], second["id"])
 
     def test_the_later_submission_wins(self):
-        self._store(notes="closed on Mondays", kid_friendly=True)
+        self._store(notes="closed on Mondays")
         self._store(notes="open every day")
         row = self._rows()[0]
         self.assertEqual(row["notes"], "open every day")
@@ -458,8 +457,8 @@ class ResubmittingAPlaceTest(_VenueDbTest):
         self.assertEqual(kept["notes"], "the real one")
 
     def test_a_resubmission_stays_out_of_every_search(self):
-        self._store(kid_friendly=True)
-        self._store(kid_friendly=True)
+        self._store()
+        self._store()
         self.assertNotIn("Science World",
                          [v["name"] for v in db.get_venues_in_city("Vancouver")])
 

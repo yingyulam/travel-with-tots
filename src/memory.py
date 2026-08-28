@@ -39,11 +39,11 @@ from .form_helpers import MAX_AGE_YEARS, read_form
 STALE_AFTER_DAYS = 90
 
 CLOCK_FIELDS = ("wake_up", "bedtime", "preferred_lunch_time", "naps")
-STABLE_FIELDS = ("destination", "accommodation", "transit", "features",
+STABLE_FIELDS = ("destination", "accommodation", "transit",
                  "dining", "stop_count", "transit_nap")
 
 # Stored as JSON arrays, and read_form takes them as repeated form fields.
-_JSON_LIST_FIELDS = ("transit", "features")
+_JSON_LIST_FIELDS = ("transit",)
 
 # Deliberately never recalled. Both are posted to /plan and fed into the AI
 # adjuster's prompt, so remembering them would ship a months-old note ("she's on

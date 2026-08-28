@@ -238,7 +238,6 @@ def inject_current_parent():
             children.append({
                 "id": child["id"],
                 "name": child["name"],
-                "gender": child["gender"],
                 "date_of_birth": child["date_of_birth"],
                 "age_years": years,
                 "age_months": months,
@@ -925,7 +924,7 @@ def add_child_route():
     if not name or not date_of_birth:
         flash("A child needs both a name and a date of birth.")
         return redirect(url_for("dashboard"))
-    add_child(parent["id"], name, request.form.get("gender") or None, date_of_birth)
+    add_child(parent["id"], name, date_of_birth)
     return redirect(url_for("dashboard"))
 
 
@@ -942,7 +941,7 @@ def edit_child_route(child_id):
     if not name or not date_of_birth:
         flash("A child needs both a name and a date of birth.")
         return redirect(url_for("dashboard"))
-    update_child(child_id, name, request.form.get("gender") or None, date_of_birth)
+    update_child(child_id, name, date_of_birth)
     return redirect(url_for("dashboard"))
 
 

@@ -49,7 +49,7 @@ class _MemoryTest(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _child(self, name="Maya", years=2, months=6, parent_id=None):
-        return db.add_child(parent_id or self.parent_id, name, None,
+        return db.add_child(parent_id or self.parent_id, name,
                             _dob(years, months))
 
     def _trip(self, child_id=None, parent_id=None, **fields):
@@ -123,7 +123,7 @@ class DirtyAgesTest(_MemoryTest):
         # would clamp that to 0 and the chat would show an age the planner is
         # not using.
         future = (date.today() + timedelta(days=200)).isoformat()
-        db.add_child(self.parent_id, "Bump", None, future)
+        db.add_child(self.parent_id, "Bump", future)
         result = memory.recall(self.parent_id)
         self.assertEqual(result["form"]["age_years"], "0")
         self.assertEqual(result["form"]["age_months"], "0")
@@ -157,11 +157,9 @@ class TheRoutineTest(_MemoryTest):
         self.assertIn("naps", result["remembered"])
 
     def test_json_list_columns_come_back_as_lists(self):
-        self._trip(transit=json.dumps(["bus", "stroller"]),
-                   features=json.dumps(["kid_friendly"]))
+        self._trip(transit=json.dumps(["bus", "stroller"]))
         form = memory.recall(self.parent_id)["form"]
         self.assertEqual(form["transit"], ["bus", "stroller"])
-        self.assertEqual(form["features"], ["kid_friendly"])
 
     def test_the_notes_are_never_recalled(self):
         # They reach the AI adjuster's prompt, so recalling them would ship a

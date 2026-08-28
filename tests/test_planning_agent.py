@@ -83,7 +83,7 @@ class ValidatePlanEditsTest(unittest.TestCase):
         self.by_id = {
             7: _venue(7, "New Museum", type="museum"),
             8: _venue(8, "New Cafe", can_eat=True, category="food"),
-            9: _venue(9, "New Nap Spot", nap_friendly=True),
+            9: _venue(9, "New Nap Spot"),
         }
         self.ctx = dict(bedtime="19:30", strict_schedule=False, naps=None,
                          preferred_lunch_time="", activity_duration_min=60,

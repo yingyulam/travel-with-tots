@@ -49,7 +49,7 @@ class ReadingSeveralFeaturesTest(unittest.TestCase):
 
     def test_it_never_stops_at_the_first_hit(self):
         # The difference from find_nearby_place.read_need, which returns one.
-        self.assertGreater(len(read_amenities("Kid-friendly, Family room")), 1)
+        self.assertGreater(len(read_amenities("Family room, Nursing room")), 1)
 
     def test_what_the_chips_send_reads_the_same_as_typing(self):
         # Done joins the picked labels with ", ", so both arrive here.

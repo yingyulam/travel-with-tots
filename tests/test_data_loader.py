@@ -70,9 +70,9 @@ class GetVenuesTest(unittest.TestCase):
     def test_flags_are_booleans_not_sqlite_integers(self):
         # SQLite has no boolean type. Left as 0/1 these would reach the browser
         # and trips.plan_json, where every previously saved venue has true/false.
-        self._add("A Park", kid_friendly=1, can_eat=0)
+        self._add("A Park", has_family_room=1, can_eat=0)
         venue = data_loader.get_venues()[0]
-        self.assertIs(venue["kid_friendly"], True)
+        self.assertIs(venue["has_family_room"], True)
         self.assertIs(venue["can_eat"], False)
 
     def test_excludes_unverified_submissions(self):

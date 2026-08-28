@@ -104,7 +104,7 @@ class ReplanThemeTest(unittest.TestCase):
             {"time": "12:00 PM", "kind": "meal",
              "venue": _venue("Picnic Spot", type="park", category="food"), "reason": "lunch"},
             {"time": "2:00 PM", "kind": "nap",
-             "venue": _venue("Nap Park", type="park", nap_friendly=True), "reason": "nap"},
+             "venue": _venue("Nap Park", type="park"), "reason": "nap"},
         ]}
         venues = [_venue("Science World", type="museum")]
         result = replan(plan, "weather_rain", "11:00", venues=venues)
@@ -225,7 +225,7 @@ class ReplanNapHappenedTest(unittest.TestCase):
                 {"time": "1:00 PM", "kind": "activity",
                  "venue": _venue("Here Now"), "reason": "current"},
                 {"time": "2:00 PM", "kind": "nap",
-                 "venue": _venue("Quiet Corner", nap_friendly=True),
+                 "venue": _venue("Quiet Corner"),
                  "reason": "scheduled nap"},
                 {"time": "4:00 PM", "kind": "activity",
                  "venue": _venue("Later Park"), "reason": "ahead"},

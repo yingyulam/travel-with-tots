@@ -37,7 +37,6 @@ CREATE TABLE IF NOT EXISTS children (
     id            INTEGER PRIMARY KEY,
     parent_id     INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,
-    gender        TEXT,
     date_of_birth TEXT NOT NULL,          -- ISO 'YYYY-MM-DD'; age is computed from this
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -49,19 +48,14 @@ CREATE TABLE IF NOT EXISTS trips (
     trip_date     TEXT,                   -- day of the outing (ISO)
     wake_up       TEXT,
     bedtime       TEXT,
-    nap_1         TEXT,                   -- unused; kept for old saved trips, see naps below
-    nap_2         TEXT,
     naps          TEXT,                   -- JSON array of {"start", "duration_min"}
     transit_nap   TEXT,                   -- "yes"/"sometimes"/"no": can the child nap in transit
-    feeding_1     TEXT,                   -- unused; kept for old saved trips
-    feeding_2     TEXT,
     destination   TEXT,
     accommodation TEXT,
     transit       TEXT,                   -- JSON array of transit modes
     stop_count    TEXT,                   -- how many places the parent asked to visit
     dining        TEXT,
     preferred_lunch_time TEXT,             -- "HH:MM": when the parent wants lunch scheduled
-    features      TEXT,                   -- JSON array of feature keys
     nap_notes     TEXT,
     extra_notes   TEXT,
     plan_label    TEXT,                   -- label of the generated plan the parent picked
@@ -75,7 +69,6 @@ CREATE TABLE IF NOT EXISTS venues (
     name                TEXT NOT NULL,
     type                TEXT,
     neighbourhood       TEXT,
-    kid_friendly        INTEGER NOT NULL DEFAULT 0,
     has_family_room     INTEGER NOT NULL DEFAULT 0,
     has_nursing_room    INTEGER NOT NULL DEFAULT 0,
     stroller_accessible INTEGER NOT NULL DEFAULT 0,
@@ -84,12 +77,9 @@ CREATE TABLE IF NOT EXISTS venues (
     parent_id           INTEGER REFERENCES parents(id) ON DELETE CASCADE,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     city                TEXT,
-    nap_friendly        INTEGER NOT NULL DEFAULT 0,
     can_eat             INTEGER NOT NULL DEFAULT 0,
     open_time           TEXT,
     close_time          TEXT,
-    min_age_months      INTEGER NOT NULL DEFAULT 0,
-    max_age_months      INTEGER NOT NULL DEFAULT 60,
     lat                 REAL,                   -- NULL until a source supplies it
     lng                 REAL,
     notes               TEXT,                   -- what a parent said about it
@@ -133,16 +123,15 @@ CREATE INDEX IF NOT EXISTS idx_venues_source_city ON venues(source, city);
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
 # candidates by -- never string-interpolate a column name that isn't in here.
 CANDIDATE_FEATURE_COLUMNS = {
-    "kid_friendly", "has_family_room", "has_nursing_room",
-    "stroller_accessible", "nap_friendly", "can_eat",
+    "has_family_room", "has_nursing_room", "stroller_accessible", "can_eat",
 }
 
 # The venue columns data/venues.json owns, in the order _seed_venues supplies
 # them. Deliberately excludes source, parent_id and the provenance columns: a
 # re-seed must never demote a row or discard a citation a human added.
 SEED_FIELDS = ("type", "neighbourhood",
-               "kid_friendly", "has_family_room", "has_nursing_room",
-               "stroller_accessible", "nap_friendly", "can_eat",
+               "has_family_room", "has_nursing_room",
+               "stroller_accessible", "can_eat",
                "open_time", "close_time", "seed_rank")
 
 # Venue sources trustworthy enough to plan a family's day around: everything
@@ -163,7 +152,7 @@ MIN_CLUSTER_SIZE = 6
 TRIP_FIELDS = (
     "trip_date", "wake_up", "bedtime", "naps", "transit_nap",
     "destination", "accommodation", "transit",
-    "stop_count", "dining", "preferred_lunch_time", "features", "nap_notes",
+    "stop_count", "dining", "preferred_lunch_time", "nap_notes",
     "extra_notes", "plan_label", "plan_json",
 )
 
@@ -234,7 +223,6 @@ def _ensure_columns(conn):
     if "city" not in existing:
         with conn:
             conn.execute("ALTER TABLE venues ADD COLUMN city TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN nap_friendly INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE venues ADD COLUMN can_eat INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE venues ADD COLUMN open_time TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN close_time TEXT")
@@ -271,14 +259,36 @@ def _ensure_columns(conn):
 def _drop_dead_columns(conn):
     """Remove columns that ask a question the data cannot answer.
 
-    `venues.category` was 'food' or 'activity'. The table now holds attractions
-    only, so it is a tautology: `can_eat` marks the ones with food, which is all
-    the planner ever needed it for.
+    - `venues.category` was 'food' or 'activity'. The table holds attractions
+      only, so it is a tautology; `can_eat` marks the ones with food, which is
+      all the planner ever read it for.
+    - `venues.kid_friendly` was true on 37 of 38 rows. It is the criterion for
+      being in this table at all, not an attribute of a venue, so it is enforced
+      where venues enter instead.
+    - `venues.nap_friendly` is derived from `type` now
+      (data_loader.is_nap_friendly), because all but one of the rows that had it
+      were a park or a mall.
+    - `venues.min_age_months`/`max_age_months` were 0 and 60 on every row ever
+      written, so the age clause never excluded anything. Age paces the day.
+    - `children.gender` was collected, stored, and read back only by the form
+      that collected it. Personal data about a child that changes no output.
+    - `trips.nap_1`/`nap_2`/`feeding_1`/`feeding_2` were kept "for old saved
+      trips"; no trip ever carried a value in one. `trips.features` has nothing
+      left to filter.
 
     Guarded per column and idempotent, like the additions above. Needs SQLite
     3.35+ for DROP COLUMN.
     """
-    for table, column in (("venues", "category"),):
+    for table, column in (
+            ("venues", "category"),
+            ("venues", "kid_friendly"),
+            ("venues", "nap_friendly"),
+            ("venues", "min_age_months"),
+            ("venues", "max_age_months"),
+            ("children", "gender"),
+            ("trips", "nap_1"), ("trips", "nap_2"),
+            ("trips", "feeding_1"), ("trips", "feeding_2"),
+            ("trips", "features")):
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column in existing:
             with conn:
@@ -364,9 +374,8 @@ def _seed_venues(conn):
     with conn:  # single transaction for the whole batch
         for rank, v in enumerate(venues):
             values = (v["type"], v["neighbourhood"],
-                      int(v["kid_friendly"]), int(v["has_family_room"]),
-                      int(v["has_nursing_room"]), int(v["stroller_accessible"]),
-                      int(v["nap_friendly"]), int(v["can_eat"]),
+                      int(v["has_family_room"]), int(v["has_nursing_room"]),
+                      int(v["stroller_accessible"]), int(v["can_eat"]),
                       v["open"], v["close"], rank)
             coords = (v.get("lat"), v.get("lng"))
             existing = conn.execute(
@@ -394,7 +403,7 @@ def _seed_sample_data(conn):
             ("demo@travelwithtots.app", generate_password_hash("demo1234"),
              "Demo Parent")).lastrowid
         child_id = conn.execute(
-            "INSERT INTO children (parent_id, name, gender, date_of_birth) "
+            "INSERT INTO children (parent_id, name, date_of_birth) "
             "VALUES (?, ?, ?, ?)",
             (parent_id, "Sam", "male", "2023-05-10")).lastrowid
         conn.execute(
@@ -405,7 +414,6 @@ def _seed_sample_data(conn):
             (parent_id, child_id, "2026-08-01", "07:00", "20:00", "13:00", "",
              "Vancouver", "Fairmont Hotel Vancouver",
              json.dumps(["stroller", "bus"]), "3", "dine_out",
-             json.dumps(["kid_friendly", "has_nursing_room"]),
              "Naps well in the stroller.", "Loves parks and open space."))
 
 
@@ -433,16 +441,16 @@ def add_parent(email, password_hash, name=None):
         (email, password_hash, name))
 
 
-def add_child(parent_id, name, gender, date_of_birth):
+def add_child(parent_id, name, date_of_birth):
     return _write(
-        "INSERT INTO children (parent_id, name, gender, date_of_birth) "
-        "VALUES (?, ?, ?, ?)", (parent_id, name, gender, date_of_birth))
+        "INSERT INTO children (parent_id, name, date_of_birth) "
+        "VALUES (?, ?, ?)", (parent_id, name, date_of_birth))
 
 
-def update_child(child_id, name, gender, date_of_birth):
+def update_child(child_id, name, date_of_birth):
     _write(
-        "UPDATE children SET name = ?, gender = ?, date_of_birth = ? WHERE id = ?",
-        (name, gender, date_of_birth, child_id))
+        "UPDATE children SET name = ?, date_of_birth = ? WHERE id = ?",
+        (name, date_of_birth, child_id))
 
 
 def delete_child(child_id):
@@ -514,8 +522,8 @@ def add_venue(name, *, source, venue_type=None, **fields):
 # re-submitting the whole form may well mean the parent moved the map pin.
 # Still excludes source and parent_id, which are never a caller's to rewrite.
 SUBMISSION_FIELDS = ("type", "neighbourhood", "city", "lat", "lng", "notes",
-                     "address", "kid_friendly", "has_family_room",
-                     "has_nursing_room", "stroller_accessible")
+                     "address", "has_family_room", "has_nursing_room",
+                     "stroller_accessible")
 
 
 def add_or_update_submission(name, *, parent_id, **fields):
@@ -558,8 +566,8 @@ def add_or_update_submission(name, *, parent_id, **fields):
 # source, parent_id and the coordinates: source is the verification gate, and
 # letting an edit rewrite it would turn "correct my typo" into "publish this".
 EDITABLE_VENUE_FIELDS = ("name", "type", "neighbourhood", "notes",
-                         "kid_friendly", "has_family_room",
-                         "has_nursing_room", "stroller_accessible")
+                         "has_family_room", "has_nursing_room",
+                         "stroller_accessible")
 
 
 def update_venue(venue_id, parent_id, **fields):

@@ -12,7 +12,6 @@ from . import db
 
 # Feature keys we know about, with display labels, in presentation order.
 FEATURE_LABELS = {
-    "kid_friendly": "Kid-friendly",
     "has_family_room": "Family room",
     "has_nursing_room": "Nursing room",
     "stroller_accessible": "Stroller / step-free",
@@ -28,14 +27,35 @@ SUPPORTED_CITIES = ("Vancouver",)
 # whole rows, so a new column on the venues table cannot silently end up in a
 # saved trip's plan_json or in the JSON sent to the browser.
 VENUE_KEYS = ("name", "type", "neighbourhood",
-              "kid_friendly", "has_family_room", "has_nursing_room",
-              "stroller_accessible", "nap_friendly", "can_eat", "lat", "lng")
+              "has_family_room", "has_nursing_room",
+              "stroller_accessible", "can_eat", "lat", "lng")
 
 # The venue keys that are yes/no. SQLite has no boolean type and hands these
 # back as 0/1, so they are coerced: every venue dict the app has ever built has
 # carried real booleans, including the ones already saved into trips.plan_json.
-BOOL_KEYS = ("kid_friendly", "has_family_room", "has_nursing_room",
-             "stroller_accessible", "nap_friendly", "can_eat")
+BOOL_KEYS = ("has_family_room", "has_nursing_room",
+             "stroller_accessible", "can_eat")
+
+# Somewhere a stroller nap works: open space to keep walking, or a mall to walk
+# indoors when it rains. Derived from the kind of place rather than stored,
+# because it is not a judgment anyone should have to make twice, and because
+# the stored version was a coin-flip: of the venues once marked nap-friendly,
+# all but one were a park or a mall.
+NAP_FRIENDLY_TYPES = ("park", "garden", "beach", "seawall", "mall")
+
+
+def is_nap_friendly(venue):
+    """Whether a parent could push a sleeping child around here for 45 minutes
+    without needing to engage with the place or pay to get in.
+
+    Takes a venue dict or a sqlite3.Row: the AI adjuster checks candidates
+    straight off the database, and Row has no .get().
+    """
+    try:
+        venue_type = venue["type"]
+    except (KeyError, IndexError):
+        return False
+    return (venue_type or "").strip().lower() in NAP_FRIENDLY_TYPES
 
 # Venues with no seed_rank sort after every seeded one. Python's sort is stable
 # and get_venues_in_city returns ORDER BY name, so those stay alphabetical.
@@ -57,6 +77,7 @@ def _as_venue(row):
     venue = {key: row[key] for key in VENUE_KEYS}
     for key in BOOL_KEYS:
         venue[key] = bool(venue[key])
+    venue["nap_friendly"] = is_nap_friendly(venue)
     venue["open"] = row["open_time"]
     venue["close"] = row["close_time"]
     venue["maps_url"] = maps_url(row["name"])

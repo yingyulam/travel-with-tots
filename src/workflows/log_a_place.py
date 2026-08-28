@@ -28,7 +28,6 @@ from ..intent import matches_only
 # log-a-place page and the dashboard's edit form so the two cannot offer
 # different lists. The names match db.add_venue's parameters.
 AMENITY_OPTIONS = [
-    ("kid_friendly", "Kid-friendly"),
     ("has_family_room", "Family room"),
     ("has_nursing_room", "Nursing room"),
     ("stroller_accessible", "Stroller / step-free"),

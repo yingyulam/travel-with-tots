@@ -274,10 +274,14 @@ def _lunch_stop(stops, naps, preferred_lunch_min=None):
     """
     when = _lunch_time(stops, naps, preferred_lunch_min)
     start_min = when.hour * 60 + when.minute
-    on_the_day = [s["venue"] for s in stops
-                  if s.get("venue") and s["venue"].get("can_eat")]
-    venue = next((v for v in on_the_day
-                  if venue_open_for(v, start_min, stop_duration("meal"))), None)
+
+    # Only the stop the parent is actually at when lunch lands counts. Any
+    # can_eat stop in the day is not the same thing: it put "you are already
+    # there" against a mall the family does not reach until four in the
+    # afternoon, and named it twice in one plan.
+    here = _stop_before(stops, when)
+    venue = here if (here and here.get("can_eat")
+                     and venue_open_for(here, start_min, stop_duration("meal"))) else None
 
     if venue is not None:
         spot = "food court" if venue["type"] == "mall" else venue["type"]
