@@ -356,7 +356,8 @@ def venue_review():
             for r in candidates.load(candidates.REJECTED)],
         rejected_submissions=get_rejected_submissions(),
         hours_checks=get_pending_hours_checks(),
-        missing_hours=missing_hours[:MISSING_HOURS_PAGE_SIZE],
+        missing_hours=[dict(row, source_link=_safe_url(row["source_url"]))
+                       for row in missing_hours[:MISSING_HOURS_PAGE_SIZE]],
         missing_hours_total=len(missing_hours),
         submissions=get_pending_submissions(),
         unverified=unverified[:UNVERIFIED_PAGE_SIZE],
@@ -561,6 +562,31 @@ def _approve_candidate(row, admin_id):
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
 
 
+def _hour_pair(form, open_field="open_time", close_field="close_time"):
+    """A validated HH:MM pair from a form, or (None, None).
+
+    Validated rather than trusted, because itinerary.venue_hours parses these
+    with int() and no fallback: one malformed value stored on a venue makes
+    every plan in that city raise. The <input type="time"> stops it in a
+    browser, which means the only way to get a bad value in is a hand-made POST
+    or a browser that does not support the type -- neither of which should be
+    able to break the planner for everyone. Both ends or neither: half a pair
+    says nothing.
+    """
+    opens = (form.get(open_field) or "").strip()
+    closes = (form.get(close_field) or "").strip()
+    if not (opens and closes):
+        return None, None
+    for value in (opens, closes):
+        try:
+            hour, minute = value.split(":")
+            if not (0 <= int(hour) <= 23 and 0 <= int(minute) <= 59):
+                return None, None
+        except ValueError:
+            return None, None
+    return opens, closes
+
+
 def _save_hour_slots(venue_id, row):
     """Store whichever season/day-type hours the reviewer filled in.
 
@@ -570,8 +596,8 @@ def _save_hour_slots(venue_id, row):
     """
     for season in SEASONS:
         for day_type in DAY_TYPES:
-            opens = (row.get(f"open_{season}_{day_type}") or "").strip()
-            closes = (row.get(f"close_{season}_{day_type}") or "").strip()
+            opens, closes = _hour_pair(row, f"open_{season}_{day_type}",
+                                       f"close_{season}_{day_type}")
             if opens and closes:
                 db.set_venue_hours(venue_id, season, day_type, opens, closes)
 
@@ -595,13 +621,12 @@ def venue_hours_decide(check_id):
     mall that closes at half four.
     """
     admin_id = _current_parent()["id"]
-    opens = (request.form.get("open_time") or "").strip()
-    closes = (request.form.get("close_time") or "").strip()
+    opens, closes = _hour_pair(request.form)
     venue_id = request.form.get("venue_id", type=int)
 
     if request.form.get("action") == "update" and venue_id:
         if not (opens and closes):
-            flash("Both an opening and a closing time are needed.")
+            flash("Both an opening and a closing time are needed, as HH:MM.")
             return redirect(url_for("venue_review"))
         set_venue_default_hours(venue_id, opens, closes)
         flash(f"Hours updated to {opens}-{closes}.")
@@ -623,10 +648,9 @@ def venue_set_hours(venue_id):
     stays out of every plan, which is the right answer to unknown hours and a
     dead end at the same time. This is the way out of it.
     """
-    opens = (request.form.get("open_time") or "").strip()
-    closes = (request.form.get("close_time") or "").strip()
+    opens, closes = _hour_pair(request.form)
     if not (opens and closes):
-        flash("Both an opening and a closing time are needed.")
+        flash("Both an opening and a closing time are needed, as HH:MM.")
         return redirect(url_for("venue_review"))
     set_venue_default_hours(venue_id, opens, closes)
     flash(f"Hours set to {opens}-{closes}. It can be planned around now.")

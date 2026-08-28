@@ -181,9 +181,9 @@
       <p><strong>{{ v.name }}</strong>
         <span class="meta">{{ v.type or 'no type' }}
           {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
-      {% if v.source_url %}
+      {% if v.source_link %}
       <p class="meta">
-        <a href="{{ v.source_url }}" target="_blank" rel="noopener noreferrer">Source</a>
+        <a href="{{ v.source_link }}" target="_blank" rel="noopener noreferrer">Source</a>
       </p>
       {% endif %}
       <form method="post" action="{{ url_for('venue_set_hours', venue_id=v.id) }}" class="section-form">

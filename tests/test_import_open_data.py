@@ -407,6 +407,17 @@ class SetHoursRouteTest(_WithDatabase):
                              follow_redirects=True)
         self.assertEqual(len(db.get_venues_missing_hours()), 1)
 
+    def test_a_time_that_would_break_the_planner_is_refused(self):
+        # itinerary.venue_hours parses these with int() and no fallback, so one
+        # bad value stored on a venue makes every plan in that city raise. The
+        # <input type="time"> stops it in a browser; a hand-made POST does not.
+        for bad in ("javascript:x", "25:00", "09:70", "9am", "09-00", ""):
+            with self._as():
+                self.client.post(f"/venues/{self.venue_id}/hours",
+                                 data={"open_time": bad, "close_time": "21:00"},
+                                 follow_redirects=True)
+            self.assertEqual(len(db.get_venues_missing_hours()), 1, bad)
+
     def test_a_non_admin_cannot_set_hours(self):
         with self._as(is_admin=False):
             self.client.post(f"/venues/{self.venue_id}/hours",
