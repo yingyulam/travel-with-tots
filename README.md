@@ -144,8 +144,11 @@ Each stop shows its time, name, type, neighbourhood, feature badges, and an
   on the words. It is deliberately not also a chip: a button and a box for the
   same request is one control too many.
 - **"Need something now?"** (kid-friendly restaurant, family room, changing
-  table, nursing room, quiet spot, other) calls `find_nearby(need)`, which
-  returns 1-2 matching venues.
+  table, nursing room, other) calls `find_nearby(need)`, which returns 1-2
+  matching venues, or escalates to web search when the table cannot answer.
+  Restaurant always escalates, because the table holds attractions. "Quiet spot"
+  is gone: nobody can reliably report quiet, and it changes with the hour and the
+  weather, so a soft guess in answer to a specific request is worse than none.
 
 `replan` and `find_nearby` are deterministic placeholders in one small
 module, kept swappable for real AI/location calls later without changing
@@ -426,8 +429,8 @@ Reads the need from the message, searches, and returns each place as a card with
 a working **📍 Open in Google Maps** link.
 
 - **The need is read by keyword**, and the order is the point: "a quiet place to
-  feed the baby" is a nursing room, not a quiet spot. Unrecognised, it asks once
-  with the six need buttons.
+  feed the baby" is a nursing room. Unrecognised, it asks once with the need
+  buttons.
 - **Location is offered, never demanded.** Coordinates ride along only when
   permission was already granted, checked through the Permissions API, which
   reports the state without prompting, so opening a page never raises one.
@@ -768,61 +771,96 @@ runs on startup and updates venues already in the table as well as inserting
 new ones. A null coordinate in the seed file never overwrites one already
 found, so re-running the script is safe and so is re-booting after it.
 
-## Growing the venue database
+## Where a venue's data comes from
 
-The venue set grows through a loop, not an import: the agent proposes a small
-batch, a person checks it, and approving is what puts a venue in the database.
+Three sources, and each is reviewed only where a person adds something.
+
+| Tier | Covers | Review |
+| --- | --- | --- |
+| **The City** | parks (218), community centres (27), washrooms (147) | none: the City is more reliable about its own parks than any reviewer |
+| **The agent** | museums, aquariums, attractions, malls | required, 10 at a time |
+| **Parents** | the amenities inside any venue | never gated |
+
+**The boundary follows ownership, not category.** Vancouver Open Data publishes
+what the City owns. Science World and the Vancouver Aquarium are non-profits,
+Grouse Mountain and Capilano are private, the malls are private. No municipal
+dataset will ever list them, so they need a different source by construction
+rather than by oversight, and that is what the agent-proposes-person-approves
+loop is for.
 
 ```
 python3 scripts/propose_venues.py --batch 10   # searches, writes candidates
 open /venues/review                            # correct, tick, approve
 ```
 
-**The agent never writes a venue.** It writes `data/venue_candidates.csv` and
-nothing else. `/venues/review` is the only path from a candidate to a row in
-`venues`, and it runs because a person clicked.
+The agent never writes a venue. It writes `data/venue_candidates.csv` and
+nothing else, and `/venues/review` is the only path from a candidate to a row.
+Rejections are remembered, so a place you turn down is never proposed again.
 
-**It proposes no opening hours and no amenities.** Search results do not
-establish them, so it reports only what it found and the URL it found it in. You
-set hours and the six planner flags at review, which is also where `category`
-gets decided: without one a venue fills neither an activity slot nor a food slot,
-so approving without it is refused.
+### No restaurants
 
-**Rejections are remembered.** `candidates.known_names()` covers rejected rows,
-so a place you turn down is never proposed again. Without that the agent
-re-proposes the same venues every run and review capacity goes on re-rejecting
-them. It is the difference between a loop that converges and one that spins.
+The venue table holds attractions. Restaurants are the data hardest to maintain
+and to source: they close constantly, OSM tags a highchair on 9 of 2,643
+Vancouver food places (0.34%), Business Licences carries thousands with no
+toddler signal, and no open dataset publishes restaurant amenities. Every
+restaurant here would be hand-typed and stale from the day it landed, while
+Google has live hours and current reviews and is already on the parent's phone.
 
-**Batches are small on purpose.** Capacity is one person's attention. Proposing
-a hundred venues does not grow the database faster, it grows a backlog, which is
-also why nothing runs this on a timer: you invoke it when you have an hour.
+Lunch keeps its time block, because that is where the value is: 90 minutes, near
+the preferred time, before the nap. If a stop already on the day serves food,
+lunch is taken there and no travel leg is added. Otherwise the block names
+nowhere and offers Find nearby, searching from the previous stop. The planner
+never inserts a venue just to have somewhere to eat, which is what it used to do
+once the restaurants were gone: a Stanley Park morning was being sent to a mall
+seven kilometres south.
 
-Three guards exist because a live run needed them. A search for "Vancouver"
-reaches Vancouver, Washington, and one run proposed Fort Vancouver at latitude
-45.6, so a located venue outside Metro Vancouver is dropped. One run proposed
-"Library", which no reviewer can act on, so a name that is only a kind of place
-is dropped. And one proposed "Van Dusen Botanical Garden" when the database
-already held "VanDusen Botanical Garden", so identity ignores spacing and
-punctuation.
+### Amenities are reports, not columns
 
-### Provenance is not trust
+`venue_reports` holds who said an amenity was there and when. The venues table
+still has the columns, but nothing reads them for this, because a claim needs an
+author and a date, and **"nobody has said" has to differ from "somebody looked
+and there was none"** -- a distinction `INTEGER NOT NULL DEFAULT 0` cannot make.
 
-`source` records where a venue came from. `verified_at` records that a person
-checked it. Today the planner gates on `source`, which means the 38 seeded demo
-venues are trusted purely because of how they were typed in: none of them
-carries a `verified_at`, because nobody ever verified them. They appear in the
-review queue's third section for exactly that reason.
+A field resolves to its newest report, with a real parent outranking a seed
+claim of any age. Recency rather than a vote count, because amenities genuinely
+change: a change table is removed, a park washroom closes for the winter, and
+with a small user base a threshold would leave every field unknown forever.
 
-The intended end state is gating on `verified_at IS NOT NULL`, at which point
-unchecked venues drop out of plans on their own. That flip waits until enough
-venues are verified to still build a day, or it would empty every plan.
+Parents report from the trip page, per stop, after the visit. Five questions,
+all skippable; *not sure* is the default and writes nothing. The highchair
+question only appears where the stop serves food.
 
-### Rebuilding
+This exists because of what the seed data was doing: 11 venues asserted a
+nursing room and 14 a family room, hand-typed for a demo, never verified, and
+**with no path by which a parent could correct one**. Those claims are now
+recorded as reports with no author, which keeps plans working while making their
+weight visible, and one real report supersedes one.
 
-`data/app.db` is gitignored; `data/venues.json` and `data/venue_candidates.csv`
-are tracked. So a fresh clone rebuilds in two steps: booting seeds the 38, and
-`python3 scripts/replay_candidates.py --write` puts back everything you
-approved. That is what makes the CSV a real record rather than a comforting one.
+### Nothing rejected is deleted
+
+A reviewer can be wrong. Rejecting a proposal keeps it on file, and rejecting a
+submission records a timestamp rather than deleting the row -- which also
+mattered because `venue_reports.venue_id` cascades, so the old DELETE took the
+parent's own words and every report about the venue with it. Both appear under
+"Set aside" on the review page with a button to put them back.
+
+### What is not stored, and why
+
+| Field | Why not |
+| --- | --- |
+| `kid_friendly` | True on 37 of 38 rows. An admission rule, not an attribute: non-kid-friendly places do not enter the table |
+| `nap_friendly` | Derived from `type`. A stroller nap needs somewhere you can keep walking without paying admission, which the kind of place already tells you |
+| `category` | A tautology once the table holds attractions only. `can_eat` marks the ones with food |
+| `min_age_months`, `max_age_months` | 0 and 60 on every row ever written; the age clause never excluded a venue. Age paces the day instead |
+| `children.gender` | Collected, stored, and read back only by the form that collected it |
+
+### Two known gaps
+
+- **Hours are one open/close pair.** A museum closed on Mondays, scheduled on a
+  Monday, is a confidently wrong plan.
+- **Nothing records whether a place costs money.** A free park and a $30
+  aquarium plan very differently, and it is part of why a paid attraction makes
+  a poor nap stop.
 
 ## Project structure
 
@@ -1012,23 +1050,22 @@ Each venue in `data/venues.json` has:
 | Field                 | Meaning                                               |
 | ---------------------- | -------------------------------------------------------- |
 | `name`                 | Venue name                                                |
-| `type`                 | e.g. restaurant, cafe, park, mall, museum, attraction     |
-| `category`             | `food` or `activity`: decides its time slot                |
+| `type`                 | park, mall, museum, attraction, garden, beach              |
 | `neighbourhood`        | Vancouver neighbourhood                                   |
-| `kid_friendly`         | true/false                                                |
-| `has_family_room`      | true/false                                                |
-| `has_nursing_room`     | true/false                                                |
-| `stroller_accessible`  | true/false                                                |
-| `nap_friendly`         | true/false: suitable for a nap-on-the-go stop              |
-| `can_eat`              | true/false: food is available at this stop                 |
+| `has_family_room`      | true/false, seeded then superseded by reports              |
+| `has_nursing_room`     | true/false, same                                          |
+| `stroller_accessible`  | true/false, same                                          |
+| `can_eat`              | true/false: a meal can happen here without travelling      |
 | `open`, `close`        | representative daily hours (`HH:MM`)                       |
 
-The table adds columns the seed file does not carry: `city`, `lat`/`lng`,
-`min_age_months`/`max_age_months`, `source`, and, for a venue's provenance,
-`source_url` (the record or page it was taken from), `external_id` (its id at
-that source, namespaced, e.g. `osm:node/123`), and `verified_at`/`verified_by`
-(who last confirmed it). The provenance columns are not yet written: they are
-there for the admin review page and the open-data importers still to come.
+The table adds `city`, `lat`/`lng`, `has_washroom`, `has_highchair`, `source`,
+`rejected_at`/`rejected_by`, and for provenance `source_url` (the page it was
+taken from), `external_id` (its id at that source, namespaced, e.g.
+`vanopendata:parks/17`), and `verified_at`/`verified_by`.
+
+The amenity columns are still written, by the review queue and the import seed,
+but nothing reads them: `venue_reports` is what an amenity resolves from. See
+"Amenities are reports, not columns" above.
 
 `data_loader.get_venues()` is the boundary between the table and the planners.
 It reads verified venues only (`source` in `curated`/`municipal_open_data`, so
