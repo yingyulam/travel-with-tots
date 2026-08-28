@@ -389,5 +389,89 @@ class PageTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class ResubmittingAPlaceTest(_VenueDbTest):
+    """Logging the same place twice is a correction, not a second place.
+
+    The live database had three copies of one venue from one parent, logged 97
+    and 17 seconds apart -- so not a double-click, and not something the POST's
+    redirect could have prevented. Nothing stopped a re-submission.
+    """
+
+    def _store(self, **values):
+        values.setdefault("name", "Science World")
+        return log_a_place.store(self.parent_id, values,
+                                 place=dict(log_a_place.UNRESOLVED_PLACE))
+
+    def _rows(self, name="Science World"):
+        with closing(db.connect()) as conn:
+            return conn.execute(
+                "SELECT * FROM venues WHERE name = ? ORDER BY id", (name,)).fetchall()
+
+    def test_a_second_submission_does_not_add_a_second_row(self):
+        first = self._store()
+        second = self._store()
+        self.assertEqual(len(self._rows()), 1)
+        self.assertEqual(first["id"], second["id"])
+
+    def test_the_later_submission_wins(self):
+        self._store(notes="closed on Mondays", kid_friendly=True)
+        self._store(notes="open every day")
+        row = self._rows()[0]
+        self.assertEqual(row["notes"], "open every day")
+
+    def test_an_amenity_the_parent_unchecks_is_cleared(self):
+        # The update passes every amenity every time, so unticking one has to
+        # actually remove it rather than leaving the first answer standing.
+        self._store(has_family_room=True)
+        self.assertEqual(self._rows()[0]["has_family_room"], 1)
+        self._store()
+        self.assertEqual(self._rows()[0]["has_family_room"], 0)
+
+    def test_a_moved_map_pin_updates_the_location(self):
+        self._store()
+        log_a_place.store(self.parent_id, {"name": "Science World"},
+                          place={"city": "Vancouver", "neighbourhood": "False Creek",
+                                 "formatted_address": "1455 Quebec St",
+                                 "lat": 49.2734, "lng": -123.1038})
+        row = self._rows()[0]
+        self.assertAlmostEqual(row["lat"], 49.2734)
+        self.assertEqual(row["address"], "1455 Quebec St")
+
+    def test_another_parent_logging_the_same_place_gets_their_own_row(self):
+        self._store()
+        log_a_place.store(self.other_id, {"name": "Science World"},
+                          place=dict(log_a_place.UNRESOLVED_PLACE))
+        rows = self._rows()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["parent_id"] for r in rows},
+                         {self.parent_id, self.other_id})
+
+    def test_a_curated_venue_of_the_same_name_is_never_touched(self):
+        curated = db.add_venue("Science World", source="curated",
+                               city="Vancouver", notes="the real one")
+        self._store(notes="mine")
+        rows = self._rows()
+        self.assertEqual(len(rows), 2)
+        kept = next(r for r in rows if r["id"] == curated)
+        self.assertEqual(kept["source"], "curated")
+        self.assertEqual(kept["notes"], "the real one")
+
+    def test_a_resubmission_stays_out_of_every_search(self):
+        self._store(kid_friendly=True)
+        self._store(kid_friendly=True)
+        self.assertNotIn("Science World",
+                         [v["name"] for v in db.get_venues_in_city("Vancouver")])
+
+    def test_an_unknown_field_fails_loudly(self):
+        with self.assertRaises(ValueError):
+            db.add_or_update_submission("X", parent_id=self.parent_id, sneaky=1)
+
+    def test_source_cannot_be_smuggled_in(self):
+        # The verification gate is not a caller's to set.
+        with self.assertRaises(ValueError):
+            db.add_or_update_submission("X", parent_id=self.parent_id,
+                                        source="curated")
+
+
 if __name__ == "__main__":
     unittest.main()

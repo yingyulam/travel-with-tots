@@ -107,11 +107,13 @@ def store(parent_id, values, place=None):
         "notes": (values.get("notes") or "").strip() or None,
         "amenities": [key for key, _ in AMENITY_OPTIONS if values.get(key)],
     }
-    record["id"] = db.add_venue(
+    # add_or_update_submission rather than add_venue: logging the same place
+    # twice is the parent correcting it, not a second place, so their earlier
+    # submission is replaced instead of the review queue growing a duplicate.
+    record["id"] = db.add_or_update_submission(
         record["name"],
-        source="user_submitted",
         parent_id=parent_id,
-        venue_type=record["venue_type"],
+        type=record["venue_type"],
         neighbourhood=record["neighbourhood"],
         city=record["city"],
         lat=record["lat"],

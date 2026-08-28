@@ -190,6 +190,12 @@ place" workflow.
   plan until an admin promotes it. Editing your own entry cannot change
   `source`, so nobody publishes their own guess. The review queue page does not
   exist yet.
+- **Logging the same place twice corrects it, rather than queueing a second
+  row.** `db.add_or_update_submission` replaces your own earlier submission of
+  the same name, so a parent who thought the first attempt had not worked does
+  not leave the reviewer a pile of near-identical rows to sort out. Scoped to
+  your own `user_submitted` rows: another parent logging the same place gets
+  their own row, and a curated venue of that name is never touched.
 - **The map is Leaflet with OpenStreetMap tiles, not Google.** Every Google
   embedding option needs the key in the browser, and this app keeps all keys
   server-side; turning a pin into an area name still goes through the server.

@@ -469,6 +469,52 @@ def add_venue(name, *, source, venue_type=None, neighbourhood=None,
          city, lat, lng, notes, address))
 
 
+# The columns log_a_place.store owns on a submission. Wider than
+# EDITABLE_VENUE_FIELDS below, and deliberately so: that list is the parent's
+# own edit form, where "correct my typo" must not move a venue, while
+# re-submitting the whole form may well mean the parent moved the map pin.
+# Still excludes source and parent_id, which are never a caller's to rewrite.
+SUBMISSION_FIELDS = ("type", "neighbourhood", "city", "lat", "lng", "notes",
+                     "address", "kid_friendly", "has_family_room",
+                     "has_nursing_room", "stroller_accessible")
+
+
+def add_or_update_submission(name, *, parent_id, **fields):
+    """Store this parent's submission of `name`, replacing their own earlier
+    submission of the same place instead of adding a second row. Returns the
+    row id either way.
+
+    A parent logging the same place twice is correcting it, not reporting a
+    second place: they thought the first attempt had not worked, or they are
+    fixing what they said. Without this the admin review queue fills with
+    near-identical rows for a human to sort out, which is the state the live
+    database is already in (three copies of one venue from one parent, logged
+    97 and 17 seconds apart, so not a double-click either).
+
+    Matching is scoped to this parent's own user_submitted rows, for the same
+    reason update_venue's is: it must never touch a curated venue or someone
+    else's submission, and venues.parent_id is nullable so id alone would not
+    be enough of a guard.
+    """
+    unknown = set(fields) - set(SUBMISSION_FIELDS)
+    if unknown:
+        raise ValueError(f"not a submission field: {', '.join(sorted(unknown))}")
+    with closing(connect()) as conn, conn:
+        existing = conn.execute(
+            "SELECT id FROM venues WHERE parent_id = ? AND name = ? "
+            "AND source = 'user_submitted'", (parent_id, name)).fetchone()
+        if existing:
+            assignments = ", ".join(f"{field} = ?" for field in fields)
+            conn.execute(f"UPDATE venues SET {assignments} WHERE id = ?",
+                         (*fields.values(), existing["id"]))
+            return existing["id"]
+        columns = ", ".join(("name", "source", "parent_id") + tuple(fields))
+        placeholders = ", ".join("?" for _ in range(len(fields) + 3))
+        return conn.execute(
+            f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
+            (name, "user_submitted", parent_id, *fields.values())).lastrowid
+
+
 # The fields a parent may change on their own submission. Deliberately excludes
 # source, parent_id and the coordinates: source is the verification gate, and
 # letting an edit rewrite it would turn "correct my typo" into "publish this".

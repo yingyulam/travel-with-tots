@@ -154,7 +154,7 @@ class HandingOffTest(unittest.TestCase):
 
     def test_it_never_writes_to_the_database_itself(self):
         with mock.patch.object(log_a_place, "store") as stored, \
-             mock.patch.object(log_a_place.db, "add_venue") as added:
+             mock.patch.object(log_a_place.db, "add_or_update_submission") as added:
             state = run("log this place")["state"]
             state = run("Mall, Richmond", state)["state"]
             state = run("family room", state)["state"]
