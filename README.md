@@ -788,10 +788,16 @@ dataset will ever list them, so they need a different source by construction
 rather than by oversight, and that is what the agent-proposes-person-approves
 loop is for.
 
+Both steps are pages in the app:
+
 ```
-python3 scripts/propose_venues.py --batch 10   # searches, writes candidates
-open /venues/review                            # correct, tick, approve
+/propose-venues    press Run. The agent searches and writes up to 10 candidates
+/venues/review     correct anything wrong, tick what the place offers, approve
 ```
+
+`scripts/propose_venues.py --batch 30` does the same thing from the command
+line, for a one-off larger run: a request that long does not belong in a
+browser. Nothing about the normal cadence needs a terminal.
 
 The agent never writes a venue. It writes `data/venue_candidates.csv` and
 nothing else, and `/venues/review` is the only path from a candidate to a row.

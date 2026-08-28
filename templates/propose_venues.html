@@ -9,17 +9,20 @@
 
   <p class="meta">
     Writes candidates to <code>data/venue_candidates.csv</code> and nothing else.
-    A candidate becomes a venue when a person approves it in the
-    <a href="{{ url_for('venue_review') }}">review queue</a>.
+    A candidate becomes a venue when you approve it in the
+    <a href="{{ url_for('venue_review') }}">review queue</a>, which is where you
+    go next.
   </p>
   <p class="meta">
     On file now: {{ counts.pending }} pending, {{ counts.approved }} approved,
     {{ counts.rejected }} rejected. Rejected names are never proposed again.
   </p>
   <p class="field-hint">
-    Small batches here, since each candidate costs a search, a model call and a
-    place lookup. For a full batch use
-    <code>python3 scripts/propose_venues.py --batch 30</code>.
+    Up to 10 at a time, which is a sitting's worth of reviewing. Each candidate
+    costs a search, a model call and a place lookup, so a run takes 10 to 25
+    seconds. For a one-off larger batch there is
+    <code>python3 scripts/propose_venues.py --batch 30</code>, which is on the
+    command line because a request that long does not belong in a browser.
   </p>
 
   <div class="search-web-action-row">

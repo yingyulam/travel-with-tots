@@ -144,13 +144,12 @@
     Found by the agent, cited but unchecked. Correct anything wrong, tick what
     the place actually offers, then approve the ones worth keeping. Approving is
     what puts a venue in the database.
+    <a href="{{ url_for('propose_venues_page') }}">Find more venues</a>.
   </p>
 
   {% if not proposals %}
-    <p class="meta">
-      Nothing proposed yet. Run <code>python3 scripts/propose_venues.py --batch 10</code>,
-      or try the <a href="{{ url_for('propose_venues_page') }}">component page</a>.
-    </p>
+    <p class="meta">Nothing proposed yet.</p>
+    <a class="cta" href="{{ url_for('propose_venues_page') }}">Find some venues</a>
   {% else %}
   <form method="post" action="{{ url_for('venue_review_candidates') }}" class="section-form">
     <p class="meta">
