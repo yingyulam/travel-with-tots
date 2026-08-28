@@ -1210,7 +1210,6 @@ def save_trip():
 
     fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
     fields["transit"] = json.dumps(trip_form.get("transit", []))
-    fields["features"] = json.dumps(trip_form.get("features", []))
     fields["naps"] = json.dumps(trip_form.get("naps", []))
     fields["plan_label"] = plan_data.get("label")
     fields["plan_json"] = json.dumps(plan_data)
@@ -1319,14 +1318,13 @@ def plan():
     )
 
 
-def _build_trip(destination, transit, features, bedtime, age_months, dining, plan_data,
+def _build_trip(destination, transit, bedtime, age_months, dining, plan_data,
                  nap_notes="", extra_notes=""):
     """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
     and reopening a saved itinerary from the dashboard."""
     return Trip(
         destination=destination or "Vancouver",
         transit=transit,
-        features=features,
         bedtime=bedtime,
         age_months=age_months,
         dining=dining,
@@ -1336,12 +1334,16 @@ def _build_trip(destination, transit, features, bedtime, age_months, dining, pla
     )
 
 
-def _render_trip(trip, saved=False, trip_form=None):
+def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
     return render_template(
         "trip.html",
         trip=trip.to_dict(),
         saved=saved,
         trip_form=trip_form,
+        trip_id=trip_id,
+        reportable_flags=[(key, FEATURE_LABELS[key])
+                          for key in db.REPORTABLE_FIELDS],
+        conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
         feature_options=FEATURE_OPTIONS,
         situation_options=SITUATION_OPTIONS,
         need_options=NEED_OPTIONS,
@@ -1372,7 +1374,6 @@ def trip():
     trip = _build_trip(
         destination=context.get("destination"),
         transit=context.get("transit", []),
-        features=context.get("features", []),
         bedtime=context.get("bedtime", ""),
         age_months=age_months,
         dining=context.get("dining", ""),
@@ -1400,7 +1401,6 @@ def view_trip(trip_id):
     trip = _build_trip(
         destination=row["destination"],
         transit=json.loads(row["transit"] or "[]"),
-        features=json.loads(row["features"] or "[]"),
         bedtime=row["bedtime"] or "",
         age_months=age_months,
         dining=row["dining"] or "",
@@ -1408,7 +1408,44 @@ def view_trip(trip_id):
         nap_notes=row["nap_notes"] or "",
         extra_notes=row["extra_notes"] or "",
     )
-    return _render_trip(trip, saved=True)
+    return _render_trip(trip, saved=True, trip_id=trip_id)
+
+
+@app.route("/trip/<int:trip_id>/report/<int:venue_id>", methods=["POST"])
+@login_required
+def report_amenities(trip_id, venue_id):
+    """Record what a parent saw at one stop on their own saved trip.
+
+    Here rather than behind a review queue, and here rather than on an admin
+    page, because the person standing in the building is the best source there
+    is for whether it has a change table. A queue in front of this would mean
+    these fields never fill.
+
+    Only changed answers are written. Re-saving an unchanged form should not
+    manufacture reports, because recency is what decides a conflict.
+    """
+    parent = _current_parent()
+    if get_trip_for_parent(parent["id"], trip_id) is None:
+        flash("That trip isn't yours.")
+        return redirect(url_for("dashboard"))
+
+    note = (request.form.get("note") or "").strip() or None
+    known = db.reported_flags([venue_id]).get(venue_id, {})
+    written = 0
+    for field in db.REPORTABLE_FIELDS:
+        answer = request.form.get(field)
+        if answer not in ("yes", "no"):
+            continue                      # "not sure" writes nothing
+        value = answer == "yes"
+        if field in known and known[field] == value and not note:
+            continue                      # unchanged, so recency is left alone
+        db.add_report(venue_id, field, value,
+                      reported_by=parent["id"], note=note)
+        written += 1
+
+    flash(f"Thanks, noted {written} thing{'s' if written != 1 else ''}."
+          if written else "Nothing to add.")
+    return redirect(url_for("view_trip", trip_id=trip_id))
 
 
 @app.route("/replan", methods=["POST"])

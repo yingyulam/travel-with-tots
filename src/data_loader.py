@@ -29,7 +29,11 @@ SUPPORTED_CITIES = ("Vancouver",)
 # The venue dict the planners consume. Listed explicitly rather than taking
 # whole rows, so a new column on the venues table cannot silently end up in a
 # saved trip's plan_json or in the JSON sent to the browser.
-VENUE_KEYS = ("name", "type", "neighbourhood",
+# `id` is the one database-internal column here, and it earns its place: a
+# parent reporting a change table has to be able to name which venue, and a name
+# is not a stable identity. The rest stay out, so a new column cannot silently
+# end up in a saved trip's plan_json or in the JSON sent to the browser.
+VENUE_KEYS = ("id", "name", "type", "neighbourhood",
               "has_washroom", "has_family_room", "has_nursing_room",
               "stroller_accessible", "has_highchair", "can_eat", "lat", "lng")
 

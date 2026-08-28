@@ -152,6 +152,9 @@
 <script>
   const tripData = JSON.parse(document.getElementById("trip-data").textContent);
   const FEATURES = JSON.parse(document.getElementById("features-data").textContent);
+  const TRIP_ID = {{ trip_id|tojson }};
+  const REPORTABLE = {{ reportable_flags|tojson }};
+  const CONDITIONAL = {{ conditional_flags|tojson }};
   const PLANS = tripData.plans.slice();   // versions; index 0 is the original
   let active = 0;
 
@@ -320,6 +323,49 @@
     return body;
   }
 
+  function reportForm(v) {
+    // Only on a saved trip, and only where the venue has an id: a plan_json
+    // saved before venues carried one cannot be reported against.
+    if (!TRIP_ID || !v || !v.id) return null;
+    const form = el("form", "stop-report");
+    form.method = "post";
+    form.action = `/trip/${TRIP_ID}/report/${v.id}`;
+
+    const summary = el("summary", null, "Was this right? Tell us what you saw");
+    const details = el("details", "stop-report-details");
+    details.appendChild(summary);
+
+    REPORTABLE.forEach(([key, label]) => {
+      // A highchair at a park is not a question.
+      if (CONDITIONAL.includes(key) && !v.can_eat) return;
+      const row = el("div", "report-row");
+      row.appendChild(el("span", "report-label", label));
+      [["yes", "Yes"], ["no", "No"], ["", "Not sure"]].forEach(([value, text]) => {
+        const opt = el("label", "report-option");
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = key;
+        input.value = value;
+        // "Not sure" is the default and writes nothing, so a parent can answer
+        // one question and ignore the rest.
+        if (value === "") input.checked = true;
+        opt.append(input, el("span", null, text));
+        row.appendChild(opt);
+      });
+      details.appendChild(row);
+    });
+
+    const note = document.createElement("textarea");
+    note.name = "note";
+    note.rows = 2;
+    note.placeholder = "Anything worth adding (optional)";
+    const send = el("button", "cta-secondary", "Send");
+    send.type = "submit";
+    details.append(note, send);
+    form.appendChild(details);
+    return form;
+  }
+
   function renderStop(stop, state) {
     const item = el("li", `stop ${stop.kind} ${state}`);
     const time = el("div", "stop-time", stop.time);
@@ -327,6 +373,8 @@
       time.appendChild(el("span", `state-tag ${state}`, state === "now" ? "Now" : "Done"));
     }
     item.append(time, stopBody(stop));
+    const report = reportForm(stop.venue);
+    if (report) item.appendChild(report);
     return item;
   }
 

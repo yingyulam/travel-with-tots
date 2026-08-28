@@ -83,10 +83,16 @@ class GetVenuesTest(unittest.TestCase):
     def test_internal_columns_never_reach_a_plan_or_the_browser(self):
         self._add("A Park", source_url="https://example.org", notes="a note")
         venue = data_loader.get_venues()[0]
-        for key in ("id", "source", "parent_id", "created_at", "notes",
+        for key in ("source", "parent_id", "created_at", "notes",
                     "address", "source_url", "external_id", "verified_at",
-                    "verified_by", "seed_rank"):
+                    "verified_by", "rejected_at", "rejected_by", "seed_rank"):
             self.assertNotIn(key, venue)
+
+    def test_the_id_is_the_one_internal_column_that_travels(self):
+        # A parent reporting a change table has to say which venue, and a name
+        # is not a stable identity. Everything else internal stays out.
+        self._add("A Park")
+        self.assertIn("id", data_loader.get_venues()[0])
 
     def test_seeded_venues_keep_the_curators_order(self):
         # The planner takes the first venue that fits a slot, so this order is a

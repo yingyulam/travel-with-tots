@@ -377,7 +377,6 @@ def _migrate_trips_ownership(conn):
                 stop_count    TEXT,
                 dining        TEXT,
                 preferred_lunch_time TEXT,
-                features      TEXT,
                 nap_notes     TEXT,
                 extra_notes   TEXT,
                 plan_label    TEXT,
@@ -389,12 +388,12 @@ def _migrate_trips_ownership(conn):
             INSERT INTO trips (id, parent_id, child_id, trip_date, wake_up,
                 bedtime, nap_1, nap_2, naps, transit_nap, feeding_1, feeding_2,
                 destination, accommodation, transit, stop_count, dining,
-                preferred_lunch_time, features, nap_notes, extra_notes,
+                preferred_lunch_time, nap_notes, extra_notes,
                 plan_label, plan_json, created_at)
             SELECT t.id, c.parent_id, t.child_id, t.trip_date, t.wake_up,
                 t.bedtime, t.nap_1, t.nap_2, t.naps, t.transit_nap, t.feeding_1,
                 t.feeding_2, t.destination, t.accommodation, t.transit,
-                t.stop_count, t.dining, t.preferred_lunch_time, t.features,
+                t.stop_count, t.dining, t.preferred_lunch_time,
                 t.nap_notes, t.extra_notes, t.plan_label, t.plan_json,
                 t.created_at
             FROM trips_old t JOIN children c ON c.id = t.child_id
@@ -483,14 +482,14 @@ def _seed_sample_data(conn):
              "Demo Parent")).lastrowid
         child_id = conn.execute(
             "INSERT INTO children (parent_id, name, date_of_birth) "
-            "VALUES (?, ?, ?, ?)",
-            (parent_id, "Sam", "male", "2023-05-10")).lastrowid
+            "VALUES (?, ?, ?)",
+            (parent_id, "Sam", "2023-05-10")).lastrowid
         conn.execute(
             "INSERT INTO trips (parent_id, child_id, trip_date, wake_up, bedtime, "
-            "nap_1, nap_2, destination, accommodation, transit, stop_count, dining, "
-            "features, nap_notes, extra_notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (parent_id, child_id, "2026-08-01", "07:00", "20:00", "13:00", "",
+            "destination, accommodation, transit, stop_count, dining, "
+            "nap_notes, extra_notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (parent_id, child_id, "2026-08-01", "07:00", "20:00",
              "Vancouver", "Fairmont Hotel Vancouver",
              json.dumps(["stroller", "bus"]), "3", "dine_out",
              "Naps well in the stroller.", "Loves parks and open space."))
