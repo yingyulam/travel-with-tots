@@ -7,7 +7,6 @@ location calls without changing their signatures or the UI that calls them.
 
 from datetime import datetime
 
-from .filters import filter_by_features
 from .form_helpers import clamp_int
 from .itinerary import THEMES, stop_duration, venue_open_for
 
@@ -40,17 +39,20 @@ NEED_OPTIONS = [
     ("family_room", "Family room"),
     ("changing_table", "Changing table"),
     ("nursing_room", "Nursing room"),
-    ("quiet_spot", "Quiet spot"),
     ("other", "Other"),
 ]
 
 # What each "need" maps to in the venue data.
+#
+# No "restaurant" entry: the venue table holds attractions, so a curated match
+# is impossible and find_nearby falls through to web search, which has live
+# hours and current reviews. No "quiet_spot" either: nobody can reliably report
+# quiet, and it changes with the hour and the weather, so a soft guess in answer
+# to a specific request is worse than not offering it.
 NEED_FILTERS = {
-    "restaurant": lambda v: v["category"] == "food" and v["kid_friendly"],
     "family_room": lambda v: v["has_family_room"],
     "changing_table": lambda v: v["has_family_room"] or v["has_nursing_room"],
     "nursing_room": lambda v: v["has_nursing_room"],
-    "quiet_spot": lambda v: v.get("nap_friendly"),
 }
 
 # Minutes past a delayed stop when the parent is "running behind".
@@ -98,7 +100,7 @@ def _bonus_stop(minutes, venues, features, used_names, theme_types=None, reason=
     time if one fits, else a hint to use the 'Need something now?' panel.
     If `theme_types` is given (weather/theme situations), a theme-matching
     venue is preferred before the generic activity fallback."""
-    pool = filter_by_features(venues or [], features or [])
+    pool = list(venues or [])
     dur = stop_duration("bonus")
     open_unused = [v for v in pool if v["name"] not in used_names
                    and venue_open_for(v, minutes, dur)]
@@ -127,7 +129,7 @@ def _bonus_stop(minutes, venues, features, used_names, theme_types=None, reason=
 
 def _open_alternative(kind, venues, features, used, start_min, duration_min):
     """An unused, feature-matched venue of the right sort that's open now."""
-    pool = filter_by_features(venues or [], features or [])
+    pool = list(venues or [])
     if kind == "nap":
         candidates = [v for v in pool
                       if v.get("nap_friendly") and v["category"] != "food"]
@@ -155,7 +157,7 @@ def _retheme_stop(stop, theme_types, venues, features, used):
         return stop
     start = _display_to_minutes(stop["time"])
     dur = stop_duration(stop["kind"])
-    pool = filter_by_features(venues or [], features or [])
+    pool = list(venues or [])
     candidates = [v for v in pool if v.get("type") in theme_types
                   and v["name"] not in used and venue_open_for(v, start, dur)]
     if not candidates:
@@ -433,8 +435,15 @@ def replan(plan, situation, current_time, venues=None, features=None,
 def find_nearby(need, venues, limit=2):
     """Return 1-2 venues matching a ``need`` key (e.g. 'nursing_room').
 
-    Deterministic placeholder: filters the sample venue data. A real version
-    would query a location service around the parent's current position.
+    A need with no entry in NEED_FILTERS returns nothing rather than falling
+    back to any venue at all. Two such needs exist: "restaurant", which the
+    table cannot answer because it holds attractions, and "other", which is
+    free text. Returning nothing is what makes the caller escalate to web
+    search, and web search can actually answer both. Answering a specific
+    request with an arbitrary venue that happens to be nearby is worse than
+    admitting the table does not know.
     """
-    predicate = NEED_FILTERS.get(need, lambda v: v["kid_friendly"])
+    predicate = NEED_FILTERS.get(need)
+    if predicate is None:
+        return []
     return [v for v in venues if predicate(v)][:limit]

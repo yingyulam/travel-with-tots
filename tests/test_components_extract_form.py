@@ -222,10 +222,8 @@ class VocabularyGuardTest(unittest.TestCase):
     def test_invented_list_values_are_dropped_but_valid_ones_kept(self):
         result, _ = _run(_reply(
             transit=["stroller", "helicopter"],
-            features=["has_nursing_room", "michelin_star"],
             themes=["Outdoorsy", "Extreme Sports"]))
         self.assertEqual(result["form"]["transit"], ["stroller"])
-        self.assertEqual(result["form"]["features"], ["has_nursing_room"])
         self.assertEqual(result["form"]["themes"], ["Outdoorsy"])
 
     def test_a_wholly_invented_list_is_not_reported_as_found(self):

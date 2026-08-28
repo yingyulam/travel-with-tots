@@ -54,7 +54,7 @@ DEFAULTS = {
     "extra_notes": "",
     "revise_feedback": "",
     "strict_schedule": False,
-    "features": ["kid_friendly"],
+    "features": [],
     "themes": [],
     "child_ids": [],
     "plan_child_id": "",

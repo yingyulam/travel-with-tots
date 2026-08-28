@@ -16,7 +16,7 @@ formed and in range.
 
 The model's choice vocabularies are constrained by the JSON schema rather than
 checked afterwards, because read_form deliberately does not validate transit,
-dining, features, or themes against the option lists.
+dining or themes against the option lists.
 """
 
 import os
@@ -25,7 +25,6 @@ import re
 from werkzeug.datastructures import MultiDict
 
 from ..agents import call_openrouter, parse_json_reply
-from ..data_loader import FEATURE_LABELS
 from ..form_helpers import (
     DINING_OPTIONS,
     MAX_AGE_YEARS,
@@ -66,7 +65,6 @@ EXTRACTOR_MODEL = "openai/gpt-4o-mini"
 
 DINING_KEYS = [key for key, _ in DINING_OPTIONS]
 TRANSIT_NAP_KEYS = [key for key, _ in TRANSIT_NAP_OPTIONS]
-FEATURE_KEYS = list(FEATURE_LABELS)
 THEME_LABELS = [theme["label"] for theme in THEMES]
 
 # A bare label like "Culture" doesn't tell a model that a museum belongs to it,
@@ -74,8 +72,6 @@ THEME_LABELS = [theme["label"] for theme in THEMES]
 # THEMES so the two can't drift.
 THEME_CHOICES = ", ".join(
     f"{theme['label']} ({theme['blurb'].rstrip('.').lower()})" for theme in THEMES)
-FEATURE_CHOICES = ", ".join(
-    f"{key} ({label.lower()})" for key, label in FEATURE_LABELS.items())
 
 # The form fields worth asking a model for. Excludes child_ids and
 # plan_child_id (database ids the parent picks in the UI) and revise_feedback
@@ -101,7 +97,6 @@ EXTRACTED_FORM_PROPERTIES = {
     **{field: _nullable("integer") for field in COUNT_FIELDS},
     "strict_schedule": _nullable("boolean"),
     "transit": _enum_array(TRANSIT_OPTIONS),
-    "features": _enum_array(FEATURE_KEYS),
     "themes": _enum_array(THEME_LABELS),
     "dining": {"type": ["string", "null"], "enum": [*DINING_KEYS, None]},
     "transit_nap": {"type": ["string", "null"], "enum": [*TRANSIT_NAP_KEYS, None]},
@@ -167,7 +162,6 @@ def _build_messages(description: str) -> list[dict]:
         .replace("{transit_options}", ", ".join(TRANSIT_OPTIONS))
         .replace("{dining_options}", ", ".join(DINING_KEYS))
         .replace("{transit_nap_options}", ", ".join(TRANSIT_NAP_KEYS))
-        .replace("{feature_options}", FEATURE_CHOICES)
         .replace("{theme_options}", THEME_CHOICES)
     )
     return [{"role": "system", "content": prompt}]
@@ -180,7 +174,6 @@ def _build_messages(description: str) -> list[dict]:
 # deliberately does not validate these fields either, so nothing else would.
 ALLOWED_VALUES = {
     "transit": set(TRANSIT_OPTIONS),
-    "features": set(FEATURE_KEYS),
     "themes": set(THEME_LABELS),
     "dining": set(DINING_KEYS),
     "transit_nap": set(TRANSIT_NAP_KEYS),
@@ -261,7 +254,7 @@ def _grounded(extracted: dict, description: str) -> dict:
     from their own words.
 
     Only fields whose support is decidable from the text are checked. The
-    vocabulary fields (transit, features, themes, dining, transit_nap) are
+    vocabulary fields (transit, themes, dining, transit_nap) are
     legitimately inferred from words they do not share, "we'll drive" meaning
     car, so there is nothing here to compare them against. They stay the
     prompt's problem.
@@ -347,7 +340,7 @@ def extract_form(description: str, model: str = EXTRACTOR_MODEL) -> dict:
 
     Two things to know before wiring this into a prefilled form:
 
-    Multi-choice fields (transit, features, themes) come back empty rather than
+    Multi-choice fields (transit, themes) come back empty rather than
     at their DEFAULTS value when the description didn't mention them, because
     that is exactly what read_form returns for a submitted form with those
     boxes unchecked. Honest, but it means a prefill wanting the form's usual

@@ -17,7 +17,6 @@ FEATURE_LABELS = {
     "has_nursing_room": "Nursing room",
     "stroller_accessible": "Stroller / step-free",
 }
-FEATURE_KEYS = tuple(FEATURE_LABELS)
 
 
 # Every venue in the table is in Vancouver, so this is the whole of what the app

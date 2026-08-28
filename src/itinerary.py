@@ -9,7 +9,6 @@ notes yet.
 
 from datetime import datetime, timedelta
 
-from .filters import filter_by_features
 from .models import Plan
 
 # A buffer after wake-up before the first stop (breakfast, getting out).
@@ -360,7 +359,10 @@ def generate_plans(venues, inputs):
     the nap window. The structure is what a future LLM-backed implementation
     would return, so only this function's body needs to change later.
     """
-    matches = filter_by_features(venues, inputs["features"])
+    # No amenity filtering: what a parent needs in the moment (a nursing room,
+    # a change table) is answered by find_nearby where they are, not by
+    # narrowing a whole day to venues someone happened to have reported on.
+    matches = venues
     wake = _parse(inputs["wake_up"])
     bedtime = _parse(inputs["bedtime"])
     naps = sorted(_parse(n["start"]) for n in inputs.get("naps", []) if n.get("start"))

@@ -16,7 +16,6 @@ Fill in what they actually said:
 - transit: how they are getting around, from: {transit_options}. Any mention counts: "he can sleep in the stroller" and "we'll drive" mean stroller and car respectively, even when they were not answering a question about transport.
 - dining: {dining_options}
 - transit_nap: can the child sleep while being moved, in a stroller, car, or bus? One of: {transit_nap_options}. "He can sleep in the stroller" is yes; "only sometimes in the car" is sometimes; "she has to be in a cot" is no.
-- features: what matters to them, from: {feature_options}
 - themes: the kind of day they want, from: {theme_options}. Match what they ask for to a theme rather than needing the theme's name: a park is Outdoorsy, a museum is Culture, wanting to stay indoors out of the rain is Rainy-day. Pick every theme they asked for, so "a park and a museum" is two themes.
 
 Then the two free-text fields, which is where the rest of what they said has to go:

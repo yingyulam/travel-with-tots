@@ -184,19 +184,6 @@
       </div>
     </fieldset>
 
-    <fieldset class="group">
-      <legend>Features that matter</legend>
-      <div class="chips">
-        {% for key, label in feature_options %}
-        <label class="chip">
-          <input type="checkbox" name="features" value="{{ key }}"
-                 {% if key in form.features %}checked{% endif %}>
-          <span>{{ label }}</span>
-        </label>
-        {% endfor %}
-      </div>
-    </fieldset>
-
     <label class="field field-full">
       <span>Anything else about your kid?</span>
       <textarea name="extra_notes" rows="3"
@@ -275,7 +262,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="empty-plan">We couldn't build any plans from those inputs. Try loosening your selected features.</p>
+  <p class="empty-plan">We couldn't build a day from those inputs. Try a later bedtime, or fewer stops.</p>
   {% endif %}
 </section>
 {% endif %}

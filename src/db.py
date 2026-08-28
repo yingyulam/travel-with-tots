@@ -730,11 +730,15 @@ def get_trip_for_parent(parent_id, trip_id):
             (parent_id, trip_id)).fetchone()
 
 
-def get_candidate_venues(city, age_months, features=None, transit=None,
+def get_candidate_venues(city, age_months=None, features=None, transit=None,
                           dining=None, near_neighbourhood=None, limit=CANDIDATE_LIMIT):
-    """Verified venues in `city` (substring match) whose age range covers
-    `age_months`, narrowed by feature tags. Used to ground the AI planning
-    agent -- it must never reference a venue outside this list.
+    """Verified venues in `city` (substring match). Used to ground the AI
+    planning agent -- it must never reference a venue outside this list.
+
+    `age_months` and `features` are accepted and ignored, so the callers in
+    agents.py need no change. Neither ever narrowed anything: every row's age
+    range was 0-60, and amenity filtering moved to find_nearby (see
+    _candidate_where_clause).
 
     Venues carry lat/lng where a source supplied it, but only some do and
     there is still no routing API, so this planner-facing query deliberately
@@ -750,7 +754,7 @@ def get_candidate_venues(city, age_months, features=None, transit=None,
     neighbourhoods stay in play. If `dining` is "dine_out", at least one
     venue where a meal is possible is guaranteed a slot, so there's always a
     real lunch option."""
-    where, params = _candidate_where_clause(city, age_months, features)
+    where, params = _candidate_where_clause(city)
 
     with closing(connect()) as conn:
         rows = conn.execute(
@@ -769,17 +773,20 @@ def _verified_source_clause():
     return f"source IN ({placeholders})", list(VERIFIED_SOURCES)
 
 
-def _candidate_where_clause(city, age_months, features):
-    """WHERE clause and params for a verified-venue lookup: city substring
-    match, age range coverage, and any requested feature tags."""
-    wanted = [f for f in (features or []) if f in CANDIDATE_FEATURE_COLUMNS]
+def _candidate_where_clause(city):
+    """WHERE clause and params for a verified-venue lookup: city substring match.
+
+    No amenity filtering. What a parent needs in the moment is answered by
+    find_nearby where they are, and narrowing a whole day to venues someone
+    happened to have reported on would return almost nothing once the table is
+    honest about what it does not know.
+
+    No age range either: min_age_months/max_age_months were 0-60 on every row
+    ever written, so the clause never excluded anything. Age paces the day
+    (itinerary.realistic_stop_count), it does not filter venues.
+    """
     source_clause, source_params = _verified_source_clause()
-    clauses = [source_clause, "city LIKE ?",
-               "min_age_months <= ?", "max_age_months >= ?"]
-    params = source_params + [f"%{city}%", age_months, age_months]
-    for feature in wanted:
-        clauses.append(f"{feature} = 1")
-    return " AND ".join(clauses), params
+    return f"{source_clause} AND city LIKE ?", source_params + [f"%{city}%"]
 
 
 def get_venues_in_city(city):

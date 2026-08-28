@@ -82,19 +82,33 @@ class FindNearbyCuratedTest(unittest.TestCase):
         result = find_nearby(need="nursing_room", city="Vancouver")
         self.assertEqual([p["name"] for p in result["places"]], ["Has Nursing"])
 
-    def test_restaurant_need_requires_food_category(self):
+    def test_a_restaurant_need_is_never_answered_from_the_table(self):
+        # The venue table holds attractions, so there is no curated answer to
+        # give. Falling through to web search is the right outcome: it has live
+        # hours and current reviews, which a curated row cannot.
         with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "A Cafe", category="food", can_eat=1)
-            _insert_venue(conn, "A Park", category="activity")
+            _insert_venue(conn, "A Mall", can_eat=1)
+            _insert_venue(conn, "A Park")
         result = find_nearby(need="restaurant", city="Vancouver")
-        self.assertEqual([p["name"] for p in result["places"]], ["A Cafe"])
+        self.assertNotEqual(result["source"], "curated")
 
-    def test_unknown_need_falls_back_to_kid_friendly(self):
+    def test_a_need_the_table_cannot_answer_escalates(self):
+        # "other" is free text and "restaurant" is a kind of place the table no
+        # longer holds. Returning an arbitrary nearby venue in answer to either
+        # is worse than admitting the table does not know, so both fall through
+        # to web search.
         with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Kid Friendly", kid_friendly=1)
-            _insert_venue(conn, "Not Kid Friendly", kid_friendly=0)
-        result = find_nearby(need="other", city="Vancouver")
-        self.assertEqual([p["name"] for p in result["places"]], ["Kid Friendly"])
+            _insert_venue(conn, "A Park")
+            _insert_venue(conn, "A Mall", can_eat=1)
+        # search_web is mocked: escalating is the point of the test, and a real
+        # call would make the suite hit the network.
+        for need in ("other", "restaurant"):
+            with self.subTest(need=need), \
+                 mock.patch("src.components.find_nearby.search_web",
+                            return_value=[]) as searched:
+                result = find_nearby(need=need, city="Vancouver")
+                self.assertNotEqual(result["source"], "curated")
+                searched.assert_called_once()
 
     def test_matching_neighbourhood_wins_when_no_coordinates(self):
         # The fallback path: no venue has coordinates, so neighbourhood is the

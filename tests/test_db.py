@@ -38,21 +38,33 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.patcher.stop()
         os.unlink(self.db_path)
 
-    def test_filters_by_city_and_age_range(self):
+    def test_filters_by_city(self):
         with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "In Range", min_age_months=0, max_age_months=24)
-            _insert_venue(conn, "Too Old For This Kid", min_age_months=36, max_age_months=60)
+            _insert_venue(conn, "Local")
             _insert_venue(conn, "Wrong City", city="Toronto")
-        names = {v["name"] for v in db.get_candidate_venues("Vancouver", age_months=12)}
-        self.assertEqual(names, {"In Range"})
+        names = {v["name"] for v in db.get_candidate_venues("Vancouver")}
+        self.assertEqual(names, {"Local"})
 
-    def test_filters_by_requested_feature(self):
+    def test_an_age_is_accepted_and_ignored(self):
+        # Every row ever written had a 0-60 month range, so the clause never
+        # excluded anything. Age paces the day (realistic_stop_count), it does
+        # not filter venues. The argument stays so agents.py needs no change.
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "For Babies", min_age_months=0, max_age_months=12)
+            _insert_venue(conn, "For Big Kids", min_age_months=48, max_age_months=60)
+        names = {v["name"] for v in db.get_candidate_venues("Vancouver", age_months=12)}
+        self.assertEqual(names, {"For Babies", "For Big Kids"})
+
+    def test_a_requested_feature_is_accepted_and_ignored(self):
+        # Amenity filtering moved to find_nearby, where a parent asks in the
+        # moment. Narrowing a whole day to venues someone happened to have
+        # reported on would return almost nothing.
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "Has Nursing Room", has_nursing_room=1)
             _insert_venue(conn, "No Nursing Room", has_nursing_room=0)
         names = {v["name"] for v in
-                 db.get_candidate_venues("Vancouver", age_months=12, features=["has_nursing_room"])}
-        self.assertEqual(names, {"Has Nursing Room"})
+                 db.get_candidate_venues("Vancouver", features=["has_nursing_room"])}
+        self.assertEqual(names, {"Has Nursing Room", "No Nursing Room"})
 
     def test_narrows_to_near_neighbourhood_when_large_enough(self):
         with closing(db.connect()) as conn, conn:
