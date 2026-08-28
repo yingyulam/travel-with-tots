@@ -42,7 +42,7 @@ STATUSES = (PENDING, APPROVED, REJECTED)
 # What the agent writes: what it found, and where it found it.
 PROPOSED_COLUMNS = ("name", "type", "setting", "neighbourhood", "city",
                     "address", "lat", "lng", "source_url", "evidence",
-                    "official_url", "hours_note")
+                    "official_url", "hours_note", "external_id")
 
 # Fields the proposer fills even though review owns them. Hours do not come
 # from the search results -- the prompt forbids the model from reporting them,
@@ -81,9 +81,17 @@ COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
 # reads them to decide, and the hours they decide on go in open_time/close_time
 # where the whole app already looks. A reviewer who thinks the official site is
 # wrong should reject the row rather than quietly repoint its citation.
+#
+# external_id is identity, and identity is nobody's judgment: it is what makes
+# a re-proposal of the same place recognisable instead of a second row. There
+# is deliberately no candidate-level `source`. A venue's source says which
+# pipeline vouched for it, and for an approved candidate that is always
+# "curated" because a human clicked; a settable one would invite writing
+# "municipal_open_data" onto a reviewed row and moving it between queues.
 EDITABLE = tuple(c for c in PROPOSED_COLUMNS
                  if c not in ("lat", "lng", "source_url", "evidence",
-                              "official_url", "hours_note")) + REVIEWED_COLUMNS
+                              "official_url", "hours_note",
+                              "external_id")) + REVIEWED_COLUMNS
 
 
 def normalize_name(name) -> str:
@@ -165,13 +173,23 @@ def add(proposals) -> int:
     with _lock:
         rows = _read_all()
         seen = {normalize_name(row.get("name")) for row in rows}
+        # Identity as well as name. Two searches can surface one venue under
+        # two spellings that normalize_name does not fold ("The Beaty Museum"
+        # / "Beaty Biodiversity Museum"), and the geocoder resolves both to
+        # the same OSM node.
+        located = {row.get("external_id") for row in rows if row.get("external_id")}
         added = 0
         for proposal in proposals:
             name = (proposal.get("name") or "").strip()
             key = normalize_name(name)
+            external_id = (proposal.get("external_id") or "").strip()
             if not key or key in seen:
                 continue
+            if external_id and external_id in located:
+                continue
             seen.add(key)
+            if external_id:
+                located.add(external_id)
             row = {column: "" for column in COLUMNS}
             row.update({column: proposal.get(column, "") or ""
                         for column in PROPOSED_COLUMNS + PREFILLED_COLUMNS})

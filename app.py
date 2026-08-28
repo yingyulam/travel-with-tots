@@ -46,6 +46,8 @@ from src.components.place_search import PlaceSearchError, search_places
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
+import sqlite3
+
 from src.data_loader import (
     CITIES,
     FEATURE_LABELS,
@@ -437,6 +439,12 @@ def _safe_url(url):
 def _reviewable_candidates(limit=None):
     """Pending proposals, with everything the reviewer needs to judge one.
 
+    `already_have` both warns and disables the checkbox, which is as far as a
+    page-render-time check can go: the clash a reviewer creates by editing the
+    name, and the stale page whose disabled checkbox simply is not submitted,
+    both get past it. That is why venue_review_candidates catches the
+    IntegrityError rather than relying on this.
+
     Beyond the row itself: whether the database already has the name, both
     citations as safe links, the domain each came from, and whether the
     discovery citation is somewhere anyone can publish. The domain is shown
@@ -521,7 +529,22 @@ def venue_review_candidates():
             if missing:
                 refused.append(f"{merged.get('name') or 'a venue'} ({missing})")
                 continue
-            _approve_candidate(merged, admin_id)
+            try:
+                _approve_candidate(merged, admin_id)
+            except sqlite3.IntegrityError:
+                # idx_venues_curated_identity refuses a second curated venue
+                # with the same name and city. Uncaught, this unwound the loop
+                # and 500'd the whole submit: every row after this one lost its
+                # edits *and* its decision, the reviewer saw no flash, and
+                # re-submitting failed on the same row and lost the tail again.
+                #
+                # Still reachable with the badge in place, which is why it is
+                # caught rather than only warned about: name and city are both
+                # editable, so a reviewer can create the clash themselves after
+                # the page was drawn.
+                refused.append(f"{merged.get('name') or 'a venue'} "
+                               "(already a curated venue in that city)")
+                continue
             approved += 1
 
     parts = []
@@ -607,12 +630,15 @@ def _approve_candidate(row, admin_id):
         close_time=row.get("close_time") or None,
         lat=_as_float(row.get("lat")),
         lng=_as_float(row.get("lng")),
+        setting=row.get("setting") or None,
+        # Whatever identity the geocoder gave us, so a re-proposal of the same
+        # place is recognised rather than inserted twice. Null when the locator
+        # found nothing, which idx_venues_external_id allows.
+        external_id=row.get("external_id") or None,
         # The venue's own site when we found one, the page it was discovered
-        # on otherwise. The reviewer asked for the official site to be
-        # preferred, and the discovery URL is not lost: venue_candidates.csv
-        # keeps it, and that file is the durable record of where a venue came
-        # from (see src/candidates.py).
-    setting=row.get("setting") or None,
+        # on otherwise. The official site is preferred, and the discovery URL
+        # is not lost: venue_candidates.csv keeps it, and that file is the
+        # durable record of where a venue came from (see src/candidates.py).
         source_url=row.get("official_url") or row.get("source_url") or None,
         verified_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         verified_by=admin_id,

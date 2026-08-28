@@ -20,11 +20,12 @@ import time
 from itertools import zip_longest
 from pathlib import Path
 
-from .. import candidates, db, osm
+from .. import candidates, db, nominatim, osm
 from ..agents import call_openrouter, parse_json_reply
-from ..data_loader import CITIES, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
+from ..data_loader import (CITIES, NEIGHBOURHOODS, SETTINGS, SHELTERED,
+                           VENUE_TYPES)
+from ..geo import in_metro_vancouver
 from ..components.extract_form import _FILLER, _words
-from ..components.place_search import PlaceSearchError, search_places
 from ..components.search_web import WebSearchError, search_web
 
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "propose_venues.txt"
@@ -40,25 +41,23 @@ CURATOR_MODEL = "openai/gpt-4o-mini"
 
 CITY = "Vancouver"
 
-# Metro Vancouver, generously drawn: (south, north, west, east). The same guard
-# scripts/geocode_venues.py uses, and for a sharper reason here. A web search
-# for "Vancouver" reaches Vancouver, Washington, and a place lookup will happily
-# resolve one: a live run proposed Fort Vancouver at latitude 45.6, in another
-# country. A venue on the wrong side of a border is not a review problem, it is
-# a wrong answer that looks plausible.
-METRO_VANCOUVER_BOUNDS = (48.9, 49.6, -123.5, -122.5)
-
-# Where the search is pointed. Ordered by how badly the database needs it: the
-# gap queries come from the data, the rest are the categories the planner is
-# thinnest on (food venues) and the ones it asks for and cannot fill (a rainy
-# day theme with almost no indoor venues).
+# Where the search is pointed: at what nothing else covers. Vancouver Open Data
+# publishes the City's parks and community centres, so the agent's only job is
+# the places the City does not own -- museums, aquariums, private attractions --
+# and the indoor ones most of all, because that is the gap a wet day exposes.
+#
+# Three queries were dropped when this was retargeted. Two searched for
+# restaurants, which left the venue table entirely; one searched for community
+# centres, which the importer already brings in authoritatively, so proposing
+# them was effort spent against a worse source.
 STANDING_QUERIES = (
-    "kid friendly restaurants Vancouver highchairs toddlers",
-    "family restaurants Vancouver with kids menu and space for strollers",
     "indoor activities Vancouver toddlers rainy day",
     "indoor play spaces Vancouver under 5",
     "best places to take a toddler in Vancouver",
-    "Vancouver community centres with toddler programs",
+    "children's museums and science centres Vancouver",
+    "Vancouver aquarium and animal attractions for toddlers",
+    "farms and petting zoos near Vancouver with young children",
+    "Vancouver pools with a toddler or leisure pool",
 )
 
 # How many venues a single search result set can realistically support. Tavily
@@ -131,6 +130,26 @@ GENERIC_NAMES = frozenset((
     "playspace", "community centre", "community center", "rec centre",
     "recreation centre", "art gallery", "science centre", "science center"))
 
+# Search results about the wrong Vancouver. There are two, 500km apart, and a
+# query for "indoor play spaces Vancouver" reaches both: a live run returned a
+# Portland listicle ("8-indoor-playgrounds-portland") and took Dizzy Castle and
+# Play Street Museum from it, both in Washington state.
+#
+# The coordinate guard cannot catch these. It only fires on a *located*
+# candidate, and a venue in Washington is one Nominatim looking inside Metro
+# Vancouver will not find at all -- so it arrived with no coordinates and
+# sailed past the bounds check. The article is the thing to reject, not the
+# venue: a Portland guide is not evidence for a Vancouver outing whatever it
+# names.
+#
+# Matched against the URL and the title only, never the snippet. A snippet can
+# mention Portland in passing; a URL or headline that does is what the article
+# is about. "washington" is deliberately absent: Vancouver BC has a Washington
+# Street, and the two spellings below already cover the real case.
+WRONG_REGION = re.compile(
+    r"portland|oregon|\bpdx\b|vancouver[,\s-]+wa\b|vancouver[,\s-]+washington",
+    re.IGNORECASE)
+
 # Things a search result names that are not a place you can take a child.
 NOT_A_VENUE = re.compile(
     r"\b(best|top \d+|guide|things to do|itinerary|blog|review|tips|ideas|"
@@ -183,18 +202,46 @@ def _messages(results, known) -> list:
 
 
 def gap_queries(limit=3) -> list:
-    """Searches aimed at the neighbourhoods the database barely covers.
+    """Searches aimed at the neighbourhoods with nowhere to go indoors.
 
-    Read from the venues table rather than hardcoded, so the targeting follows
-    the data as it grows instead of going stale the first time a gap is filled.
+    The gap used to be geographic, and this counted venues per neighbourhood.
+    With 222 imported parks that is no longer where the shortage is: every City
+    area has somewhere outdoors, and what a family cannot find is somewhere
+    under cover. So the measure is categorical now -- areas with outdoor venues
+    and nothing indoor first, then areas with nothing at all.
+
+    Two faults in the old version, beyond the wrong measure. It iterated only
+    the neighbourhoods that already appeared in the data, so an area with
+    **zero** venues never entered the counts and the biggest gaps were the ones
+    it could not see. And it never read `setting`, so the indoor shortage the
+    module's own comment cited was left entirely to the hardcoded queries.
+
+    Still read from the data, so the targeting follows the table as it grows
+    rather than going stale the first time a gap is filled.
     """
-    counts = {}
+    indoor, outdoor = {}, {}
     for row in db.get_venues_in_city(CITY):
         area = (row["neighbourhood"] or "").strip()
-        if area:
-            counts[area] = counts.get(area, 0) + 1
-    thin = sorted(counts, key=lambda area: counts[area])[:limit]
-    return [f"family friendly places for toddlers {area} {CITY}" for area in thin]
+        if not area:
+            continue
+        counter = indoor if (row["setting"] or "") in SHELTERED else outdoor
+        counter[area] = counter.get(area, 0) + 1
+
+    # Every area the app knows, not only those already represented, so a
+    # neighbourhood with nothing in it is a candidate rather than invisible.
+    # Sorted by how little shelter it has, then by how much else is there:
+    # somewhere with ten parks and no roof is a better search than somewhere
+    # with nothing at all, because we know families already go there.
+    ranked = sorted(NEIGHBOURHOODS,
+                    key=lambda area: (indoor.get(area, 0), -outdoor.get(area, 0)))
+    return [f"indoor activities for toddlers in {area} {CITY}"
+            for area in ranked[:limit]]
+
+
+def in_region(result) -> bool:
+    """Whether a search result is about the Vancouver we plan for."""
+    return not WRONG_REGION.search(
+        f"{result.get('url', '')} {result.get('title', '')}")
 
 
 def _grounded(venue, said) -> dict:
@@ -355,39 +402,41 @@ def in_enum(value, allowed) -> str:
     return value if value in allowed else ""
 
 
-def _in_metro_vancouver(lat, lng) -> bool:
-    """Whether a located coordinate is actually in Metro Vancouver."""
-    south, north, west, east = METRO_VANCOUVER_BOUNDS
-    return south <= lat <= north and west <= lng <= east
-
-
-def _locate(name) -> dict:
+def _locate(name, area=None) -> dict:
     """Address and coordinates for a proposed venue, or blanks.
 
-    search_places rather than geocode: geocode is address-shaped and its own
-    docstring warns it will return a street for a cafe's name. A failure here
-    costs the candidate its coordinates, never the candidate.
+    Nominatim rather than Google Places. Places terms allow keeping a place id
+    but restrict retaining returned content, and everything this function
+    writes lands in data/venue_candidates.csv, which is tracked in git -- so a
+    public repo redistributed Google's addresses and coordinates. Nominatim is
+    ODbL: storable and showable with attribution, the same reason src/osm.py
+    was chosen for hours.
+
+    Three return shapes, and callers depend on all three: `{}` keeps the
+    candidate without coordinates, `{"out_of_area": True}` drops it, anything
+    else is the location. A lookup failure costs the candidate its
+    coordinates, never the candidate.
     """
     try:
-        found = search_places(f"{name}, {CITY}", limit=1)
-    except (PlaceSearchError, KeyError) as e:
-        print(f"Place lookup skipped for {name}: {e}")
+        found = nominatim.locate(name, area)
+    except nominatim.NominatimError as e:
+        print(f"Location lookup skipped for {name}: {e}")
         return {}
     if not found:
         return {}
-    place = found[0]
-    lat, lng = place["lat"], place["lng"]
-    if lat is not None and lng is not None and not _in_metro_vancouver(lat, lng):
+    lat, lng = found["lat"], found["lng"]
+    if not in_metro_vancouver(lat, lng):
         print(f"Rejecting {name}: resolved to {lat},{lng}, outside Metro Vancouver")
         return {"out_of_area": True}
-    # The lookup's own area names are its own, not ours: it says "Central
-    # Vancouver" and "Downtown Vancouver" where our list says neither. Held to
+    # The geocoder's own area names are its own, not ours: it answers "Olympic
+    # Village" and "Financial District" where our list says neither. Held to
     # the same enum as the model's answer, so an unrecognised area arrives
-    # blank for the reviewer to pick rather than pre-filled with a value
-    # nothing in the app can use.
-    return {"address": place["address"], "lat": lat, "lng": lng,
-            "city": in_enum(place["city"], CITIES) or CITY,
-            "neighbourhood": in_enum(place["neighbourhood"], NEIGHBOURHOODS)}
+    # blank for a reviewer to pick rather than pre-filled with a value nothing
+    # in the app can use.
+    return {"address": found["address"], "lat": lat, "lng": lng,
+            "city": CITY,
+            "neighbourhood": in_enum(found["area"], NEIGHBOURHOODS),
+            "external_id": found["external_id"]}
 
 
 def _queries(batch_size) -> list:
@@ -424,9 +473,12 @@ def propose(batch_size=DEFAULT_BATCH_SIZE, model=CURATOR_MODEL) -> dict:
         if len(proposals) >= batch_size:
             break
         try:
-            results = search_web(query)
+            found_results = search_web(query)
         except (WebSearchError, KeyError) as e:
             raise ProposalError(f"web search failed: {e}") from None
+        results = [r for r in found_results if in_region(r)]
+        for dropped in (r for r in found_results if not in_region(r)):
+            print(f"Ignoring {dropped['url']}: about the other Vancouver")
         if not results:
             continue
         queries.append(query)
@@ -458,11 +510,15 @@ def propose(batch_size=DEFAULT_BATCH_SIZE, model=CURATOR_MODEL) -> dict:
                 (url for title, url in by_url.items()
                  if _words(kept["name"]) & _words(title)),
                 results[0]["url"])
-            located = _locate(kept["name"])
+            located = _locate(kept["name"], kept.get("neighbourhood"))
             if located.pop("out_of_area", False):
                 skipped += 1
                 continue
-            kept.update(located)
+            # Only what the lookup actually answered. A blank here used to
+            # overwrite a neighbourhood the model had grounded in the search
+            # results, so a good value was replaced by "" whenever the
+            # geocoder's area name was not one of ours.
+            kept.update({k: v for k, v in located.items() if v not in ("", None)})
             proposals.append(kept)
 
     enrich(proposals)

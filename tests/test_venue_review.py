@@ -179,6 +179,77 @@ class ReviewPageTest(_ReviewTest):
         self.assertEqual(self._venue("Untouched")["source"], "user_submitted")
 
 
+class ApprovalClashTest(_ReviewTest):
+    """A clash must cost one row, never the batch.
+
+    idx_venues_curated_identity is unique on (name, city) where source is
+    'curated'. The IntegrityError it raises was uncaught: it unwound the
+    `for row in candidates.load(PENDING)` loop, so every row *after* the
+    failing one lost its edits and its decision, the reviewer got an opaque
+    500 with no flash, and re-submitting failed on the same row and lost the
+    tail again. The batch was unrecoverable through the UI.
+
+    Reachable even with the warning badge in place, because `name` and `city`
+    are both editable: a reviewer can create the clash themselves after the
+    page was drawn.
+    """
+
+    def _batch(self, *names):
+        candidates.add([{"name": n, "type": "museum", "setting": "indoor",
+                         "neighbourhood": "Downtown", "city": "Vancouver",
+                         "source_url": "https://example.org/x",
+                         "evidence": "e"} for n in names])
+        return candidates.load(candidates.PENDING)
+
+    def _approve_all(self, rows):
+        ids = [r["id"] for r in rows]
+        data = {"action": "approve", "picked": ids, "on_page": ids}
+        for i in ids:
+            data.update({f"{i}-open_time": "10:00", f"{i}-close_time": "17:00"})
+        return self.client.post("/venues/review/candidates", data=data,
+                                follow_redirects=True)
+
+    def test_the_rows_after_a_clash_are_still_approved(self):
+        db.add_venue("Clashing Venue", source="curated", city="Vancouver")
+        rows = self._batch("First Ok", "Clashing Venue", "Third Ok")
+        response = self._approve_all(rows)
+
+        self.assertEqual(response.status_code, 200)  # was a 500
+        by_name = {r["name"]: r["status"] for r in candidates.load()}
+        self.assertEqual(by_name["First Ok"], candidates.APPROVED)
+        self.assertEqual(by_name["Third Ok"], candidates.APPROVED)
+        # The clashing row is left for the reviewer rather than silently lost.
+        self.assertEqual(by_name["Clashing Venue"], candidates.PENDING)
+
+    def test_the_reviewer_is_told_which_row_was_refused(self):
+        db.add_venue("Clashing Venue", source="curated", city="Vancouver")
+        rows = self._batch("Clashing Venue", "Other Ok")
+        body = self._approve_all(rows).get_data(as_text=True)
+        self.assertIn("Clashing Venue", body)
+        self.assertIn("already a curated venue", body)
+
+    def test_no_second_venue_is_inserted(self):
+        db.add_venue("Clashing Venue", source="curated", city="Vancouver")
+        rows = self._batch("Clashing Venue")
+        self._approve_all(rows)
+        with closing(db.connect()) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM venues WHERE name = 'Clashing Venue'"
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_the_page_warns_and_disables_the_checkbox(self):
+        # As far as a page-render-time check can go. It does not close the
+        # hole: a disabled checkbox is simply not submitted, so a stale page
+        # gets through, and a reviewer can create the clash by editing the
+        # name after the page was drawn. Hence the caught IntegrityError.
+        db.add_venue("Clashing Venue", source="curated", city="Vancouver")
+        self._batch("Clashing Venue")
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn("Already in the database", body)
+        self.assertIn("disabled", body)
+
+
 class CandidateBatchTest(_ReviewTest):
     def _propose(self, name="Bloedel Conservatory", **fields):
         candidates.add([{"name": name, "type": "garden",

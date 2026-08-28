@@ -1,8 +1,31 @@
-"""Distance between two coordinates. No routing, just straight-line geometry."""
+"""Distance between two coordinates, and whether one is in the right region.
+No routing, just straight-line geometry."""
 
 from math import asin, cos, radians, sin, sqrt
 
 EARTH_RADIUS_KM = 6371.0
+
+# Metro Vancouver, generously drawn, as (south, north, west, east). A guard on
+# results, not a search box: any geocoder asked about "Vancouver" can return
+# Vancouver, Washington, and a live proposal run once accepted Fort Vancouver
+# at latitude 45.6, in another country.
+#
+# Deliberately not shared with osm.BBOX, which is a tighter box in a different
+# tuple order because it bounds an Overpass *query*: widening it to this would
+# make every Overpass call scan more of the map for no benefit.
+METRO_VANCOUVER_BOUNDS = (48.9, 49.6, -123.5, -122.5)
+
+
+def in_metro_vancouver(lat, lng):
+    """Whether a coordinate is plausibly in Metro Vancouver.
+
+    False for a missing coordinate: not knowing where something is cannot count
+    as knowing it is here.
+    """
+    if lat is None or lng is None:
+        return False
+    south, north, west, east = METRO_VANCOUVER_BOUNDS
+    return south <= lat <= north and west <= lng <= east
 
 
 def haversine_km(lat1, lng1, lat2, lng2):

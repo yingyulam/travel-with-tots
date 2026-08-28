@@ -12,7 +12,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src import candidates, db, osm
+from src import candidates, db, nominatim, osm
 from src.workflows import propose_venues
 
 RESULTS = [
@@ -58,12 +58,14 @@ class ProposeVenuesTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         return mocked
 
-    def _run(self, reply, batch_size=5, places=None):
+    def _run(self, reply, batch_size=5, located=None):
+        # `located` is a nominatim.locate return value, or None for "found
+        # nothing" -- the proposal path is keyless now, so there is no Places
+        # call left to patch.
         with mock.patch.object(propose_venues, "search_web", return_value=RESULTS), \
              mock.patch.object(propose_venues, "call_openrouter",
                                return_value=(reply, {}, 0.4)), \
-             mock.patch.object(propose_venues, "search_places",
-                               return_value=places if places is not None else []):
+             mock.patch.object(nominatim, "locate", return_value=located):
             return propose_venues.propose(batch_size=batch_size)
 
     def _venue_count(self):
@@ -125,25 +127,27 @@ class ProposeVenuesTest(unittest.TestCase):
             {"name": "Kokomo Foods"})
         self.assertEqual(self._run(reply, batch_size=1)["proposed"], 1)
 
-    def test_a_place_lookup_failure_costs_coordinates_not_the_candidate(self):
-        from src.components.place_search import PlaceSearchError
+    def test_a_location_lookup_failure_costs_coordinates_not_the_candidate(self):
         with mock.patch.object(propose_venues, "search_web", return_value=RESULTS), \
              mock.patch.object(propose_venues, "call_openrouter",
                                return_value=(_reply({"name": "Beaty Biodiversity Museum"}), {}, 0.4)), \
-             mock.patch.object(propose_venues, "search_places",
-                               side_effect=PlaceSearchError("down")):
+             mock.patch.object(nominatim, "locate",
+                               side_effect=nominatim.NominatimError("down")):
             result = propose_venues.propose(batch_size=1)
         self.assertEqual(result["proposed"], 1)
         self.assertEqual(candidates.load()[0]["lat"], "")
 
     def test_coordinates_are_attached_when_the_lookup_works(self):
         self._run(_reply({"name": "Beaty Biodiversity Museum"}),
-                  places=[{"name": "Beaty", "address": "2212 Main Mall",
-                           "lat": 49.2646, "lng": -123.25, "city": "Vancouver",
-                           "neighbourhood": "Point Grey", "type": "museum"}])
+                  located={"lat": 49.2646, "lng": -123.25,
+                           "address": "2212 Main Mall, Vancouver, BC",
+                           "area": "Point Grey",
+                           "external_id": "osm:node/123"})
         row = candidates.load()[0]
-        self.assertEqual(row["address"], "2212 Main Mall")
+        self.assertEqual(row["address"], "2212 Main Mall, Vancouver, BC")
         self.assertEqual(float(row["lat"]), 49.2646)
+        # Identity Places never gave us, so a re-proposal is recognisable.
+        self.assertEqual(row["external_id"], "osm:node/123")
 
     def test_a_search_failure_raises_rather_than_writing_a_partial_batch(self):
         from src.components.search_web import WebSearchError
@@ -157,15 +161,37 @@ class ProposeVenuesTest(unittest.TestCase):
         result = self._run("not json at all")
         self.assertEqual(result["proposed"], 0)
 
-    def test_gap_queries_follow_the_data(self):
+    def test_gap_queries_target_the_indoor_shortage(self):
+        # The measure changed with the City import. It used to be geographic --
+        # fewest venues wins -- which was right at 38 venues and wrong at 260,
+        # because every City area now has somewhere outdoors. What a family
+        # cannot find is somewhere under cover.
         for i in range(7):
-            db.add_venue(f"Crowded {i}", source="curated", city="Vancouver",
-                         neighbourhood="Downtown")
-        db.add_venue("Lonely", source="curated", city="Vancouver",
-                     neighbourhood="Marpole")
+            db.add_venue(f"Park {i}", source="curated", city="Vancouver",
+                         neighbourhood="Downtown", setting="outdoor")
+        db.add_venue("A Museum", source="curated", city="Vancouver",
+                     neighbourhood="Marpole", setting="indoor")
         queries = " ".join(propose_venues.gap_queries(limit=1))
-        self.assertIn("Marpole", queries)
-        self.assertNotIn("Downtown", queries)
+        # Seven parks and no roof is the gap, even though it is the busiest
+        # neighbourhood; Marpole already has shelter.
+        self.assertIn("Downtown", queries)
+        self.assertNotIn("Marpole", queries)
+        self.assertIn("indoor", queries)
+
+    def test_an_area_with_outdoor_venues_outranks_one_with_none(self):
+        # Somewhere families already go, with no shelter, is a better search
+        # than somewhere with nothing at all.
+        db.add_venue("A Park", source="curated", city="Vancouver",
+                     neighbourhood="Kitsilano", setting="outdoor")
+        first = propose_venues.gap_queries(limit=1)[0]
+        self.assertIn("Kitsilano", first)
+
+    def test_an_area_with_no_venues_is_still_reachable(self):
+        # The old version iterated only neighbourhoods already in the data, so
+        # an area with zero venues never entered the counts and the biggest
+        # gaps were the ones it could not see.
+        queries = " ".join(propose_venues.gap_queries(limit=40))
+        self.assertIn("Killarney", queries)
 
     def test_a_venue_outside_metro_vancouver_is_dropped(self):
         # A search for "Vancouver" reaches Vancouver, Washington. A live run
@@ -173,9 +199,9 @@ class ProposeVenuesTest(unittest.TestCase):
         result = self._run(
             _reply({"name": "Beaty Biodiversity Museum"}),
             batch_size=1,
-            places=[{"name": "Fort Vancouver", "address": "1501 E Evergreen Blvd",
-                     "lat": 45.6261838, "lng": -122.6566053, "city": "Vancouver",
-                     "neighbourhood": "Hudson Bay", "type": "historical landmark"}])
+            located={"lat": 45.6261838, "lng": -122.6566053,
+                     "address": "1501 E Evergreen Blvd, Vancouver, WA",
+                     "area": "Hudson Bay", "external_id": "osm:node/9"})
         self.assertEqual(result["proposed"], 0)
         self.assertEqual(candidates.load(), [])
 
@@ -203,7 +229,7 @@ class ProposeVenuesTest(unittest.TestCase):
              mock.patch.object(propose_venues, "call_openrouter",
                                return_value=(_reply({"name": "Vancouver Public Library",
                                                      "type": "library"}), {}, 0.4)), \
-             mock.patch.object(propose_venues, "search_places", return_value=[]):
+             mock.patch.object(nominatim, "locate", return_value=None):
             result = propose_venues.propose(batch_size=1)
         self.assertEqual(result["proposed"], 0)
 
@@ -215,7 +241,7 @@ class ProposeVenuesTest(unittest.TestCase):
              mock.patch.object(propose_venues, "call_openrouter",
                                return_value=(_reply({"name": "Vancouver Public Library",
                                                      "type": "library"}), {}, 0.4)), \
-             mock.patch.object(propose_venues, "search_places", return_value=[]):
+             mock.patch.object(nominatim, "locate", return_value=None):
             result = propose_venues.propose(batch_size=1)
         self.assertEqual(result["proposed"], 1)
 

@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 
 import app as app_module
-from src import candidates, osm
+from src import candidates, nominatim, osm
 from src.data_loader import CITIES, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
 from src.workflows import propose_venues as pv
 
@@ -75,33 +75,93 @@ class LocatedValuesTest(unittest.TestCase):
     queue through it.
     """
 
-    def _located(self, place):
-        with mock.patch.object(pv, "search_places", return_value=[place]):
+    def _located(self, hit):
+        with mock.patch.object(nominatim, "locate", return_value=hit):
             return pv._locate("Somewhere")
 
-    PLACE = {"address": "1 Main St", "lat": 49.27, "lng": -123.12,
-             "city": "Vancouver", "neighbourhood": "Yaletown"}
+    HIT = {"lat": 49.27, "lng": -123.12, "address": "1 Main St, Vancouver, BC",
+           "area": "Yaletown", "external_id": "osm:node/1"}
 
     def test_an_area_the_lookup_invents_arrives_blank(self):
-        found = self._located({**self.PLACE, "neighbourhood": "Central Vancouver"})
+        # Nominatim answers "Olympic Village" and "Financial District" where
+        # our list says neither.
+        found = self._located({**self.HIT, "area": "Olympic Village"})
         self.assertEqual(found["neighbourhood"], "")
 
     def test_a_real_area_survives(self):
-        self.assertEqual(self._located(self.PLACE)["neighbourhood"], "Yaletown")
+        self.assertEqual(self._located(self.HIT)["neighbourhood"], "Yaletown")
 
-    def test_a_city_we_do_not_plan_falls_back_rather_than_being_written(self):
-        found = self._located({**self.PLACE, "city": "Vancouver, BC"})
-        self.assertEqual(found["city"], pv.CITY)
+    def test_the_city_is_the_one_we_plan(self):
+        self.assertEqual(self._located(self.HIT)["city"], pv.CITY)
 
     def test_the_coordinates_are_still_kept(self):
         # Only the names are held to the enum. A coordinate is not a label.
-        found = self._located({**self.PLACE, "neighbourhood": "Nowhere"})
+        found = self._located({**self.HIT, "area": "Nowhere"})
         self.assertEqual((found["lat"], found["lng"]), (49.27, -123.12))
+
+    def test_the_identity_is_carried_through(self):
+        self.assertEqual(self._located(self.HIT)["external_id"], "osm:node/1")
+
+    def test_a_result_outside_metro_vancouver_is_dropped_not_kept(self):
+        found = self._located({**self.HIT, "lat": 45.63, "lng": -122.66})
+        self.assertEqual(found, {"out_of_area": True})
+
+    def test_nothing_found_keeps_the_candidate_without_coordinates(self):
+        self.assertEqual(self._located(None), {})
 
     def test_the_guard_is_shared_with_the_models_answer(self):
         self.assertEqual(pv.in_enum("Yaletown", NEIGHBOURHOODS), "Yaletown")
         self.assertEqual(pv.in_enum("Central Vancouver", NEIGHBOURHOODS), "")
         self.assertEqual(pv.in_enum(None, NEIGHBOURHOODS), "")
+
+
+class WrongVancouverTest(unittest.TestCase):
+    """There are two Vancouvers, 500km apart, and search reaches both.
+
+    A live run of the retargeted queries returned a Portland listicle
+    ("8-indoor-playgrounds-portland") and took two Washington venues from it,
+    Dizzy Castle and Play Street Museum. The coordinate guard could not catch
+    them: it only fires on a *located* candidate, and a Washington venue is
+    one Nominatim searching Metro Vancouver never finds, so both arrived with
+    no coordinates and sailed straight past the bounds check.
+    """
+
+    def _keeps(self, url, title=""):
+        return pv.in_region({"url": url, "title": title})
+
+    def test_the_portland_listicle_that_caused_this_is_dropped(self):
+        self.assertFalse(self._keeps(
+            "https://www.kristinagraffphotography.com/blog/8-indoor-playgrounds-portland"))
+
+    def test_the_earlier_vancouver_washington_citation_is_dropped(self):
+        # This one reached the review queue attached to Vancouver Public
+        # Library: a real venue carrying a citation about another country.
+        self.assertFalse(self._keeps(
+            "https://pdx.eater.com/maps/best-kid-friendly-restaurants-vancouver-washington"))
+
+    def test_a_title_naming_the_other_vancouver_is_dropped(self):
+        self.assertFalse(self._keeps("https://example.com/x",
+                                     "Best of Vancouver, WA for toddlers"))
+
+    def test_real_vancouver_sources_are_kept(self):
+        for url in ("https://www.vancouversnorthshore.com/attractions/maplewood-farm",
+                    "https://vancouver.kidsoutandabout.com/content/west-point-grey",
+                    "https://www.cascadiakids.com/family-friendly-vancouver"):
+            with self.subTest(url=url):
+                self.assertTrue(self._keeps(url))
+
+    def test_a_washington_street_in_vancouver_bc_is_not_a_false_positive(self):
+        # Which is why the pattern does not simply match "washington".
+        self.assertTrue(self._keeps("https://example.com/washington-street-park",
+                                    "Washington Street Park, Vancouver BC"))
+
+    def test_only_the_url_and_title_are_read_not_the_snippet(self):
+        # A snippet can mention Portland in passing; a URL or headline that
+        # does is what the article is about.
+        self.assertTrue(pv.in_region(
+            {"url": "https://example.com/vancouver-parks",
+             "title": "Vancouver parks",
+             "snippet": "Better than anything in Portland."}))
 
 
 class SourceTrustTest(unittest.TestCase):

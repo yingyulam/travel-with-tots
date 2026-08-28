@@ -803,6 +803,56 @@ The agent never writes a venue. It writes `data/venue_candidates.csv` and
 nothing else, and `/venues/review` is the only path from a candidate to a row.
 Rejections are remembered, so a place you turn down is never proposed again.
 
+### Why the proposer does not use Google Places
+
+Google Maps Platform terms allow storing a place **id** but restrict retaining
+the content a lookup returns. Everything the proposal path writes lands in
+`data/venue_candidates.csv`, which is **tracked in git**, so a public repo was
+redistributing Google's addresses and coordinates. Not hypothetical: five rows
+carried them until this was fixed.
+
+So the proposer geocodes through **Nominatim** (`src/nominatim.py`) instead.
+ODbL, like the OSM hours lookup, so a result can be stored and shown with
+attribution. It also gives something Places never could: a stable OSM id, kept
+as `external_id`, so a re-proposal of the same venue is recognisable rather than
+a second row.
+
+```
+Maplewood Farm    49.3088, -123.0193    osm:way/261318457
+```
+
+The trade is precision — free-text geocoding with no notion of "the branch
+nearest here" — so two guards do the work a paid API would. A bare-name hit is
+accepted only when Nominatim puts the result in British Columbia, and every
+coordinate is checked against Metro Vancouver's bounds (`geo.in_metro_vancouver`).
+`search_places` stays exactly where it was for `/place-search`, `/log-place`,
+Log a Place and find-nearby: nothing a parent touches changed, and
+`GOOGLE_MAPS_API_KEY` is still required.
+
+**There are two Vancouvers, 500km apart, and search reaches both.** The first
+live run of the retargeted queries returned a *Portland* listicle and took two
+Washington venues from it. The coordinate guard could not catch them — it only
+fires on a located candidate, and a Washington venue is one Nominatim searching
+Metro Vancouver never finds, so both arrived with no coordinates and passed the
+bounds check untouched. The article is what has to be rejected, not the venue:
+a Portland guide is not evidence for a Vancouver outing whatever it names. So a
+result whose URL or title names Portland, Oregon or Vancouver WA is dropped
+before the model reads it. Snippets are not matched, and "washington" alone is
+not a trigger, because Vancouver BC has a Washington Street.
+
+**Where the agent searches** has moved with the database. The two restaurant
+queries went when restaurants left the table, and the community-centres query
+went because the City publishes all 27 authoritatively — proposing them was
+effort against a worse source. What is left points at the ownership gap:
+children's museums, aquariums, indoor play, farms, toddler pools.
+
+`gap_queries()` changed what it measures, too. Counting venues per
+neighbourhood was right at 38 venues and wrong at 260: every City area has
+somewhere outdoors now, and what a family cannot find is somewhere under cover.
+It ranks by indoor shortage instead, and iterates every neighbourhood the app
+knows rather than only those already in the data — an area with *zero* venues
+never entered the old counts, so the biggest gaps were the ones it could not see.
+
 ### What the agent fills in before you review it
 
 Review is one person's attention, so anything a reviewer would look up by hand
