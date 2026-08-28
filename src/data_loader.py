@@ -12,9 +12,12 @@ from . import db
 
 # Feature keys we know about, with display labels, in presentation order.
 FEATURE_LABELS = {
+    "has_washroom": "Washroom",
     "has_family_room": "Family room",
     "has_nursing_room": "Nursing room",
     "stroller_accessible": "Stroller / step-free",
+    "has_highchair": "Highchair",
+    "can_eat": "Food on site",
 }
 
 
@@ -27,14 +30,14 @@ SUPPORTED_CITIES = ("Vancouver",)
 # whole rows, so a new column on the venues table cannot silently end up in a
 # saved trip's plan_json or in the JSON sent to the browser.
 VENUE_KEYS = ("name", "type", "neighbourhood",
-              "has_family_room", "has_nursing_room",
-              "stroller_accessible", "can_eat", "lat", "lng")
+              "has_washroom", "has_family_room", "has_nursing_room",
+              "stroller_accessible", "has_highchair", "can_eat", "lat", "lng")
 
 # The venue keys that are yes/no. SQLite has no boolean type and hands these
 # back as 0/1, so they are coerced: every venue dict the app has ever built has
 # carried real booleans, including the ones already saved into trips.plan_json.
-BOOL_KEYS = ("has_family_room", "has_nursing_room",
-             "stroller_accessible", "can_eat")
+BOOL_KEYS = ("has_washroom", "has_family_room", "has_nursing_room",
+             "stroller_accessible", "has_highchair", "can_eat")
 
 # Somewhere a stroller nap works: open space to keep walking, or a mall to walk
 # indoors when it rains. Derived from the kind of place rather than stored,
@@ -67,7 +70,7 @@ def maps_url(name, city=SUPPORTED_CITIES[0]):
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 
 
-def _as_venue(row):
+def _as_venue(row, reported=None):
     """One database row as the venue dict the planners expect.
 
     `open`/`close` rather than the columns' own open_time/close_time: the
@@ -77,6 +80,10 @@ def _as_venue(row):
     venue = {key: row[key] for key in VENUE_KEYS}
     for key in BOOL_KEYS:
         venue[key] = bool(venue[key])
+    # An amenity is whatever the newest report says, not what the column says.
+    # The columns are still written (by the review queue, by an import seed) but
+    # nothing reads them for this: a claim needs an author and a date.
+    venue.update(reported or {})
     venue["nap_friendly"] = is_nap_friendly(venue)
     venue["open"] = row["open_time"]
     venue["close"] = row["close_time"]
@@ -94,8 +101,15 @@ def get_venues(city=""):
     Seeded venues come back in the curator's order, not alphabetically: the
     planner picks the first venue that fits a slot, so the order of
     data/venues.json is a ranking of what to offer first.
+
+    Amenities come from venue_reports, so a field nobody has reported on is
+    absent rather than False. That is the difference between "nobody has said"
+    and "somebody looked and there was none", and it is why the planner no
+    longer filters on them.
     """
     rows = db.get_venues_in_city(city)
     rows.sort(key=lambda row: UNRANKED if row["seed_rank"] is None
               else row["seed_rank"])
-    return [_as_venue(row) for row in rows]
+    # One query for the whole set, not one per venue.
+    reported = db.reported_flags(row["id"] for row in rows)
+    return [_as_venue(row, reported.get(row["id"])) for row in rows]

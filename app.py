@@ -65,11 +65,13 @@ from src.db import (
     get_unverified_venues,
     mark_verified,
     get_pending_submissions,
+    get_rejected_submissions,
     get_trip_for_parent,
     get_trips_for_parent,
     init_db,
     promote_submission,
     reject_submission,
+    restore_submission,
     update_child,
     update_venue,
 )
@@ -330,13 +332,21 @@ def venue_review():
     will eventually be.
     """
     unverified = get_unverified_venues()
+    pending = candidates.counts()[candidates.PENDING]
     return render_template(
         "venue_review.html",
-        proposals=_reviewable_candidates(),
+        proposals=_reviewable_candidates(PROPOSAL_PAGE_SIZE),
+        proposals_total=pending,
+        page_size=PROPOSAL_PAGE_SIZE,
+        rejected_candidates=[
+            dict(r, source_link=_safe_url(r.get("source_url")))
+            for r in candidates.load(candidates.REJECTED)],
+        rejected_submissions=get_rejected_submissions(),
         submissions=get_pending_submissions(),
         unverified=unverified[:UNVERIFIED_PAGE_SIZE],
         unverified_total=len(unverified),
-        flag_labels=FLAG_LABELS)
+        flag_labels=FLAG_LABELS,
+        conditional_flags=db.CONDITIONAL_ON_CAN_EAT)
 
 
 @app.route("/venues/review/<int:venue_id>", methods=["POST"])
@@ -358,8 +368,8 @@ def venue_review_decide(venue_id):
         else:
             flash("Verified. It can now appear in plans and searches.")
     elif action == "reject":
-        reject_submission(venue_id)
-        flash("Submission discarded.")
+        reject_submission(venue_id, _current_parent()["id"])
+        flash("Set aside. It stays on file and can be restored below.")
     else:
         flash("Unknown action.")
     return redirect(url_for("venue_review"))
@@ -370,12 +380,18 @@ def venue_review_decide(venue_id):
 # more than one person will work through in a sitting.
 UNVERIFIED_PAGE_SIZE = 12
 
+# How many proposals to put in front of a reviewer at once. A batch is meant to
+# be read as a set and finished in one sitting; the queue advances on its own as
+# each batch is decided, because a decided candidate is no longer pending.
+PROPOSAL_PAGE_SIZE = 10
+
 # The venue flags a reviewer can vouch for, as (field, label). Built from the
 # columns the planner can actually filter on, so the form and the filters
 # cannot come to offer different sets.
-FLAG_LABELS = tuple(
-    (key, FEATURE_LABELS.get(key, key.replace("_", " ").capitalize()))
-    for key in sorted(db.CANDIDATE_FEATURE_COLUMNS))
+# In FEATURE_LABELS' order, which is presentation order, rather than sorted:
+# alphabetical put "Food on site" first and "Stroller" last for no reason.
+FLAG_LABELS = tuple((key, label) for key, label in FEATURE_LABELS.items()
+                    if key in db.CANDIDATE_FEATURE_COLUMNS)
 
 
 def _safe_url(url):
@@ -387,17 +403,17 @@ def _safe_url(url):
     return url if (url or "").startswith(("http://", "https://")) else None
 
 
-def _reviewable_candidates():
+def _reviewable_candidates(limit=None):
     """Pending proposals, each marked if the database already has that name."""
-    have = {(row["name"] or "").strip().casefold()
+    have = {candidates.normalize_name(row["name"])
             for row in db.get_venues_in_city("")}
     rows = []
     for row in candidates.load(candidates.PENDING):
         row = dict(row)
-        row["already_have"] = (row["name"] or "").strip().casefold() in have
+        row["already_have"] = candidates.normalize_name(row["name"]) in have
         row["source_link"] = _safe_url(row.get("source_url"))
         rows.append(row)
-    return rows
+    return rows if limit is None else rows[:limit]
 
 
 @app.route("/venues/review/candidates", methods=["POST"])
@@ -418,10 +434,17 @@ def venue_review_candidates():
         return redirect(url_for("venue_review"))
 
     picked = set(request.form.getlist("picked"))
+    # The ids that were rendered, not every pending candidate. A checkbox that
+    # was never on the page comes back absent, which reads identically to
+    # unticked, so iterating the whole queue would wipe the flags of everything
+    # the reviewer never saw.
+    on_page = set(request.form.getlist("on_page"))
     admin_id = _current_parent()["id"]
     saved = approved = rejected = 0
 
     for row in candidates.load(candidates.PENDING):
+        if row["id"] not in on_page:
+            continue
         edits = _candidate_edits(row["id"], request.form)
         if edits:
             candidates.update(row["id"], **edits)
@@ -492,6 +515,28 @@ def _as_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+@app.route("/venues/restore", methods=["POST"])
+@login_required
+@admin_required
+def venue_restore():
+    """Put a rejected candidate or submission back in the queue.
+
+    A reviewer can reject the wrong row, or learn something later that changes
+    the answer. Nothing here is deleted, so changing your mind costs a click.
+    """
+    candidate_id = request.form.get("candidate_id")
+    venue_id = request.form.get("venue_id", type=int)
+    if candidate_id:
+        candidates.set_status(candidate_id, candidates.PENDING)
+        flash("Back in the review queue.")
+    elif venue_id:
+        restore_submission(venue_id)
+        flash("Submission back in the review queue.")
+    else:
+        flash("Nothing to restore.")
+    return redirect(url_for("venue_review"))
 
 
 @app.route("/venues/confirm", methods=["POST"])

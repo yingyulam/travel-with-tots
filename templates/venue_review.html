@@ -1,15 +1,137 @@
 {% extends "base.html" %}
-{% block title %}Travel with Tots: Review queue{% endblock %}
-{% block heading %}Review queue{% endblock %}
-{% block tagline %}Nothing here has been checked by a person yet.{% endblock %}
+{% block title %}Travel with Tots: Review queue<section class="card">
+  <h2>Set aside</h2>
+  <p class="meta">
+    Nothing rejected is deleted. A reviewer can be wrong, or learn something
+    later, so anything here can go back in the queue.
+  </p>
 
-{% macro flags(prefix, row) %}
+  {% if not rejected_candidates and not rejected_submissions %}
+    <p class="meta">Nothing set aside.</p>
+  {% else %}
+    {% for c in rejected_candidates %}
+    <div class="plan-option">
+      <p><strong>{{ c.name }}</strong>
+        <span class="meta">{{ c.type }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
+      {% if c.evidence %}<p class="meta">&ldquo;{{ c.evidence }}&rdquo;</p>{% endif %}
+      {% if c.source_link %}
+        <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
+      {% endif %}
+      <p class="meta">Proposed by the agent, set aside {{ c.decided_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="candidate_id" value="{{ c.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+
+    {% for v in rejected_submissions %}
+    <div class="plan-option">
+      <p><strong>{{ v.name }}</strong>
+        <span class="meta">{{ v.type or 'type not given' }}{% if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
+      {% if v.notes %}<p class="meta">Parent's note: &ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
+      <p class="meta">Submitted by {{ v.submitted_by or 'a deleted account' }}, set aside {{ v.rejected_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="venue_id" value="{{ v.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}
+{% block heading %}Review queue<section class="card">
+  <h2>Set aside</h2>
+  <p class="meta">
+    Nothing rejected is deleted. A reviewer can be wrong, or learn something
+    later, so anything here can go back in the queue.
+  </p>
+
+  {% if not rejected_candidates and not rejected_submissions %}
+    <p class="meta">Nothing set aside.</p>
+  {% else %}
+    {% for c in rejected_candidates %}
+    <div class="plan-option">
+      <p><strong>{{ c.name }}</strong>
+        <span class="meta">{{ c.type }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
+      {% if c.evidence %}<p class="meta">&ldquo;{{ c.evidence }}&rdquo;</p>{% endif %}
+      {% if c.source_link %}
+        <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
+      {% endif %}
+      <p class="meta">Proposed by the agent, set aside {{ c.decided_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="candidate_id" value="{{ c.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+
+    {% for v in rejected_submissions %}
+    <div class="plan-option">
+      <p><strong>{{ v.name }}</strong>
+        <span class="meta">{{ v.type or 'type not given' }}{% if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
+      {% if v.notes %}<p class="meta">Parent's note: &ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
+      <p class="meta">Submitted by {{ v.submitted_by or 'a deleted account' }}, set aside {{ v.rejected_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="venue_id" value="{{ v.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}
+{% block tagline %}Nothing here has been checked by a person yet.<section class="card">
+  <h2>Set aside</h2>
+  <p class="meta">
+    Nothing rejected is deleted. A reviewer can be wrong, or learn something
+    later, so anything here can go back in the queue.
+  </p>
+
+  {% if not rejected_candidates and not rejected_submissions %}
+    <p class="meta">Nothing set aside.</p>
+  {% else %}
+    {% for c in rejected_candidates %}
+    <div class="plan-option">
+      <p><strong>{{ c.name }}</strong>
+        <span class="meta">{{ c.type }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
+      {% if c.evidence %}<p class="meta">&ldquo;{{ c.evidence }}&rdquo;</p>{% endif %}
+      {% if c.source_link %}
+        <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
+      {% endif %}
+      <p class="meta">Proposed by the agent, set aside {{ c.decided_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="candidate_id" value="{{ c.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+
+    {% for v in rejected_submissions %}
+    <div class="plan-option">
+      <p><strong>{{ v.name }}</strong>
+        <span class="meta">{{ v.type or 'type not given' }}{% if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
+      {% if v.notes %}<p class="meta">Parent's note: &ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
+      <p class="meta">Submitted by {{ v.submitted_by or 'a deleted account' }}, set aside {{ v.rejected_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="venue_id" value="{{ v.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}
+
+{% macro flags(prefix, row, conditional=()) %}
   <div class="badges">
     {% for key, label in flag_labels %}
+    {%- if key not in conditional or row['can_eat'] in (1, '1', True) %}
     <label class="review-flag">
       <input type="checkbox" name="{{ prefix }}-{{ key }}" {{ 'checked' if row[key] in (1, '1', True) }}>
       <span>{{ label }}</span>
     </label>
+    {%- endif %}
     {% endfor %}
   </div>
 {% endmacro %}
@@ -31,7 +153,13 @@
     </p>
   {% else %}
   <form method="post" action="{{ url_for('venue_review_candidates') }}" class="section-form">
-    <p class="meta">{{ proposals|length }} waiting.</p>
+    <p class="meta">
+      Reviewing {{ proposals|length }} of {{ proposals_total }} waiting.
+      {%- if proposals_total > proposals|length %}
+      The next {{ page_size }} load once you have decided these.
+      {%- endif %}
+    </p>
+    {% for c in proposals %}<input type="hidden" name="on_page" value="{{ c.id }}">{% endfor %}
 
     {% for c in proposals %}
     <div class="plan-option">
@@ -65,7 +193,7 @@
           <input type="text" name="{{ c.id }}-close_time" value="{{ c.close_time }}" placeholder="17:00"></label>
       </div>
 
-      {{ flags(c.id, c) }}
+      {{ flags(c.id, c, conditional_flags) }}
 
       {% if c.address %}<p class="meta">{{ c.address }}</p>{% endif %}
       {% if c.lat %}<p class="meta">{{ c.lat }}, {{ c.lng }}</p>{% endif %}
@@ -155,6 +283,46 @@
     {% endfor %}
     <button type="submit" class="cta">Confirm checked</button>
   </form>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>Set aside</h2>
+  <p class="meta">
+    Nothing rejected is deleted. A reviewer can be wrong, or learn something
+    later, so anything here can go back in the queue.
+  </p>
+
+  {% if not rejected_candidates and not rejected_submissions %}
+    <p class="meta">Nothing set aside.</p>
+  {% else %}
+    {% for c in rejected_candidates %}
+    <div class="plan-option">
+      <p><strong>{{ c.name }}</strong>
+        <span class="meta">{{ c.type }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
+      {% if c.evidence %}<p class="meta">&ldquo;{{ c.evidence }}&rdquo;</p>{% endif %}
+      {% if c.source_link %}
+        <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
+      {% endif %}
+      <p class="meta">Proposed by the agent, set aside {{ c.decided_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="candidate_id" value="{{ c.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
+
+    {% for v in rejected_submissions %}
+    <div class="plan-option">
+      <p><strong>{{ v.name }}</strong>
+        <span class="meta">{{ v.type or 'type not given' }}{% if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
+      {% if v.notes %}<p class="meta">Parent's note: &ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
+      <p class="meta">Submitted by {{ v.submitted_by or 'a deleted account' }}, set aside {{ v.rejected_at }}.</p>
+      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+        <input type="hidden" name="venue_id" value="{{ v.id }}">
+        <button type="submit" class="cta-secondary">Put back in the queue</button>
+      </form>
+    </div>
+    {% endfor %}
   {% endif %}
 </section>
 {% endblock %}

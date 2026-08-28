@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS venues (
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     city                TEXT,
     can_eat             INTEGER NOT NULL DEFAULT 0,
+    has_washroom        INTEGER NOT NULL DEFAULT 0,
+    has_highchair       INTEGER NOT NULL DEFAULT 0,
     open_time           TEXT,
     close_time          TEXT,
     lat                 REAL,                   -- NULL until a source supplies it
@@ -89,7 +91,23 @@ CREATE TABLE IF NOT EXISTS venues (
                                                 -- "osm:node/123", "vanopendata:parks/17"
     verified_at         TEXT,                   -- when a human last confirmed this row
     verified_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
+    rejected_at         TEXT,                   -- set instead of deleting: see reject_submission
+    rejected_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
     seed_rank           INTEGER                 -- position in venues.json: see _seed_venues
+);
+
+-- What somebody actually observed at a venue, and when. The venues table has
+-- columns for these too, but they are no longer what anything reads: a claim
+-- needs an author and a date, and "nobody has said" has to differ from
+-- "somebody looked and there was none". See reported_flags.
+CREATE TABLE IF NOT EXISTS venue_reports (
+    id          INTEGER PRIMARY KEY,
+    venue_id    INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+    field       TEXT NOT NULL,      -- one of REPORTABLE_FIELDS
+    value       INTEGER NOT NULL,   -- 1 present, 0 absent. Absence is a real report
+    reported_by INTEGER REFERENCES parents(id) ON DELETE SET NULL,
+    reported_at TEXT NOT NULL DEFAULT (datetime('now')),
+    note        TEXT
 );
 
 """
@@ -118,13 +136,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_external_id
 -- and get_logged_venues_for_parent. No index on city alone: every city match is
 -- a LIKE with a leading wildcard, which can never use one.
 CREATE INDEX IF NOT EXISTS idx_venues_source_city ON venues(source, city);
+
+CREATE INDEX IF NOT EXISTS idx_venue_reports_venue ON venue_reports(venue_id, field);
 """
 
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
 # candidates by -- never string-interpolate a column name that isn't in here.
 CANDIDATE_FEATURE_COLUMNS = {
-    "has_family_room", "has_nursing_room", "stroller_accessible", "can_eat",
+    "has_washroom", "has_family_room", "has_nursing_room",
+    "stroller_accessible", "has_highchair", "can_eat",
 }
+
+# The amenities a visitor is in a position to report, and therefore the only
+# ones read from venue_reports rather than off the venue row. can_eat is not
+# here: it follows the kind of place and is set when a venue is added.
+REPORTABLE_FIELDS = ("has_washroom", "has_family_room", "has_nursing_room",
+                     "stroller_accessible", "has_highchair")
+
+# Only worth asking where a meal can happen on site. A highchair at a park is
+# not a question, and asking it is how a form loses its reader.
+CONDITIONAL_ON_CAN_EAT = ("has_highchair",)
 
 # The venue columns data/venues.json owns, in the order _seed_venues supplies
 # them. Deliberately excludes source, parent_id and the provenance columns: a
@@ -186,6 +217,7 @@ def init_db():
         _drop_dead_columns(conn)
         _migrate_trips_ownership(conn)
         _seed_venues(conn)
+        _migrate_seed_claims(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
 
@@ -254,6 +286,23 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN verified_by INTEGER "
                          "REFERENCES parents(id) ON DELETE SET NULL")
             conn.execute("ALTER TABLE venues ADD COLUMN seed_rank INTEGER")
+    if "has_washroom" not in existing:
+        with conn:
+            # For a potty-training toddler a washroom decides whether a park
+            # works at all, and a highchair decides whether eating at a stop
+            # does. Both are reported, never guessed.
+            conn.execute("ALTER TABLE venues ADD COLUMN has_washroom "
+                         "INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE venues ADD COLUMN has_highchair "
+                         "INTEGER NOT NULL DEFAULT 0")
+    if "rejected_at" not in existing:
+        with conn:
+            # Rejecting a submission used to delete it. A reviewer can be wrong,
+            # and a deleted row takes its parent's own words and every report
+            # about it with it, so a rejection is recorded instead.
+            conn.execute("ALTER TABLE venues ADD COLUMN rejected_at TEXT")
+            conn.execute("ALTER TABLE venues ADD COLUMN rejected_by INTEGER "
+                         "REFERENCES parents(id) ON DELETE SET NULL")
 
 
 def _drop_dead_columns(conn):
@@ -390,6 +439,36 @@ def _seed_venues(conn):
                 conn.execute(
                     f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
                     (v["name"], "curated", "Vancouver") + values + coords)
+
+
+def _migrate_seed_claims(conn):
+    """Move the hand-typed amenity flags into venue_reports as claims by nobody.
+
+    Those values were typed in for a demo and never verified, yet the app has
+    been asserting them: 11 venues claimed a nursing room and 14 a family room,
+    on nobody's authority and with no way for a parent to correct them.
+
+    Recording them as reports with `reported_by = NULL` keeps today's plans
+    working while making the claim's weight visible, and a single real report
+    now supersedes one. Idempotent: skipped once any report exists.
+    """
+    if conn.execute("SELECT COUNT(*) FROM venue_reports").fetchone()[0]:
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
+    fields = [f for f in REPORTABLE_FIELDS if f in columns]
+    if not fields:
+        return
+    rows = conn.execute(
+        f"SELECT id, {', '.join(fields)} FROM venues").fetchall()
+    with conn:
+        for row in rows:
+            for field in fields:
+                if row[field]:
+                    conn.execute(
+                        "INSERT INTO venue_reports (venue_id, field, value, "
+                        "reported_by, note) VALUES (?, ?, 1, NULL, ?)",
+                        (row["id"], field,
+                         "Hand-typed into the seed file; never verified."))
 
 
 def _seed_sample_data(conn):
@@ -620,7 +699,7 @@ def get_pending_submissions():
                     WHERE c.source = 'curated' AND c.name = v.name
                       AND IFNULL(c.city, '') = IFNULL(v.city, '')) AS curated_clash
             FROM venues v LEFT JOIN parents p ON p.id = v.parent_id
-            WHERE v.source = 'user_submitted'
+            WHERE v.source = 'user_submitted' AND v.rejected_at IS NULL
             ORDER BY v.created_at DESC, v.id DESC""").fetchall()
 
 
@@ -639,7 +718,8 @@ def promote_submission(venue_id, admin_id):
     """
     with closing(connect()) as conn, conn:
         row = conn.execute(
-            "SELECT name, city FROM venues WHERE id = ? AND source = 'user_submitted'",
+            "SELECT name, city FROM venues WHERE id = ? AND source = 'user_submitted' "
+            "AND rejected_at IS NULL",
             (venue_id,)).fetchone()
         if row is None:
             raise PromotionError("that submission is no longer pending")
@@ -660,14 +740,35 @@ def promote_submission(venue_id, admin_id):
             "verified_by = ? WHERE id = ?", (admin_id, venue_id))
 
 
-def reject_submission(venue_id):
-    """Discard one unverified submission.
+def reject_submission(venue_id, admin_id=None):
+    """Set a submission aside. Recorded, not deleted.
+
+    A reviewer can be wrong, and deleting the row would take the parent's own
+    words and every venue_report about it (ON DELETE CASCADE) with it. So a
+    rejection is a timestamp, and restore_submission undoes it.
 
     Scoped to user_submitted in the SQL, not by the caller, so an admin acting
-    on a stale page cannot delete a venue that has since been verified.
+    on a stale page cannot set aside a venue that has since been verified.
     """
-    _write("DELETE FROM venues WHERE id = ? AND source = 'user_submitted'",
-           (venue_id,))
+    _write("UPDATE venues SET rejected_at = datetime('now'), rejected_by = ? "
+           "WHERE id = ? AND source = 'user_submitted'", (admin_id, venue_id))
+
+
+def restore_submission(venue_id):
+    """Put a rejected submission back in the queue, for a reviewer who changed
+    their mind or rejected the wrong row."""
+    _write("UPDATE venues SET rejected_at = NULL, rejected_by = NULL "
+           "WHERE id = ? AND source = 'user_submitted'", (venue_id,))
+
+
+def get_rejected_submissions():
+    """Submissions set aside, newest decision first, so they can be revisited."""
+    with closing(connect()) as conn:
+        return conn.execute("""
+            SELECT v.*, p.email AS submitted_by
+            FROM venues v LEFT JOIN parents p ON p.id = v.parent_id
+            WHERE v.source = 'user_submitted' AND v.rejected_at IS NOT NULL
+            ORDER BY v.rejected_at DESC, v.id DESC""").fetchall()
 
 
 def get_unverified_venues(limit=None):
@@ -709,6 +810,56 @@ def mark_verified(venue_id, admin_id):
         "UPDATE venues SET verified_at = datetime('now'), verified_by = ? "
         f"WHERE id = ? AND {source_clause}",
         [admin_id, venue_id, *source_params])
+
+
+def add_report(venue_id, field, value, reported_by=None, note=None):
+    """Record that somebody observed an amenity at a venue, or its absence.
+
+    `value` 0 is a real report: "I looked and there was no change table" is
+    information, and the point of this table is that it differs from silence.
+
+    `reported_by` is None only for a seed claim (see _migrate_seed_claims): a
+    report with no author is visibly weaker than one with, and that is how the
+    hand-typed flags are represented now that nobody stands behind them.
+    """
+    if field not in REPORTABLE_FIELDS:
+        raise ValueError(f"not a reportable field: {field}")
+    return _write(
+        "INSERT INTO venue_reports (venue_id, field, value, reported_by, note) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (venue_id, field, int(bool(value)), reported_by, note))
+
+
+def reported_flags(venue_ids=None):
+    """{venue_id: {field: bool}} from the reports. Newest report per field wins.
+
+    A report by a real person outranks a seed claim of any age, and between
+    real reports the newest wins. Recency rather than a vote count because
+    amenities genuinely change: a change table is removed, a cafe stops keeping
+    a highchair, a park washroom closes for the winter. A parent who was there
+    last week knows better than three who went last year, and with a small user
+    base a vote threshold would leave every field unknown forever.
+
+    A field with no report is absent from the dict, which is what lets "nobody
+    has said" differ from "somebody looked and there was none".
+    """
+    sql = ("SELECT venue_id, field, value, reported_by, reported_at "
+           "FROM venue_reports")
+    params = []
+    if venue_ids is not None:
+        ids = list(venue_ids)
+        if not ids:
+            return {}
+        sql += f" WHERE venue_id IN ({', '.join('?' for _ in ids)})"
+        params = ids
+    # Weakest first, so a later row simply overwrites: seed claims before real
+    # reports, and older reports before newer.
+    sql += " ORDER BY reported_by IS NOT NULL, reported_at, id"
+    flags = {}
+    with closing(connect()) as conn:
+        for row in conn.execute(sql, params):
+            flags.setdefault(row["venue_id"], {})[row["field"]] = bool(row["value"])
+    return flags
 
 
 def get_parent_by_email(email):

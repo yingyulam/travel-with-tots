@@ -92,10 +92,35 @@ class PromoteSubmissionTest(_ReviewTest):
         with self.assertRaises(db.PromotionError):
             db.promote_submission(9999, self.admin_id)
 
-    def test_rejecting_removes_a_submission(self):
-        venue_id = self._submit("Bad Entry")
-        db.reject_submission(venue_id)
-        self.assertIsNone(self._venue("Bad Entry"))
+    def test_rejecting_sets_a_submission_aside_rather_than_deleting_it(self):
+        # A reviewer can be wrong, and deleting the row would take the parent's
+        # own words and every report about it (ON DELETE CASCADE) with it.
+        venue_id = self._submit("Bad Entry", notes="what the parent said")
+        db.add_report(venue_id, "has_family_room", 1, reported_by=self.parent_id)
+        db.reject_submission(venue_id, self.admin_id)
+
+        self.assertIsNotNone(self._venue("Bad Entry"))
+        self.assertEqual(self._venue("Bad Entry")["notes"], "what the parent said")
+        self.assertEqual(self._venue("Bad Entry")["rejected_by"], self.admin_id)
+        self.assertNotIn("Bad Entry",
+                         [v["name"] for v in db.get_pending_submissions()])
+        self.assertIn("Bad Entry",
+                      [v["name"] for v in db.get_rejected_submissions()])
+        self.assertEqual(len(db.reported_flags([venue_id])), 1)
+
+    def test_a_rejected_submission_cannot_be_verified(self):
+        venue_id = self._submit("Set Aside")
+        db.reject_submission(venue_id, self.admin_id)
+        with self.assertRaises(db.PromotionError):
+            db.promote_submission(venue_id, self.admin_id)
+
+    def test_a_rejected_submission_can_be_restored(self):
+        venue_id = self._submit("Second Thoughts")
+        db.reject_submission(venue_id, self.admin_id)
+        db.restore_submission(venue_id)
+        self.assertIn("Second Thoughts",
+                      [v["name"] for v in db.get_pending_submissions()])
+        self.assertIsNone(self._venue("Second Thoughts")["rejected_at"])
 
     def test_rejecting_cannot_remove_a_curated_venue(self):
         # An admin acting on a stale page must not delete a verified venue.
@@ -162,8 +187,12 @@ class CandidateBatchTest(_ReviewTest):
                          "evidence": "domed garden", **fields}])
         return candidates.load()[-1]
 
-    def _post(self, action, picked=(), **fields):
-        data = {"action": action, "picked": list(picked)}
+    def _post(self, action, picked=(), on_page=None, **fields):
+        # on_page defaults to every pending id: the route only touches rows the
+        # page actually rendered, so a test that omits it would change nothing.
+        if on_page is None:
+            on_page = [r["id"] for r in candidates.load(candidates.PENDING)]
+        data = {"action": action, "picked": list(picked), "on_page": list(on_page)}
         data.update(fields)
         return self.client.post("/venues/review/candidates", data=data)
 
@@ -248,6 +277,55 @@ class CandidateBatchTest(_ReviewTest):
                               "name": "P", "email": "p@example.com"}):
             self.assertEqual(self._post("approve", [row["id"]]).status_code, 302)
         self.assertIsNone(self._venue("Bloedel Conservatory"))
+
+    def test_only_a_page_of_proposals_is_shown_at_a_time(self):
+        for i in range(23):
+            self._propose(f"Venue {i:02}")
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        shown = [f"Venue {i:02}" for i in range(23) if f"Venue {i:02}" in body]
+        self.assertEqual(len(shown), self.app_module.PROPOSAL_PAGE_SIZE)
+        self.assertIn(f"of {23}", body)
+
+    def test_the_queue_advances_as_batches_are_decided(self):
+        for i in range(15):
+            self._propose(f"Venue {i:02}")
+        page = candidates.load(candidates.PENDING)[:10]
+        self._post("reject", [c["id"] for c in page], on_page=[c["id"] for c in page])
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        # The five that were never on the first page are now the batch.
+        self.assertIn("of 5", body)
+
+    def test_an_off_page_candidate_keeps_its_flags(self):
+        # The trap pagination introduces: a checkbox that was never rendered
+        # comes back absent, which reads identically to unticked. Iterating the
+        # whole queue would wipe the flags of everything the reviewer never saw.
+        for i in range(15):
+            self._propose(f"Venue {i:02}")
+        off_page = candidates.load(candidates.PENDING)[14]
+        candidates.update(off_page["id"], has_washroom="1")
+
+        page = candidates.load(candidates.PENDING)[:10]
+        self._post("save", [], on_page=[c["id"] for c in page])
+
+        kept = next(r for r in candidates.load() if r["id"] == off_page["id"])
+        self.assertEqual(kept["has_washroom"], "1")
+
+    def test_a_rejected_proposal_is_kept_and_restorable(self):
+        row = self._propose()
+        self._post("reject", [row["id"]])
+        self.assertEqual(candidates.counts()["rejected"], 1)
+        self.client.post("/venues/restore", data={"candidate_id": row["id"]})
+        self.assertEqual(candidates.counts()["pending"], 1)
+        self.assertEqual(candidates.counts()["rejected"], 0)
+
+    def test_the_highchair_question_is_only_asked_where_a_meal_can_happen(self):
+        self._propose("A Park")
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertNotIn("has_highchair", body)
+
+        candidates.update(candidates.load()[0]["id"], can_eat="1")
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn("has_highchair", body)
 
     def test_approval_leaves_the_reviewed_values_on_the_record(self):
         # scripts/replay_candidates.py rebuilds from the CSV, so anything the
