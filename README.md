@@ -978,6 +978,32 @@ never inserts a venue just to have somewhere to eat, which is what it used to do
 once the restaurants were gone: a Stanley Park morning was being sent to a mall
 seven kilometres south.
 
+**One deliberate exception, not yet built.** The argument above is against
+holding *every* restaurant in Vancouver, which is unmaintainable. It is not an
+argument against a small curated set of places built for small children -- a
+kid cafe with a play area is closer to an indoor playground that serves food
+than to a restaurant, and it is exactly the kind of place a parent cannot find
+on Google without wading. The intent is to hold a handful of those, and to let
+the plan form ask whether lunch should be somewhere designed for children or
+anywhere at all, so a general dining preference and a specific request stay
+distinguishable. Find Nearby would use the same distinction.
+
+The candidates for it are already on file: the food venues the proposer found
+sit under **Set aside** on `/venues/review`, rejected rather than deleted, and
+restoring one is a click. Two things will need changing when this is picked up,
+and neither is a surprise:
+
+- `data_loader.VENUE_TYPES` has no value for them. Restoring a candidate works
+  today, but approving it is refused with `type 'cafe' is not one we know`,
+  which is the enum guard doing its job. A `kid cafe` type is the switch.
+- `can_eat` currently means "food on site, no travel leg", which is a property
+  of a mall or a market. A kid cafe is a venue whose *whole point* is the food
+  stop, so the lunch rule in `src/itinerary.py` would need to place one rather
+  than only use one it happens to pass.
+
+Until then the pool costs nothing to keep and the proposer will not offer those
+names again, because rejections are remembered.
+
 ### Amenities are reports, not columns
 
 `venue_reports` holds who said an amenity was there and when. The venues table
