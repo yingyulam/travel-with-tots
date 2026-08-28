@@ -75,6 +75,7 @@ from src.db import (
     get_trip_for_parent,
     get_trips_for_parent,
     get_unverified_venues,
+    get_venues_missing_hours,
     init_db,
     mark_verified,
     promote_submission,
@@ -343,6 +344,7 @@ def venue_review():
     will eventually be.
     """
     unverified = get_unverified_venues()
+    missing_hours = get_venues_missing_hours()
     pending = candidates.counts()[candidates.PENDING]
     return render_template(
         "venue_review.html",
@@ -354,6 +356,8 @@ def venue_review():
             for r in candidates.load(candidates.REJECTED)],
         rejected_submissions=get_rejected_submissions(),
         hours_checks=get_pending_hours_checks(),
+        missing_hours=missing_hours[:MISSING_HOURS_PAGE_SIZE],
+        missing_hours_total=len(missing_hours),
         submissions=get_pending_submissions(),
         unverified=unverified[:UNVERIFIED_PAGE_SIZE],
         unverified_total=len(unverified),
@@ -396,6 +400,11 @@ def venue_review_decide(venue_id):
 # offering all of them has the same problem as an oversized proposal batch:
 # more than one person will work through in a sitting.
 UNVERIFIED_PAGE_SIZE = 12
+
+# Filling hours in means reading a venue's own page, so this list is shown a
+# screenful at a time like the others rather than all 27 community centres at
+# once.
+MISSING_HOURS_PAGE_SIZE = 12
 
 # How many proposals to put in front of a reviewer at once. A batch is meant to
 # be read as a set and finished in one sitting; the queue advances on its own as
@@ -599,6 +608,28 @@ def venue_hours_decide(check_id):
     else:
         flash("Kept our hours.")
     resolve_hours_check(check_id, admin_id)
+    return redirect(url_for("venue_review"))
+
+
+@app.route("/venues/<int:venue_id>/hours", methods=["POST"])
+@login_required
+@admin_required
+def venue_set_hours(venue_id):
+    """Give a venue the default hours it arrived without.
+
+    An imported community centre is complete in every way except this: the City
+    publishes the address, the coordinates and a link to the centre's page, and
+    does not publish when it opens. Until somebody reads that page the venue
+    stays out of every plan, which is the right answer to unknown hours and a
+    dead end at the same time. This is the way out of it.
+    """
+    opens = (request.form.get("open_time") or "").strip()
+    closes = (request.form.get("close_time") or "").strip()
+    if not (opens and closes):
+        flash("Both an opening and a closing time are needed.")
+        return redirect(url_for("venue_review"))
+    set_venue_default_hours(venue_id, opens, closes)
+    flash(f"Hours set to {opens}-{closes}. It can be planned around now.")
     return redirect(url_for("venue_review"))
 
 

@@ -167,6 +167,40 @@
 </section>
 
 <section class="card">
+  <h2>Needs hours</h2>
+  <p class="meta">No hours means no plans. These stay out until you set them.</p>
+
+  {% if not missing_hours %}
+    <p class="meta">Every venue has hours.</p>
+  {% else %}
+    <p class="meta">
+      Showing {{ missing_hours|length }} of {{ missing_hours_total }}.
+    </p>
+    {% for v in missing_hours %}
+    <div class="plan-option">
+      <p><strong>{{ v.name }}</strong>
+        <span class="meta">{{ v.type or 'no type' }}
+          {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
+      {% if v.source_url %}
+      <p class="meta">
+        <a href="{{ v.source_url }}" target="_blank" rel="noopener noreferrer">Source</a>
+      </p>
+      {% endif %}
+      <form method="post" action="{{ url_for('venue_set_hours', venue_id=v.id) }}" class="section-form">
+        <div class="review-fields">
+          <label class="field"><span>Opens</span>
+            <input type="time" name="open_time" required></label>
+          <label class="field"><span>Closes</span>
+            <input type="time" name="close_time" required></label>
+        </div>
+        <button type="submit" class="cta">Set hours</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+
+<section class="card">
   <h2>Hours to check</h2>
   <p class="meta">
     OpenStreetMap says something different. You decide.

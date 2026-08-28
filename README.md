@@ -803,6 +803,80 @@ The agent never writes a venue. It writes `data/venue_candidates.csv` and
 nothing else, and `/venues/review` is the only path from a candidate to a row.
 Rejections are remembered, so a place you turn down is never proposed again.
 
+### Importing what the City publishes
+
+```
+python3 scripts/import_open_data.py                        # dry run, prints a report
+python3 scripts/import_open_data.py --write
+python3 scripts/import_open_data.py --source parks --write
+```
+
+218 parks and 27 community centres, straight into the table with `source =
+"municipal_open_data"`, a citation, and an `external_id` so a re-run updates
+rather than duplicates. No review step, because putting a person in front of
+"Trafalgar Park exists at these coordinates" is review as theatre.
+
+**The dry run is not a sketch.** It runs the same two-step match the write does,
+so the counts it prints are the counts you get. That mattered immediately: it
+said 7 of the 11 seeded parks would be upgraded and 211 rows inserted, and 7 is
+not 11. The four it leaves alone are right to leave alone -- Lynn Canyon Park is
+North Vancouver's, UBC Botanical Garden is UBC's, Second Beach has no record of
+its own, and Stanley Park Seawall is a part of Stanley Park rather than the same
+thing. But two of the earlier misses were real duplicates waiting to happen:
+
+```
+the City says              the curator says
+John Hendry (Trout Lake) Park   Trout Lake (John Hendry Park)
+English Bay Beach Park          English Bay Beach
+```
+
+Those two are in `importers.CURATED_ALIASES`, checked by hand, and deliberately
+not a fuzzy rule: any normalized or prefix match loose enough to accept "English
+Bay Beach" as "English Bay Beach Park" would also accept a park as its own
+extension, and nobody would notice that merge.
+
+**An import fills blanks and never overwrites a value.** One rule, both match
+paths. Everything already on a row was typed by the curator or corrected by an
+admin, and no unattended script should undo that. `seed_rank` and `source` are
+never touched either: `seed_rank` is the curator's ranking, which is why a plan
+still opens on Stanley Park Seawall with 266 venues in the table rather than 28,
+and `source` decides which queue a row sits in. The cost, stated plainly: if the
+City renames a park, a re-run will not pick it up, and deleting the row is how
+you take the correction.
+
+**Washrooms are an attribute, not a venue.** A public toilet is not an outing,
+so the 147 washroom rows are read as evidence about a park instead, joined on
+`park_name` -- an exact match, and a better key than any radius, since a park's
+coordinate is one point and Stanley Park is 400 hectares. 100 of the 134 named
+rows match a park outright and most of the rest name a community centre, so the
+same join gives the centres their washroom for free.
+
+It lands as a **report by nobody** rather than a column, for two reasons. The
+dataset publishes `summer_hours` and `winter_hours` separately, which is the City
+telling us these close seasonally, so a Y/N is not true year-round. And a parent
+who was there last week has to be able to disagree. Both answers are written,
+including "the City says there is none", which is the whole point of the reports
+table.
+
+It also lets the City's two datasets be compared, and they disagree: **9 parks
+flagged `washrooms = "N"` have a facility in the washrooms dataset named after
+them** -- Riley Park, Douglas Park, Kerrisdale Park and six more. Insert order
+resolves it, the point-level record last, so the more specific answer wins.
+
+**Community centres arrive without hours, and that is not a bug.** The City
+publishes the address, the coordinates and a link to each centre's page, and
+does not publish when it opens. A venue whose hours we do not know cannot be
+scheduled, so all 27 correctly stay out of every plan -- and they are also kept
+out of the candidate list, because a stop the validator can only ever replace
+wastes one of an 18-venue budget, and 27 of them would crowd out most of it.
+They appear under **Needs hours** on `/venues/review` instead, where reading the
+centre's page and typing two times is what finishes the row.
+
+Imported rows carry `verified_at IS NULL`, correctly: nobody checked them. They
+stay out of the confirm backlog all the same, which is scoped to `curated` rows,
+so that list remains the ~28 things only a person can vouch for rather than 245
+parks.
+
 ### No restaurants
 
 The venue table holds attractions. Restaurants are the data hardest to maintain

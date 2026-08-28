@@ -812,6 +812,103 @@ def get_rejected_submissions():
             ORDER BY v.rejected_at DESC, v.id DESC""").fetchall()
 
 
+# What an importer is allowed to write. Narrower than ADD_VENUE_FIELDS: no
+# parent_id (nobody submitted these), no verified_at (no human checked them),
+# and no seed_rank, which is the curator's ordering and not an import's to set.
+IMPORT_FIELDS = ("type", "neighbourhood", "city", "address",
+                 "lat", "lng", "open_time", "close_time", "can_eat")
+
+
+def upsert_imported_venue(external_id, name, *, source, source_url, **fields):
+    """Write one open-data record into `venues`. Returns (venue_id, action),
+    action being "inserted", "upgraded" or "unchanged".
+
+    Matching is two steps, and the second is what stops an import duplicating
+    the seed. The 11 parks in data/venues.json were typed in before any of this
+    existed, so they carry no external_id and idx_venues_external_id cannot
+    recognise them. Matching by external_id alone would insert a second
+    Queen Elizabeth Park, and the curator's copy -- the one with seed_rank and
+    the hours somebody chose -- would be the one the planner stopped reaching.
+
+      1. by external_id: recognises this importer's own earlier runs, which is
+         what makes it re-runnable.
+      2. failing that, by name against a curated row: recognises a seeded venue
+         and upgrades it in place.
+
+    **An import fills blanks and never overwrites a value.** One rule for both
+    match paths, and it is the conservative one: everything already on the row
+    was either typed by the curator or corrected by an admin through
+    set_venue_default_hours, and no import should be able to undo that. Only
+    external_id and source_url are written unconditionally, because those are
+    the provenance the row was missing and the reason to run this at all.
+
+    The cost of that rule, stated plainly: if the City renames a park or moves
+    its coordinate, a re-run will not pick the change up. Deleting the row is
+    the way to take a correction. Worth it, because the alternative is an
+    unattended script that can quietly overwrite a human's judgment.
+
+    `source` and `seed_rank` are never touched on an upgrade either. `source`
+    decides which queue a row sits in and which unique index guards it, so
+    flipping a curated park to municipal_open_data as a side effect of an
+    import would move rows between queues with nobody deciding anything.
+    """
+    unknown = set(fields) - set(IMPORT_FIELDS)
+    if unknown:
+        raise ValueError(f"not an import field: {', '.join(sorted(unknown))}")
+    with closing(connect()) as conn, conn:
+        row = conn.execute("SELECT * FROM venues WHERE external_id = ?",
+                           (external_id,)).fetchone()
+        action = "unchanged"
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM venues WHERE name = ? AND source = 'curated'",
+                (name,)).fetchone()
+            action = "upgraded" if row else "inserted"
+        if row is not None:
+            # Only the columns actually empty on the row, so a value a human
+            # put there survives every future run.
+            blanks = {field: value for field, value in fields.items()
+                      if row[field] is None or row[field] == ""}
+            assignments = ", ".join(f"{field} = ?" for field in blanks)
+            if assignments:
+                assignments += ", "
+            conn.execute(
+                f"UPDATE venues SET {assignments}external_id = ?, source_url = ? "
+                "WHERE id = ?",
+                (*blanks.values(), external_id, source_url, row["id"]))
+            return row["id"], action
+        columns = ", ".join(("name", "source", "external_id", "source_url")
+                            + tuple(fields))
+        placeholders = ", ".join("?" for _ in range(len(fields) + 4))
+        venue_id = conn.execute(
+            f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
+            (name, source, external_id, source_url, *fields.values())).lastrowid
+        return venue_id, "inserted"
+
+
+def get_venues_missing_hours():
+    """Verified venues with no default open/close pair.
+
+    These are in the table and invisible to the planner, by design: a venue
+    whose hours we do not know cannot be scheduled (see
+    data_loader._hours_for_slot and _candidate_where_clause). That is the right
+    answer and a dead end at the same time, so the review page lists them and
+    somebody fills the hours in.
+
+    Community centres arrive this way every time. The City publishes their
+    address, their coordinates and a link to their page, and does not publish
+    when they open, so nothing but a person reading that page can finish the
+    row.
+    """
+    source_clause, source_params = _verified_source_clause()
+    with closing(connect()) as conn:
+        return conn.execute(
+            f"SELECT * FROM venues WHERE {source_clause} "
+            "AND (open_time IS NULL OR open_time = '' "
+            "     OR close_time IS NULL OR close_time = '') "
+            "ORDER BY name", source_params).fetchall()
+
+
 def get_unverified_venues(limit=None):
     """Venues in the searchable set that no human has confirmed: verified_at
     IS NULL.
@@ -826,11 +923,17 @@ def get_unverified_venues(limit=None):
     Excludes user_submitted rows: those are a different queue with different
     guards (see get_pending_submissions), and showing them twice would invite
     confirming one without the clash and missing-city checks.
+
+    Scoped to 'curated' rather than to VERIFIED_SOURCES, which is what keeps
+    this a short list of things a person can usefully confirm. Imported rows
+    also carry verified_at IS NULL, correctly -- nobody checked them -- but
+    there are 245 of them and confirming "the City lists this park" is review
+    as theatre. Their trust comes from `source`, which is the three-tier rule.
     """
-    source_clause, source_params = _verified_source_clause()
-    sql = (f"SELECT * FROM venues WHERE {source_clause} AND verified_at IS NULL "
+    sql = ("SELECT * FROM venues WHERE source = 'curated' "
+           "AND verified_at IS NULL "
            "ORDER BY seed_rank IS NULL, seed_rank, name")
-    params = list(source_params)
+    params = []
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
@@ -1086,9 +1189,19 @@ def _candidate_where_clause(city):
     No age range either: min_age_months/max_age_months were 0-60 on every row
     ever written, so the clause never excluded anything. Age paces the day
     (itinerary.realistic_stop_count), it does not filter venues.
+
+    Hours, though. A venue with no open/close pair is not schedulable at all
+    (data_loader._hours_for_slot returns unknown, and the validator refuses
+    anything unknown), so offering it as a candidate spends one of
+    CANDIDATE_LIMIT slots on a stop that can only ever be replaced. That
+    matters now that an import can add rows faster than anyone fills hours in:
+    27 hourless community centres would crowd out most of an 18-venue budget.
+    They surface in get_venues_missing_hours instead, where they can be fixed.
     """
     source_clause, source_params = _verified_source_clause()
-    return f"{source_clause} AND city LIKE ?", source_params + [f"%{city}%"]
+    return (f"{source_clause} AND city LIKE ? AND open_time IS NOT NULL "
+            "AND open_time != '' AND close_time IS NOT NULL "
+            "AND close_time != ''"), source_params + [f"%{city}%"]
 
 
 def get_venues_in_city(city):

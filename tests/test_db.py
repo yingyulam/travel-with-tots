@@ -9,7 +9,11 @@ from src import db
 
 
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
-                   can_eat=False, venue_type="park", **flags):
+                   can_eat=False, venue_type="park", source="curated",
+                   open_time="06:00", close_time="22:00", **flags):
+    """A venue with hours, because a venue without them is not schedulable and
+    get_candidate_venues therefore will not offer it. Pass open_time=None to
+    build one deliberately."""
     columns = {"has_family_room": 0, "has_nursing_room": 0,
                "stroller_accessible": 0}
     # kid_friendly, nap_friendly and the age range are no longer columns:
@@ -17,9 +21,11 @@ def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
     columns.update({k: int(v) for k, v in flags.items() if k in columns})
     conn.execute(
         "INSERT INTO venues (name, city, neighbourhood, type, can_eat, source, "
+        "open_time, close_time, "
         "has_family_room, has_nursing_room, stroller_accessible) "
-        "VALUES (?, ?, ?, ?, ?, 'curated', ?, ?, ?)",
-        (name, city, neighbourhood, venue_type, int(can_eat),
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, city, neighbourhood, venue_type, int(can_eat), source,
+         open_time, close_time,
          columns["has_family_room"], columns["has_nursing_room"],
          columns["stroller_accessible"]))
 
@@ -124,6 +130,18 @@ class GetCandidateVenuesTest(unittest.TestCase):
             _insert_venue(conn, "No Food", can_eat=False)
         rows = db.get_candidate_venues("Vancouver", age_months=12, dining="on_the_go")
         self.assertEqual([v["name"] for v in rows], ["No Food"])
+
+    def test_a_venue_without_hours_is_never_offered_as_a_candidate(self):
+        # It could only ever be replaced: unknown hours mean not schedulable
+        # (data_loader._hours_for_slot), so offering it spends one of a small
+        # candidate budget on a stop the validator will refuse. 27 hourless
+        # community centres would crowd out most of an 18-venue budget.
+        with closing(db.connect()) as conn, conn:
+            _insert_venue(conn, "Knows Its Hours")
+            _insert_venue(conn, "No Hours", open_time=None, close_time=None)
+            _insert_venue(conn, "Blank Hours", open_time="", close_time="")
+        names = {v["name"] for v in db.get_candidate_venues("Vancouver")}
+        self.assertEqual(names, {"Knows Its Hours"})
 
     def test_user_submitted_venues_are_never_planned_around(self):
         with closing(db.connect()) as conn, conn:
