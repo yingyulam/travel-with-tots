@@ -7,9 +7,14 @@
    who approved without opening the dropdown stored it, and nothing downstream
    refuses it: is_nap_friendly just answers False for a type it does not know.
    So the field arrives unset and the row says what was proposed instead. #}
+{# Sorted here rather than in the data_loader constants, which are grouped and
+   commented for a reader: types run outdoor to indoor, and neighbourhoods run
+   the City's 22 local areas, then the informal ones, then the neighbouring
+   municipalities. Both are worth keeping in the source and useless in a
+   dropdown, where 35 options only need to be findable. #}
 {% macro options(values, current) %}
   <option value="" {{ 'selected' if current not in values }}>choose one</option>
-  {%- for value in values %}
+  {%- for value in values|sort(case_sensitive=False) %}
   <option value="{{ value }}" {{ 'selected' if value == current }}>{{ value }}</option>
   {%- endfor %}
 {% endmacro %}
