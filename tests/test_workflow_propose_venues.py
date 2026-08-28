@@ -12,7 +12,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src import candidates, db
+from src import candidates, db, osm
 from src.workflows import propose_venues
 
 RESULTS = [
@@ -44,6 +44,19 @@ class ProposeVenuesTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
             db.create_schema(conn)
+        # Enrichment reaches two networks. Stubbed for the whole class rather
+        # than per test, so a new test cannot accidentally call Overpass for
+        # real: it does not fail, it just takes a minute and hammers a shared
+        # public endpoint. Individual tests set .return_value to say what OSM
+        # knows.
+        self.osm_facts = self._patch(osm, "venue_facts", {})
+        self.official = self._patch(propose_venues, "official_site", "")
+
+    def _patch(self, target, attr, value):
+        patcher = mock.patch.object(target, attr, return_value=value)
+        mocked = patcher.start()
+        self.addCleanup(patcher.stop)
+        return mocked
 
     def _run(self, reply, batch_size=5, places=None):
         with mock.patch.object(propose_venues, "search_web", return_value=RESULTS), \

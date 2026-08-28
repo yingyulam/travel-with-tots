@@ -3,11 +3,12 @@
 {% block heading %}Review queue{% endblock %}
 {% block tagline %}Nothing here has been checked by a person yet.{% endblock %}
 
+{# An unrecognised value is never offered back. Selecting it meant a reviewer
+   who approved without opening the dropdown stored it, and nothing downstream
+   refuses it: is_nap_friendly just answers False for a type it does not know.
+   So the field arrives unset and the row says what was proposed instead. #}
 {% macro options(values, current) %}
-  <option value="">choose one</option>
-  {%- if current and current not in values %}
-  <option value="{{ current }}" selected>{{ current }} (not a known value)</option>
-  {%- endif %}
+  <option value="" {{ 'selected' if current not in values }}>choose one</option>
   {%- for value in values %}
   <option value="{{ value }}" {{ 'selected' if value == current }}>{{ value }}</option>
   {%- endfor %}
@@ -54,6 +55,11 @@
       </label>
 
       {% if c.already_have %}<p class="meta">Already in the database. Reject to clear it.</p>{% endif %}
+      {% if c.unknown_values %}
+        <p class="meta"><strong>Not a value we know:</strong>
+          {% for f in c.unknown_values %}{{ f }} &ldquo;{{ c[f] }}&rdquo;{{ ", " if not loop.last }}{% endfor %}.
+          Pick one below.</p>
+      {% endif %}
       {% if not c.open_time or not c.close_time %}
         <p class="meta"><strong>Hours needed to approve.</strong></p>
       {% endif %}
@@ -73,6 +79,10 @@
         <label class="field"><span>Closes</span>
           <input type="time" name="{{ c.id }}-close_time" value="{{ c.close_time }}" required></label>
       </div>
+      {% if c.hours_note %}
+        <p class="field-hint">{{ c.hours_note }}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Source</a></p>
+      {% endif %}
 
       <details class="review-hours">
         <summary>Different in winter, or at weekends?</summary>
@@ -94,9 +104,19 @@
 
       {% if c.address %}<p class="meta">{{ c.address }}</p>{% endif %}
       {% if c.evidence %}<p class="meta">&ldquo;{{ c.evidence|truncate(120, True) }}&rdquo;</p>{% endif %}
-      {% if c.source_link %}
-        <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
-      {% endif %}
+      <p class="meta">
+        {% if c.official_link %}
+          Official site:
+          <a href="{{ c.official_link }}" target="_blank" rel="noopener noreferrer">{{ c.official_domain }}</a>
+        {% else %}
+          No official site found.
+        {% endif %}
+        {% if c.source_link %}
+          &middot; found on
+          <a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">{{ c.source_domain }}</a>
+          {%- if c.low_trust %} <strong>(anyone can post here)</strong>{% endif %}
+        {% endif %}
+      </p>
     </div>
     {% endfor %}
 

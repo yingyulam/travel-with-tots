@@ -1,7 +1,9 @@
-"""Opening hours from OpenStreetMap, via Overpass.
+"""Opening hours and official websites from OpenStreetMap, via Overpass.
 
-Used to check our stored hours against an outside source, not to replace them: a
-finding goes to a person, who decides. See scripts/verify_hours.py.
+Two callers, both of which hand what they find to a person rather than acting
+on it: scripts/verify_hours.py checks our stored hours against an outside
+source, and workflows/propose_venues.py fills a candidate's hours in before
+review so the reviewer confirms instead of typing.
 
 OSM rather than a commercial API for two reasons. It is openly licensed, so a
 result can be stored and shown (with attribution) rather than only glanced at,
@@ -25,6 +27,11 @@ import requests
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "travel-with-tots/1.0 (venue hours check)"
 REQUEST_TIMEOUT_SECONDS = 120
+# What a caller that somebody is waiting on should allow instead. The proposal
+# page runs one batched query for a whole batch, and a slow Overpass there
+# should cost the batch its prefilled hours, not hold the page open. Every
+# caller degrades to blank hours on a failure, so a timeout is a real option.
+PAGE_TIMEOUT_SECONDS = 25
 
 # Metro Vancouver, generously drawn, as (south, west, north, east) for Overpass.
 BBOX = (49.00, -123.40, 49.45, -122.70)
@@ -50,6 +57,13 @@ def _name_key(name):
     return re.sub(r'[^A-Za-z0-9 \-\']', "", trimmed)[:28].strip()
 
 
+def _match_key(name):
+    """A name reduced to letters and digits, for deciding whether two names are
+    the same place. Separate from _name_key, which has to survive being put
+    inside an Overpass regex."""
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
 def _query(names):
     south, west, north, east = BBOX
     box = f"{south},{west},{north},{east}"
@@ -59,12 +73,25 @@ def _query(names):
     return f"[out:json][timeout:90];({clauses});out tags;"
 
 
-def opening_hours_for(names):
-    """{venue name as given: the OSM opening_hours string} for what OSM knows.
+def venue_facts(names, timeout=REQUEST_TIMEOUT_SECONDS):
+    """{venue name as given: {"osm_name", "opening_hours", "website"}}.
 
-    A name OSM has no hours for is absent from the result rather than present
-    and empty, so a caller cannot mistake "we did not find it" for "it has no
-    hours".
+    Only what OSM actually holds: a name it knows nothing about is absent from
+    the result, and a key is absent rather than empty when that tag is missing,
+    so a caller can never mistake "we did not find it" for "it has none".
+
+    **Matched on the whole name, not a substring.** The Overpass query has to
+    use a regex, which matches loosely, so the results are filtered again here.
+    That filter is the difference between a fact and a plausible wrong answer:
+    querying loosely returned "The Granville Island Toy Company" for Granville
+    Island and the Kerrisdale branch for Vancouver Public Library, both of
+    which would have been written into a candidate's hours as if checked. It
+    also finds more, not less -- "Maplewood Farm" was being shadowed by
+    "Maplewood Farm Livestock Barn", whichever came back first.
+
+    `osm_name` is returned so a reviewer can see which OSM entry answered. A
+    match this code accepts can still be the wrong branch of something, and the
+    name is what makes that visible before it is approved.
     """
     names = [n for n in names if _name_key(n)]
     found = {}
@@ -72,30 +99,81 @@ def opening_hours_for(names):
         batch = names[start:start + NAMES_PER_QUERY]
         if start:
             time.sleep(BETWEEN_QUERIES_SECONDS)
-        try:
-            response = session.post(OVERPASS_URL, data={"data": _query(batch)},
-                                    timeout=REQUEST_TIMEOUT_SECONDS)
-            response.raise_for_status()
-            elements = response.json().get("elements", [])
-        except requests.exceptions.RequestException as e:
-            # Never print the exception: none of these are keyed, but the habit
-            # is the rule (see scripts/geocode_venues.py).
-            raise OverpassError(
-                f"Overpass request failed ({type(e).__name__})") from None
-        except ValueError:
-            raise OverpassError("Overpass returned an unreadable body") from None
-
-        tagged = [(e["tags"]["name"], e["tags"]["opening_hours"])
-                  for e in elements
-                  if (e.get("tags") or {}).get("name")
-                  and (e.get("tags") or {}).get("opening_hours")]
+        tags = _fetch_tags(batch, timeout)
         for wanted in batch:
-            key = _name_key(wanted).lower()
-            for osm_name, hours in tagged:
-                if key and key in osm_name.lower():
-                    found.setdefault(wanted, hours)
-                    break
+            key = _match_key(wanted)
+            same = [t for t in tags if _match_key(t.get("name")) == key]
+            fact = {}
+            for tag in same:
+                for ours, theirs in (("opening_hours", "opening_hours"),
+                                     ("website", "website"),
+                                     ("website", "contact:website")):
+                    if tag.get(theirs) and ours not in fact:
+                        fact[ours] = tag[theirs]
+                        fact.setdefault("osm_name", tag["name"])
+            # Only when OSM actually held something. A name match on its own
+            # says the place exists, which the caller already believed, and
+            # returning it would read as "OSM answered" to anyone checking
+            # membership rather than the keys.
+            if fact:
+                found[wanted] = fact
     return found
+
+
+def _fetch_tags(names, timeout=REQUEST_TIMEOUT_SECONDS):
+    """The tag dicts Overpass returns for one batch of names."""
+    try:
+        response = session.post(OVERPASS_URL, data={"data": _query(names)},
+                                timeout=timeout)
+        response.raise_for_status()
+        elements = response.json().get("elements", [])
+    except requests.exceptions.RequestException as e:
+        # Never print the exception: none of these are keyed, but the habit
+        # is the rule (see scripts/geocode_venues.py).
+        raise OverpassError(
+            f"Overpass request failed ({type(e).__name__})") from None
+    except ValueError:
+        raise OverpassError("Overpass returned an unreadable body") from None
+    return [e["tags"] for e in elements if (e.get("tags") or {}).get("name")]
+
+
+def opening_hours_for(names):
+    """{venue name as given: the OSM opening_hours string}, for verify_hours."""
+    return {name: fact["opening_hours"]
+            for name, fact in venue_facts(names).items()
+            if fact.get("opening_hours")}
+
+
+# One unambiguous pair, and nothing else. A candidate's hours are prefilled
+# from this, so it has to refuse anything a single open/close cannot hold: a
+# string naming particular days, a second range, a closure. Those still reach
+# the reviewer as the raw string, which is where they belong.
+def single_pair(osm_hours):
+    """(open, close) when OSM says exactly one plain range, else (None, None).
+
+    "Mo-Su 12:00-22:00" is one pair and safe to prefill. "We,Th 12:00-14:30,
+    16:30-20:45; Fr ..." is not, and guessing which half to use would be
+    inventing an answer -- the thing this whole path exists to avoid.
+    """
+    if not osm_hours:
+        return None, None
+    text = osm_hours.strip()
+    if text == "24/7":
+        return "00:00", "23:59"
+    # "Mo-Su" names days but excludes none, so it holds no more than one pair
+    # does. Stripped before the day check, or every venue open all week would
+    # be refused for saying so. "Mo-Fr" is left alone: it is a real exclusion.
+    text = _ALL_WEEK.sub(" ", text)
+    if _DAY_SPECIFIC.search(text):
+        return None, None
+    ranges = _RANGE.findall(text)
+    if len(ranges) != 1:
+        return None, None
+    opens, closes = ranges[0]
+    return _pad(opens), _pad(closes)
+
+
+_ALL_WEEK = re.compile(r"\bMo\s*-\s*Sun?\b", re.IGNORECASE)
 
 
 # A bare "HH:MM-HH:MM". Enough to tell whether our single pair appears in what

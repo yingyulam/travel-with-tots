@@ -41,12 +41,21 @@ STATUSES = (PENDING, APPROVED, REJECTED)
 
 # What the agent writes: what it found, and where it found it.
 PROPOSED_COLUMNS = ("name", "type", "neighbourhood", "city",
-                    "address", "lat", "lng", "source_url", "evidence")
+                    "address", "lat", "lng", "source_url", "evidence",
+                    "official_url", "hours_note")
 
-# What only review writes. Hours are absent from web search results entirely,
-# and an amenity nobody checked is a claim rather than a fact, so the agent
-# leaves every one of these blank. Built from CANDIDATE_FEATURE_COLUMNS rather
-# than typed out, so the review form and the planner's filters cannot drift.
+# Fields the proposer fills even though review owns them. Hours do not come
+# from the search results -- the prompt forbids the model from reporting them,
+# because a listicle does not establish when a museum opens -- they come from
+# OpenStreetMap, which is an outside source with a citation, so a reviewer
+# confirms a pair instead of typing one. Fully editable, and blank whenever OSM
+# said nothing or said something one pair cannot hold.
+PREFILLED_COLUMNS = ("open_time", "close_time")
+
+# What only review writes. An amenity nobody checked is a claim rather than a
+# fact, so the agent leaves every one of these blank. Built from
+# CANDIDATE_FEATURE_COLUMNS rather than typed out, so the review form and the
+# planner's filters cannot drift.
 # Hours by season and day type, written only when a venue's hours actually
 # vary. The default pair above covers a venue that is the same all year, which
 # is most of them, so these stay blank unless a reviewer fills them in.
@@ -55,7 +64,7 @@ HOUR_SLOT_COLUMNS = tuple(
     for season in SEASONS for day_type in DAY_TYPES
     for bound in ("open", "close"))
 
-REVIEWED_COLUMNS = (("open_time", "close_time") + HOUR_SLOT_COLUMNS
+REVIEWED_COLUMNS = (PREFILLED_COLUMNS + HOUR_SLOT_COLUMNS
                     + tuple(sorted(CANDIDATE_FEATURE_COLUMNS)))
 
 COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
@@ -63,12 +72,18 @@ COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
 
 # Fields review may change. Everything the agent proposed is correctable, since
 # a wrong neighbourhood is exactly what a human is there to fix, except the
-# coordinates and the citation: coordinates come from the Places API and a
+# coordinates and the evidence: coordinates come from a place lookup and a
 # hand-typed one is worse than none (a wrong coordinate silently mis-ranks
 # distance, a missing one falls back to neighbourhood matching), and rewriting
-# the source URL would break the one thing making the row checkable.
+# a citation would break the one thing making the row checkable.
+#
+# official_url and hours_note are evidence too, not judgments. The reviewer
+# reads them to decide, and the hours they decide on go in open_time/close_time
+# where the whole app already looks. A reviewer who thinks the official site is
+# wrong should reject the row rather than quietly repoint its citation.
 EDITABLE = tuple(c for c in PROPOSED_COLUMNS
-                 if c not in ("lat", "lng", "source_url", "evidence")) + REVIEWED_COLUMNS
+                 if c not in ("lat", "lng", "source_url", "evidence",
+                              "official_url", "hours_note")) + REVIEWED_COLUMNS
 
 
 def normalize_name(name) -> str:
@@ -77,8 +92,20 @@ def normalize_name(name) -> str:
     Spacing and punctuation carry no meaning for identity: "VanDusen Botanical
     Garden" and "Van Dusen Botanical Garden" are one place, and a proposal
     differing only that way is a duplicate a reviewer should not have to catch.
+
+    American spellings fold into ours for the same reason, and it is not
+    hypothetical: the agent proposed "Roundhouse Community Center" while the
+    City publishes "Roundhouse Community Centre", so the duplicate check missed
+    it and approving would have added a second copy of a venue we already had.
     """
-    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    folded = _SPELLING.sub("re", (name or "").lower())
+    return re.sub(r"[^a-z0-9]", "", folded)
+
+
+# -er where we write -re. Only the two words this database actually contains,
+# rather than a general rule: folding every American spelling would eventually
+# merge two places that really are different.
+_SPELLING = re.compile(r"(?<=cent)er\b|(?<=theat)er\b")
 
 
 def _read_all() -> list[dict]:
@@ -147,7 +174,7 @@ def add(proposals) -> int:
             seen.add(key)
             row = {column: "" for column in COLUMNS}
             row.update({column: proposal.get(column, "") or ""
-                        for column in PROPOSED_COLUMNS})
+                        for column in PROPOSED_COLUMNS + PREFILLED_COLUMNS})
             row.update({"id": uuid.uuid4().hex, "status": PENDING,
                         "name": name, "proposed_at": now})
             rows.append(row)

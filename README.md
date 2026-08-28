@@ -803,6 +803,90 @@ The agent never writes a venue. It writes `data/venue_candidates.csv` and
 nothing else, and `/venues/review` is the only path from a candidate to a row.
 Rejections are remembered, so a place you turn down is never proposed again.
 
+### What the agent fills in before you review it
+
+Review is one person's attention, so anything a reviewer would look up by hand
+should already be on the row. Three things arrive filled in, and each carries
+where it came from, because a prefilled field nobody can check is worse than a
+blank one.
+
+**Hours, from OpenStreetMap.** The prompt still forbids the model from
+reporting hours: a listicle does not establish when a museum opens, and a guess
+from a model is indistinguishable from a fact. They come from one batched
+Overpass query per run instead, and only when OSM says one plain pair. Anything
+richer -- a Monday closure, a lunch break, seasonal bands -- leaves the inputs
+blank and shows the raw string, because a single open/close cannot hold it and
+picking half would be inventing an answer.
+
+Either way the row carries the raw OSM string **and the name of the OSM entry
+that answered**, which is what makes a prefill checkable. That mattered: the
+loose name matching the hours-verification tool uses returned "The Granville
+Island Toy Company" for Granville Island and the Kerrisdale branch for
+Vancouver Public Library. Matching on the whole name drops both, and finds more
+rather than less -- `Maplewood Farm` was being shadowed by `Maplewood Farm
+Livestock Barn`, whichever came back first.
+
+**The official website.** Some citations are somewhere anyone can publish: one
+live proposal cited a Facebook group post. Those are not dropped, since a
+Facebook post is often how a small venue announces itself, but they are a
+reason to go looking for the venue's own site. One search per candidate, then
+the answer is read off the **domain**, which is the one part of a result a
+venue has to own:
+
+```
+Roundhouse Community Centre  ->  roundhouse.ca          found
+Maplewood Farm               ->  maplewoodfarm.bc.ca    found
+Granville Island             ->  granvilleisland.com    found
+Little Nest                  ->  vancouvermom.ca        declined, an article
+Treetop Adventures           ->  (nothing)              declined
+```
+
+Six of nine on the live queue, nothing wrong accepted. Deterministic, because
+there is nothing here for a model to judge that a string comparison cannot.
+Approving stores the official site as the venue's `source_url`; the page it was
+discovered on stays in `venue_candidates.csv`, which is the durable record of
+where a venue came from.
+
+**A type and a neighbourhood the app actually knows.** See below.
+
+### Why a value used to arrive "not known", and what changed
+
+The review page used to show `type: restaurants (not a known value)` and
+`neighbourhood: Central Vancouver (not a known value)`. The proposer was
+generating them: the response schema typed both fields as free strings and the
+prompt described `type` in prose with a list of examples that was not even our
+list. A live batch produced `activity` four times, plus `cafe` and `restaurant`
+for venues the prompt tells it to skip outright.
+
+The display was the smaller half of the problem. The form rendered the
+unrecognised value as the **selected** option, and the approval check only
+asked whether the field was non-empty:
+
+```
+_cannot_approve(type='activity')     ->  ''      approves fine
+is_nap_friendly({'type':'activity'}) ->  False   silently, forever
+```
+
+So approving without opening the dropdown wrote `activity` into `venues.type`,
+where nothing downstream refuses it -- `is_nap_friendly` does not fail on a type
+it does not know, it just answers False. Fixed at all three layers, in that
+order:
+
+1. **Generated.** `type` and `neighbourhood` are `enum`s in the JSON schema,
+   built from the `data_loader` constants so the schema, the prompt and the
+   review dropdowns cannot drift. There is no longer a `restaurant` value for
+   the model to reach for.
+2. **Stored.** `_grounded` blanks a value outside the list before it is written,
+   because a model can ignore a schema. Blank asks the reviewer a question;
+   wrong tells them an answer.
+3. **Approved.** `_cannot_approve` refuses a `type` or `city` outside the enum,
+   and a `neighbourhood` outside it when one is set, so not even a hand-made
+   POST can put one in the table.
+
+Only then the display: an unrecognised value is no longer offered back as the
+selected option. The dropdown arrives unset and the row says what was proposed,
+so it is a question rather than an answer you can approve by inertia.
+
 ### Importing what the City publishes
 
 ```

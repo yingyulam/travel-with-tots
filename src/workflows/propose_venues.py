@@ -20,8 +20,9 @@ import time
 from itertools import zip_longest
 from pathlib import Path
 
-from .. import candidates, db
+from .. import candidates, db, osm
 from ..agents import call_openrouter, parse_json_reply
+from ..data_loader import CITIES, NEIGHBOURHOODS, VENUE_TYPES
 from ..components.extract_form import _FILLER, _words
 from ..components.place_search import PlaceSearchError, search_places
 from ..components.search_web import WebSearchError, search_web
@@ -65,10 +66,27 @@ STANDING_QUERIES = (
 # batch spread across several queries rather than lifted from one listicle.
 MAX_PER_QUERY = 6
 
+# type and neighbourhood are closed lists, in the schema and not only in the
+# prompt. Describing them in prose did not hold: a live run produced type
+# "activity" four times, plus "cafe" and "restaurant" for venues the prompt
+# tells it to skip outright, and neighbourhoods "Central Vancouver" and "East
+# Vancouver" that are not places the City names. Every one reached the review
+# page as "(not a known value)" for a person to fix by hand, one at a time.
+#
+# `type` is the one that had to stop: it drives data_loader.is_nap_friendly, so
+# an unrecognised value does not fail, it silently means "never nap-friendly".
+#
+# Built from the data_loader constants rather than retyped, so the schema, the
+# prompt and the review page's dropdowns cannot drift apart. null stays
+# allowed, because "the results did not say" is still the honest answer.
+def _one_of(values):
+    return {"type": ["string", "null"], "enum": [*values, None]}
+
+
 VENUE_PROPERTIES = {
     "name": {"type": "string"},
-    "type": {"type": ["string", "null"]},
-    "neighbourhood": {"type": ["string", "null"]},
+    "type": _one_of(VENUE_TYPES),
+    "neighbourhood": _one_of(NEIGHBOURHOODS),
     "evidence": {"type": ["string", "null"]},
 }
 
@@ -114,6 +132,25 @@ NOT_A_VENUE = re.compile(
     r"ultimate|list of|where to|how to)\b", re.IGNORECASE)
 
 
+# Domains where anyone can publish anything about a place. Not a blocklist:
+# a Facebook post is often how a small venue announces itself, and dropping the
+# candidate would lose a real find. It is a reason to go looking for the
+# venue's own site, and a thing to say out loud on the review page so a
+# reviewer weighs the citation instead of assuming somebody vetted it.
+LOW_TRUST_DOMAINS = frozenset((
+    "facebook.com", "instagram.com", "twitter.com", "x.com", "threads.net",
+    "reddit.com", "pinterest.com", "tiktok.com", "yelp.com", "tripadvisor.com",
+    "tripadvisor.ca", "wheree.com", "foursquare.com"))
+
+# What a site has to share with the venue's name to count as its own. A
+# measured threshold: over the pending queue, one shared word picked out
+# roundhouse.ca, maplewoodfarm.bc.ca, granvilleisland.com, playscapecafe.com
+# and earnesticecream.com with nothing wrong accepted, and correctly declined
+# on the three whose top result was a listicle. Requiring more loses
+# roundhouse.ca; requiring none accepts vancouvermom.ca.
+NAME_WORDS_IN_DOMAIN = 1
+
+
 class ProposalError(Exception):
     """The proposal run could not complete."""
 
@@ -133,7 +170,9 @@ def _messages(results, known) -> list:
         for i, r in enumerate(results, 1))
     prompt = (_TEMPLATE
               .replace("{results}", formatted)
-              .replace("{known}", ", ".join(sorted(known)) or "(none yet)"))
+              .replace("{known}", ", ".join(sorted(known)) or "(none yet)")
+              .replace("{types}", ", ".join(VENUE_TYPES))
+              .replace("{neighbourhoods}", ", ".join(NEIGHBOURHOODS)))
     return [{"role": "system", "content": prompt}]
 
 
@@ -181,10 +220,120 @@ def _grounded(venue, said) -> dict:
     # A neighbourhood the results never mention is a guess from the name.
     if kept["neighbourhood"] and not (_words(kept["neighbourhood"]) & said):
         kept["neighbourhood"] = ""
+    # Belt and braces behind the schema's enums. extract_form documents at
+    # length that a model can ignore a structured-output schema, and a value
+    # outside the list is worse than a blank here: blank asks the reviewer a
+    # question, wrong tells them an answer. Blanked rather than dropped, since
+    # the venue itself may still be a good find.
+    for field, allowed in (("type", VENUE_TYPES),
+                           ("neighbourhood", NEIGHBOURHOODS)):
+        if kept[field] and kept[field] not in allowed:
+            kept[field] = ""
     # A name identical to its own type says nothing: "Museum", type museum.
     if kept["type"] and candidates.normalize_name(name) == candidates.normalize_name(kept["type"]):
         return {}
     return kept
+
+
+def domain(url) -> str:
+    """The host of a URL, without "www.". "" if it is not a web address.
+
+    Public because the review page shows it beside every citation: what makes a
+    source worth trusting is mostly which site it is, and a link labelled
+    "Source" hides exactly that.
+    """
+    match = re.match(r"https?://([^/?#]+)", (url or "").strip(), re.IGNORECASE)
+    return re.sub(r"^www\.", "", match.group(1).lower()) if match else ""
+
+
+def is_low_trust(url) -> bool:
+    """Whether a citation is somewhere anyone can publish anything."""
+    host = domain(url)
+    return any(host == d or host.endswith("." + d) for d in LOW_TRUST_DOMAINS)
+
+
+def _looks_official(url, name) -> bool:
+    """Whether a URL's domain is plausibly this venue's own.
+
+    Read off the domain, not the page: a domain is the one part of a result a
+    venue has to own. "granvilleisland.com" for Granville Island is its site;
+    "vancouvermom.ca" writing about Little Nest is not, however good the
+    article. Deterministic on purpose -- there is nothing here for a model to
+    judge that a string comparison cannot.
+    """
+    host = domain(url)
+    if not host or is_low_trust(url):
+        return False
+    squashed = re.sub(r"[^a-z0-9]", "", host)
+    wanted = _words(name) - _FILLER - _words(CITY)
+    return sum(1 for word in wanted if word in squashed) >= NAME_WORDS_IN_DOMAIN
+
+
+def official_site(name, from_osm=None) -> str:
+    """The venue's own website, or "".
+
+    OSM first, because it costs nothing: the hours lookup has already fetched
+    it, and osm.venue_facts matches on the whole name, so a website it returns
+    belongs to the place we asked about. Otherwise one search, which is a
+    Tavily credit per candidate and the reason this is not attempted for
+    anything already answered.
+
+    Returns the site's root rather than whichever page ranked, since what a
+    reviewer wants is somewhere to look the venue up, and the deep link Tavily
+    returns often carries tracking parameters.
+    """
+    if from_osm and _looks_official(from_osm, name):
+        return _root(from_osm)
+    try:
+        results = search_web(f"{name} {CITY} official website")
+    except (WebSearchError, KeyError) as e:
+        print(f"Official site lookup skipped for {name}: {e}")
+        return ""
+    for result in results:
+        if _looks_official(result["url"], name):
+            return _root(result["url"])
+    return ""
+
+
+def _root(url) -> str:
+    host = domain(url)
+    return f"https://{host}/" if host else ""
+
+
+def _hours_from_osm(names) -> dict:
+    """{name: {"open_time", "close_time", "hours_note", "website"}} from OSM.
+
+    One batched Overpass query for the whole batch, on the page timeout rather
+    than the script one: osm.py says not to call it from a page, and this is
+    the exception it allows for, because it is one request per run and a
+    failure costs the batch its prefilled hours rather than the run.
+
+    Hours are prefilled only where OSM says one plain pair (osm.single_pair).
+    Anything richer -- a Monday closure, a lunch break, seasonal bands -- is
+    left for the reviewer, because a single open/close cannot hold it and
+    picking half of it would be inventing an answer.
+
+    `hours_note` carries the raw string and the OSM entry's own name whether or
+    not the pair was prefilled. That is what makes a prefill checkable: the
+    reviewer sees what it was read from and which entry answered, so a plausible
+    wrong match is caught before approval rather than after.
+    """
+    try:
+        facts = osm.venue_facts(names, timeout=osm.PAGE_TIMEOUT_SECONDS)
+    except osm.OverpassError as e:
+        print(f"OSM lookup skipped for this batch: {e}")
+        return {}
+    out = {}
+    for name, fact in facts.items():
+        hours = fact.get("opening_hours")
+        found = {"website": fact.get("website", "")}
+        if hours:
+            opens, closes = osm.single_pair(hours)
+            found["open_time"] = opens or ""
+            found["close_time"] = closes or ""
+            found["hours_note"] = f"OpenStreetMap, \u201c{fact['osm_name']}\u201d: {hours}"
+        out[name] = found
+    return out
 
 
 def _in_metro_vancouver(lat, lng) -> bool:
@@ -291,9 +440,36 @@ def propose(batch_size=DEFAULT_BATCH_SIZE, model=CURATOR_MODEL) -> dict:
             kept.update(located)
             proposals.append(kept)
 
+    enrich(proposals)
     added = candidates.add(proposals)
     return {"proposed": added, "skipped": skipped, "queries": queries,
             "model": model, "response_time": round(time.time() - started, 3)}
+
+
+def enrich(proposals) -> None:
+    """Fill in hours and the official website, in place.
+
+    Runs once over the finished batch rather than per venue inside the loop,
+    because Overpass rate-limits hard enough that one query per candidate
+    earned a 429 within about thirty requests.
+
+    Neither field is something a search result establishes, which is why the
+    prompt forbids the model from reporting hours at all. They come from
+    outside sources a person can check instead: OSM for the hours, and the
+    venue's own domain for the site. Nothing here decides anything -- it is
+    the same batch, with the two fields a reviewer would otherwise have looked
+    up by hand already looked up, and the evidence attached.
+    """
+    if not proposals:
+        return
+    facts = _hours_from_osm([p["name"] for p in proposals])
+    for proposal in proposals:
+        found = facts.get(proposal["name"], {})
+        for field in ("open_time", "close_time", "hours_note"):
+            if found.get(field):
+                proposal[field] = found[field]
+        proposal["official_url"] = official_site(
+            proposal["name"], found.get("website"))
 
 
 WORKFLOW = {

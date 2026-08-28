@@ -11,15 +11,15 @@ Report each place you find, using only what the search results say.
 How to decide:
 - Propose a place only if the search results name it. A guidebook article about "the best playgrounds in Vancouver" is evidence for the playgrounds it names, not for a playground you know of separately.
 - One real, visitable place per entry. Skip anything that is a list, a neighbourhood, an event on one date, a blog, or a chain in general rather than a specific branch.
-- Skip restaurants and cafes. They are not in this database: a parent finds somewhere to eat near wherever they are, using live search. Somewhere with a food court alongside things to do, like a market or a mall, is still worth reporting as an outing.
+- Skip restaurants, cafes, bakeries and ice cream shops. They are not in this database at all: a parent finds somewhere to eat near wherever they are, using live search. There is no type in the list above for them, and labelling one as something else to fit it in is worse than skipping it. Somewhere with a food court alongside things to do, like a market or a mall, is still worth reporting as an outing.
 - Skip a place already on the list above, however it is spelled.
 - Skip anywhere a parent could not take a small child.
-- type is a short plain noun for the kind of place: park, museum, playground, mall, garden, pool, library, aquarium, farm, community centre.
-- neighbourhood is the Vancouver area, if the results say. Leave it empty rather than guessing from the name.
+- type must be exactly one of these words, and nothing else: {types}. If the place is real but none of these fits it, leave type empty. Do not invent a word like "activity" or "attraction site": the app reads this field to decide whether a stop can hold a nap, so a word it does not know quietly changes how a day is planned.
+- neighbourhood must be exactly one of these, and nothing else: {neighbourhoods}. Leave it empty rather than guessing from the name, and leave it empty if the results name an area that is not on this list. "Central Vancouver" and "East Vancouver" are not areas; if the results only say something that vague, the answer is empty.
 - evidence is the sentence from the results that shows this place is worth a toddler's day. Quote it, do not summarise it.
 - Leave a field empty when the results do not say. An empty field costs nothing, because a person checks every entry before it is used. A confident wrong one costs their trust in all of them.
 
-Never report opening hours, and never report whether a place has a family room, a nursing room, step-free access, somewhere to nap or somewhere to eat. Search results do not establish those, a person fills them in after checking, and a guess would be indistinguishable from a fact.
+Never report opening hours, and never report whether a place has a family room, a nursing room, step-free access, somewhere to nap or somewhere to eat. Search results do not establish those. Hours are looked up separately from OpenStreetMap after you answer, with the source shown to the reviewer; the rest a person fills in after checking. A guess from you would be indistinguishable from a fact.
 
 Respond with strict JSON only. No markdown code fences, no commentary before or after, in exactly this shape:
 {"venues": [{"name": "Bloedel Conservatory", "type": "garden", "neighbourhood": "Riley Park", "evidence": "A domed tropical garden that is fully stroller accessible and popular with young families."}]}

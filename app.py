@@ -431,7 +431,18 @@ def _safe_url(url):
 
 
 def _reviewable_candidates(limit=None):
-    """Pending proposals, each marked if the database already has that name."""
+    """Pending proposals, with everything the reviewer needs to judge one.
+
+    Beyond the row itself: whether the database already has the name, both
+    citations as safe links, the domain each came from, and whether the
+    discovery citation is somewhere anyone can publish. The domain is shown
+    because a bare "Source" link hides what a reviewer most needs to weigh --
+    one live proposal was cited to a Portland guide to Vancouver, *Washington*,
+    which is obvious as `pdx.eater.com` and invisible as "Source".
+
+    Also which fields are not values the app knows, so the form can ask rather
+    than pre-answer.
+    """
     have = {candidates.normalize_name(row["name"])
             for row in db.get_venues_in_city("")}
     rows = []
@@ -439,8 +450,26 @@ def _reviewable_candidates(limit=None):
         row = dict(row)
         row["already_have"] = candidates.normalize_name(row["name"]) in have
         row["source_link"] = _safe_url(row.get("source_url"))
+        row["source_domain"] = propose_venues.domain(row.get("source_url"))
+        row["low_trust"] = propose_venues.is_low_trust(row.get("source_url"))
+        row["official_link"] = _safe_url(row.get("official_url"))
+        row["official_domain"] = propose_venues.domain(row.get("official_url"))
+        row["unknown_values"] = _unknown_values(row)
         rows.append(row)
     return rows if limit is None else rows[:limit]
+
+
+def _unknown_values(row):
+    """Field names whose value is not one the app knows, in review order.
+
+    A value outside the enum is a question for the reviewer, not an answer, so
+    the form leaves the dropdown unset and this is what tells it to.
+    """
+    checks = (("type", VENUE_TYPES), ("neighbourhood", NEIGHBOURHOODS),
+              ("city", CITIES))
+    return [field for field, allowed in checks
+            if (row.get(field) or "").strip()
+            and row[field].strip() not in allowed]
 
 
 @app.route("/venues/review/candidates", methods=["POST"])
@@ -520,6 +549,12 @@ def _candidate_edits(candidate_id, form):
     return edits
 
 
+# The fields that must hold a value from a closed list before a candidate can
+# become a venue, and the list each is checked against. Neighbourhood is not
+# here: it may legitimately be blank, and it is checked below only when set.
+APPROVAL_ENUMS = (("type", VENUE_TYPES), ("city", CITIES))
+
+
 def _cannot_approve(row):
     """Why this candidate is not ready, or "" if it is.
 
@@ -527,12 +562,26 @@ def _cannot_approve(row):
     itinerary.venue_open_for, which is how a museum gets scheduled at eight in
     the evening, and deciding whether a place can be visited at a given time is
     most of what the planner does.
+
+    So is a `type` the app recognises, and that check is newer than the rest
+    because the old one only asked whether the field was non-empty. A live
+    batch arrived with type "activity" on four rows, the review form rendered
+    it as the selected option, and approving without touching the dropdown
+    wrote it straight into venues.type -- where data_loader.is_nap_friendly
+    does not fail on it, it just quietly answers False forever. A value outside
+    the list has to stop here, because nothing downstream will notice it.
     """
     for field, label in (("open_time", "opening time"),
                          ("close_time", "closing time"),
                          ("type", "type"), ("city", "city")):
         if not (row.get(field) or "").strip():
             return f"no {label}"
+    for field, allowed in APPROVAL_ENUMS:
+        if row[field].strip() not in allowed:
+            return f"{field} {row[field].strip()!r} is not one we know"
+    area = (row.get("neighbourhood") or "").strip()
+    if area and area not in NEIGHBOURHOODS:
+        return f"neighbourhood {area!r} is not one we know"
     return ""
 
 
@@ -553,7 +602,12 @@ def _approve_candidate(row, admin_id):
         close_time=row.get("close_time") or None,
         lat=_as_float(row.get("lat")),
         lng=_as_float(row.get("lng")),
-        source_url=row.get("source_url") or None,
+        # The venue's own site when we found one, the page it was discovered
+        # on otherwise. The reviewer asked for the official site to be
+        # preferred, and the discovery URL is not lost: venue_candidates.csv
+        # keeps it, and that file is the durable record of where a venue came
+        # from (see src/candidates.py).
+        source_url=row.get("official_url") or row.get("source_url") or None,
         verified_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         verified_by=admin_id,
         **{flag: row.get(flag) in ("1", 1, True)
