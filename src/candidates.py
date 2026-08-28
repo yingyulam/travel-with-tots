@@ -40,7 +40,7 @@ REJECTED = "rejected"
 STATUSES = (PENDING, APPROVED, REJECTED)
 
 # What the agent writes: what it found, and where it found it.
-PROPOSED_COLUMNS = ("name", "type", "neighbourhood", "city",
+PROPOSED_COLUMNS = ("name", "type", "setting", "neighbourhood", "city",
                     "address", "lat", "lng", "source_url", "evidence",
                     "official_url", "hours_note")
 

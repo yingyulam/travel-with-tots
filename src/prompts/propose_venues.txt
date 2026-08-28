@@ -15,6 +15,7 @@ How to decide:
 - Skip a place already on the list above, however it is spelled.
 - Skip anywhere a parent could not take a small child.
 - type must be exactly one of these words, and nothing else: {types}. If the place is real but none of these fits it, leave type empty. Do not invent a word like "activity" or "attraction site": the app reads this field to decide whether a stop can hold a nap, so a word it does not know quietly changes how a day is planned.
+- setting must be exactly one of: {settings}. This is about where a visit is spent, not where the building is: "indoor" if the visit is under cover, "outdoor" if it is in the open air, "both" only when either would be a real visit on its own. A gift shop or a cafe does not make an outdoor place "both". Leave it empty if the results do not make it clear.
 - neighbourhood must be exactly one of these, and nothing else: {neighbourhoods}. Leave it empty rather than guessing from the name, and leave it empty if the results name an area that is not on this list. "Central Vancouver" and "East Vancouver" are not areas; if the results only say something that vague, the answer is empty.
 - evidence is the sentence from the results that shows this place is worth a toddler's day. Quote it, do not summarise it.
 - Leave a field empty when the results do not say. An empty field costs nothing, because a person checks every entry before it is used. A confident wrong one costs their trust in all of them.

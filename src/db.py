@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS trips (
 CREATE TABLE IF NOT EXISTS venues (
     id                  INTEGER PRIMARY KEY,
     name                TEXT NOT NULL,
-    type                TEXT,
+    type                TEXT,                -- what the place is. Descriptive only
+    setting             TEXT,                -- 'indoor'/'outdoor'/'both': where a
+                                             -- visit is spent. See data_loader.SETTINGS
     neighbourhood       TEXT,
     has_family_room     INTEGER NOT NULL DEFAULT 0,
     has_nursing_room    INTEGER NOT NULL DEFAULT 0,
@@ -202,7 +204,7 @@ CONDITIONAL_ON_CAN_EAT = ("has_highchair",)
 # The venue columns data/venues.json owns, in the order _seed_venues supplies
 # them. Deliberately excludes source, parent_id and the provenance columns: a
 # re-seed must never demote a row or discard a citation a human added.
-SEED_FIELDS = ("type", "neighbourhood",
+SEED_FIELDS = ("type", "setting", "neighbourhood",
                "has_family_room", "has_nursing_room",
                "stroller_accessible", "can_eat",
                "open_time", "close_time", "seed_rank")
@@ -328,6 +330,14 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN verified_by INTEGER "
                          "REFERENCES parents(id) ON DELETE SET NULL")
             conn.execute("ALTER TABLE venues ADD COLUMN seed_rank INTEGER")
+    if "setting" not in existing:
+        with conn:
+            # Where a visit is spent. The one fact `type` provably cannot
+            # carry: `attraction` is a legitimate residual and its eight
+            # venues split four indoor, four outdoor. Nullable, because a
+            # venue nobody has assessed must read as unknown rather than as
+            # either answer.
+            conn.execute("ALTER TABLE venues ADD COLUMN setting TEXT")
     if "has_washroom" not in existing:
         with conn:
             # For a potty-training toddler a washroom decides whether a park
@@ -463,7 +473,7 @@ def _seed_venues(conn):
     placeholders = ", ".join("?" for _ in range(len(SEED_FIELDS) + 5))
     with conn:  # single transaction for the whole batch
         for rank, v in enumerate(venues):
-            values = (v["type"], v["neighbourhood"],
+            values = (v["type"], v["setting"], v["neighbourhood"],
                       int(v["has_family_room"]), int(v["has_nursing_room"]),
                       int(v["stroller_accessible"]), int(v["can_eat"]),
                       v["open"], v["close"], rank)
@@ -597,7 +607,7 @@ def delete_trip(trip_id, parent_id):
 # Columns add_venue will set beyond `name`, `source` and the flags. Whitelisted
 # so an unknown keyword fails loudly rather than being dropped, the same
 # discipline update_venue uses.
-ADD_VENUE_FIELDS = ("type", "neighbourhood", "city", "notes",
+ADD_VENUE_FIELDS = ("type", "setting", "neighbourhood", "city", "notes",
                     "address", "open_time", "close_time", "min_age_months",
                     "max_age_months", "lat", "lng", "parent_id", "source_url",
                     "external_id", "verified_at", "verified_by")
@@ -641,7 +651,7 @@ def add_venue(name, *, source, venue_type=None, **fields):
 # own edit form, where "correct my typo" must not move a venue, while
 # re-submitting the whole form may well mean the parent moved the map pin.
 # Still excludes source and parent_id, which are never a caller's to rewrite.
-SUBMISSION_FIELDS = ("type", "neighbourhood", "city", "lat", "lng", "notes",
+SUBMISSION_FIELDS = ("type", "setting", "neighbourhood", "city", "lat", "lng", "notes",
                      "address", "has_family_room", "has_nursing_room",
                      "stroller_accessible")
 
@@ -685,7 +695,7 @@ def add_or_update_submission(name, *, parent_id, **fields):
 # The fields a parent may change on their own submission. Deliberately excludes
 # source, parent_id and the coordinates: source is the verification gate, and
 # letting an edit rewrite it would turn "correct my typo" into "publish this".
-EDITABLE_VENUE_FIELDS = ("name", "type", "neighbourhood", "notes",
+EDITABLE_VENUE_FIELDS = ("name", "type", "setting", "neighbourhood", "notes",
                          "has_family_room", "has_nursing_room",
                          "stroller_accessible")
 
@@ -815,7 +825,7 @@ def get_rejected_submissions():
 # What an importer is allowed to write. Narrower than ADD_VENUE_FIELDS: no
 # parent_id (nobody submitted these), no verified_at (no human checked them),
 # and no seed_rank, which is the curator's ordering and not an import's to set.
-IMPORT_FIELDS = ("type", "neighbourhood", "city", "address",
+IMPORT_FIELDS = ("type", "setting", "neighbourhood", "city", "address",
                  "lat", "lng", "open_time", "close_time", "can_eat")
 
 

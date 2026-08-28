@@ -35,7 +35,7 @@ SUPPORTED_CITIES = ("Vancouver",)
 # parent reporting a change table has to be able to name which venue, and a name
 # is not a stable identity. The rest stay out, so a new column cannot silently
 # end up in a saved trip's plan_json or in the JSON sent to the browser.
-VENUE_KEYS = ("id", "name", "type", "neighbourhood",
+VENUE_KEYS = ("id", "name", "type", "setting", "neighbourhood",
               "has_washroom", "has_family_room", "has_nursing_room",
               "stroller_accessible", "has_highchair", "can_eat", "lat", "lng")
 
@@ -51,6 +51,47 @@ BOOL_KEYS = ("has_washroom", "has_family_room", "has_nursing_room",
 VENUE_TYPES = ("park", "garden", "beach", "seawall", "playground",
                "mall", "market", "museum", "aquarium", "attraction",
                "community centre", "library", "pool", "farm")
+
+# Where a visit is spent. Shelter, and nothing else -- not nap suitability, not
+# calm, not admission, not whether the hours are real. Two readers only: the
+# "it's raining" replan path, and a weather forecast if one is ever wired in.
+# If anything else starts reading this field, it is being overloaded the way
+# `type` was, and the new reader needs its own answer.
+#
+# The test that decides a value, which an admin can apply without judgement:
+#   A. if it rained all day, would you still go, and would the visit work?
+#   B. in good weather, is the visit mostly in the open air?
+# A only -> indoor.  B only -> outdoor.  both -> "both".
+#
+# "both" means either mode is a real visit on its own, NOT that some part of
+# the venue has a roof. Capilano has a gift shop and a cafe and is still
+# plainly outdoor: nobody goes there in the rain to stand in the shop.
+SETTINGS = ("indoor", "outdoor", "both")
+
+# The settings acceptable when a slot wants shelter, and when it wants open
+# air. Two tiers rather than three, deliberately: ranking "both" below an exact
+# match measurably drops Grouse Mountain below all 222 imported parks, throwing
+# away the curator's seed_rank for a weaker heuristic. Two tiers also confine
+# the field's only ambiguity to where it cannot matter -- indoor and "both"
+# share a tier, so misjudging one for the other changes nothing, while the
+# indoor/outdoor call that does change plans is never the ambiguous one.
+SHELTERED = ("indoor", "both")
+OPEN_AIR = ("outdoor", "both")
+
+
+def suits_weather(venue, wet):
+    """Whether this venue is a reasonable choice for a wet (or dry) slot.
+
+    Weather only ever pushes towards shelter: rain makes indoors better, dry
+    weather does not make outdoors obligatory. So a dry slot accepts anything,
+    which is also what an unknown forecast does -- one code path, and the
+    reason a forecast can be added later without changing how a day with no
+    forecast is planned.
+    """
+    if not wet:
+        return True
+    return (venue.get("setting") or "") in SHELTERED
+
 
 # Vancouver's 22 local areas as the City publishes them, plus the informal areas
 # people actually use for a venue's location and the neighbouring

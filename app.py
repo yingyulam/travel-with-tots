@@ -50,6 +50,7 @@ from src.data_loader import (
     CITIES,
     FEATURE_LABELS,
     NEIGHBOURHOODS,
+    SETTINGS,
     SUPPORTED_CITIES,
     VENUE_TYPES,
     get_venues,
@@ -367,6 +368,7 @@ def venue_review():
         seasons=SEASONS,
         day_types=DAY_TYPES,
         venue_types=VENUE_TYPES,
+        settings=SETTINGS,
         neighbourhoods=NEIGHBOURHOODS,
         cities=CITIES)
 
@@ -465,8 +467,8 @@ def _unknown_values(row):
     A value outside the enum is a question for the reviewer, not an answer, so
     the form leaves the dropdown unset and this is what tells it to.
     """
-    checks = (("type", VENUE_TYPES), ("neighbourhood", NEIGHBOURHOODS),
-              ("city", CITIES))
+    checks = (("type", VENUE_TYPES), ("setting", SETTINGS),
+              ("neighbourhood", NEIGHBOURHOODS), ("city", CITIES))
     return [field for field, allowed in checks
             if (row.get(field) or "").strip()
             and row[field].strip() not in allowed]
@@ -552,7 +554,7 @@ def _candidate_edits(candidate_id, form):
 # The fields that must hold a value from a closed list before a candidate can
 # become a venue, and the list each is checked against. Neighbourhood is not
 # here: it may legitimately be blank, and it is checked below only when set.
-APPROVAL_ENUMS = (("type", VENUE_TYPES), ("city", CITIES))
+APPROVAL_ENUMS = (("type", VENUE_TYPES), ("setting", SETTINGS), ("city", CITIES))
 
 
 def _cannot_approve(row):
@@ -573,7 +575,8 @@ def _cannot_approve(row):
     """
     for field, label in (("open_time", "opening time"),
                          ("close_time", "closing time"),
-                         ("type", "type"), ("city", "city")):
+                         ("type", "type"), ("setting", "setting"),
+                         ("city", "city")):
         if not (row.get(field) or "").strip():
             return f"no {label}"
     for field, allowed in APPROVAL_ENUMS:
@@ -607,6 +610,7 @@ def _approve_candidate(row, admin_id):
         # preferred, and the discovery URL is not lost: venue_candidates.csv
         # keeps it, and that file is the durable record of where a venue came
         # from (see src/candidates.py).
+    setting=row.get("setting") or None,
         source_url=row.get("official_url") or row.get("source_url") or None,
         verified_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         verified_by=admin_id,

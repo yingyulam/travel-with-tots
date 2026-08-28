@@ -12,11 +12,12 @@
     "open": "10:00",
     "close": "17:00",
     "lat": 49.2720848,
-    "lng": -123.1043893
+    "lng": -123.1043893,
+    "setting": "indoor"
   },
   {
     "name": "Vancouver Aquarium",
-    "type": "attraction",
+    "type": "aquarium",
     "neighbourhood": "Stanley Park",
     "kid_friendly": true,
     "has_family_room": true,
@@ -27,11 +28,12 @@
     "open": "09:30",
     "close": "17:00",
     "lat": 49.3005177,
-    "lng": -123.1312214
+    "lng": -123.1312214,
+    "setting": "indoor"
   },
   {
     "name": "Stanley Park Seawall",
-    "type": "park",
+    "type": "seawall",
     "neighbourhood": "West End",
     "kid_friendly": true,
     "has_family_room": false,
@@ -42,7 +44,8 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.2946222,
-    "lng": -123.1499831
+    "lng": -123.1499831,
+    "setting": "outdoor"
   },
   {
     "name": "Queen Elizabeth Park",
@@ -57,7 +60,8 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.240978,
-    "lng": -123.112028
+    "lng": -123.112028,
+    "setting": "outdoor"
   },
   {
     "name": "Oakridge Park Mall",
@@ -72,11 +76,12 @@
     "open": "10:00",
     "close": "19:00",
     "lat": 49.2317347,
-    "lng": -123.1181168
+    "lng": -123.1181168,
+    "setting": "indoor"
   },
   {
     "name": "VanDusen Botanical Garden",
-    "type": "park",
+    "type": "garden",
     "neighbourhood": "Shaughnessy",
     "kid_friendly": true,
     "has_family_room": false,
@@ -87,7 +92,8 @@
     "open": "10:00",
     "close": "16:00",
     "lat": 49.239181,
-    "lng": -123.131293
+    "lng": -123.131293,
+    "setting": "outdoor"
   },
   {
     "name": "Museum of Vancouver",
@@ -102,7 +108,8 @@
     "open": "10:00",
     "close": "17:00",
     "lat": 49.2763483,
-    "lng": -123.1446238
+    "lng": -123.1446238,
+    "setting": "indoor"
   },
   {
     "name": "Grouse Mountain",
@@ -117,11 +124,12 @@
     "open": "09:00",
     "close": "22:00",
     "lat": 49.3794719,
-    "lng": -123.0767805
+    "lng": -123.0767805,
+    "setting": "both"
   },
   {
     "name": "Kitsilano Beach Park",
-    "type": "park",
+    "type": "beach",
     "neighbourhood": "Kitsilano",
     "kid_friendly": true,
     "has_family_room": false,
@@ -132,7 +140,8 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.273431,
-    "lng": -123.153901
+    "lng": -123.153901,
+    "setting": "outdoor"
   },
   {
     "name": "HR MacMillan Space Centre",
@@ -147,7 +156,8 @@
     "open": "10:00",
     "close": "17:00",
     "lat": null,
-    "lng": null
+    "lng": null,
+    "setting": "indoor"
   },
   {
     "name": "Vancouver Maritime Museum",
@@ -162,11 +172,12 @@
     "open": "10:00",
     "close": "17:00",
     "lat": 49.277482,
-    "lng": -123.1477655
+    "lng": -123.1477655,
+    "setting": "indoor"
   },
   {
     "name": "Granville Island Kids Market",
-    "type": "attraction",
+    "type": "market",
     "neighbourhood": "Granville Island",
     "kid_friendly": true,
     "has_family_room": true,
@@ -177,11 +188,12 @@
     "open": "10:00",
     "close": "18:00",
     "lat": null,
-    "lng": null
+    "lng": null,
+    "setting": "indoor"
   },
   {
     "name": "Granville Island Public Market",
-    "type": "mall",
+    "type": "market",
     "neighbourhood": "Granville Island",
     "kid_friendly": true,
     "has_family_room": true,
@@ -192,11 +204,12 @@
     "open": "09:00",
     "close": "19:00",
     "lat": null,
-    "lng": null
+    "lng": null,
+    "setting": "both"
   },
   {
     "name": "Bloedel Conservatory",
-    "type": "attraction",
+    "type": "garden",
     "neighbourhood": "Riley Park",
     "kid_friendly": true,
     "has_family_room": false,
@@ -207,7 +220,8 @@
     "open": "10:00",
     "close": "17:00",
     "lat": 49.2420609,
-    "lng": -123.1137676
+    "lng": -123.1137676,
+    "setting": "indoor"
   },
   {
     "name": "Capilano Suspension Bridge Park",
@@ -222,7 +236,8 @@
     "open": "09:00",
     "close": "17:00",
     "lat": 49.342704,
-    "lng": -123.1160482
+    "lng": -123.1160482,
+    "setting": "outdoor"
   },
   {
     "name": "Lynn Canyon Park",
@@ -237,7 +252,8 @@
     "open": "07:00",
     "close": "20:00",
     "lat": 49.3437387,
-    "lng": -123.0197741
+    "lng": -123.0197741,
+    "setting": "outdoor"
   },
   {
     "name": "Playland at the PNE",
@@ -252,7 +268,8 @@
     "open": "11:00",
     "close": "18:00",
     "lat": null,
-    "lng": null
+    "lng": null,
+    "setting": "outdoor"
   },
   {
     "name": "Trout Lake (John Hendry Park)",
@@ -267,7 +284,8 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.255808,
-    "lng": -123.062242
+    "lng": -123.062242,
+    "setting": "outdoor"
   },
   {
     "name": "David Lam Park",
@@ -282,11 +300,12 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.272569,
-    "lng": -123.124145
+    "lng": -123.124145,
+    "setting": "outdoor"
   },
   {
     "name": "English Bay Beach",
-    "type": "park",
+    "type": "beach",
     "neighbourhood": "West End",
     "kid_friendly": true,
     "has_family_room": false,
@@ -297,7 +316,8 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.287118,
-    "lng": -123.143317
+    "lng": -123.143317,
+    "setting": "outdoor"
   },
   {
     "name": "Vancouver Art Gallery",
@@ -312,7 +332,8 @@
     "open": "10:00",
     "close": "17:00",
     "lat": 49.2828495,
-    "lng": -123.1206248
+    "lng": -123.1206248,
+    "setting": "indoor"
   },
   {
     "name": "Pacific Centre",
@@ -327,11 +348,12 @@
     "open": "10:00",
     "close": "19:00",
     "lat": 49.2822466,
-    "lng": -123.119484
+    "lng": -123.119484,
+    "setting": "indoor"
   },
   {
     "name": "Second Beach",
-    "type": "park",
+    "type": "beach",
     "neighbourhood": "Stanley Park",
     "kid_friendly": true,
     "has_family_room": true,
@@ -342,11 +364,12 @@
     "open": "06:00",
     "close": "21:00",
     "lat": 49.2956047,
-    "lng": -123.150765
+    "lng": -123.150765,
+    "setting": "outdoor"
   },
   {
     "name": "Jericho Beach Park",
-    "type": "park",
+    "type": "beach",
     "neighbourhood": "Point Grey",
     "kid_friendly": true,
     "has_family_room": false,
@@ -357,11 +380,12 @@
     "open": "06:00",
     "close": "22:00",
     "lat": 49.271513,
-    "lng": -123.197415
+    "lng": -123.197415,
+    "setting": "outdoor"
   },
   {
     "name": "UBC Botanical Garden",
-    "type": "park",
+    "type": "garden",
     "neighbourhood": "Point Grey",
     "kid_friendly": true,
     "has_family_room": false,
@@ -372,7 +396,8 @@
     "open": "10:00",
     "close": "16:00",
     "lat": 49.2538228,
-    "lng": -123.2473278
+    "lng": -123.2473278,
+    "setting": "outdoor"
   },
   {
     "name": "Vancouver Lookout",
@@ -387,11 +412,12 @@
     "open": "09:00",
     "close": "21:00",
     "lat": 49.2846114,
-    "lng": -123.112316
+    "lng": -123.112316,
+    "setting": "indoor"
   },
   {
     "name": "Dr. Sun Yat-Sen Classical Chinese Garden",
-    "type": "attraction",
+    "type": "garden",
     "neighbourhood": "Chinatown",
     "kid_friendly": true,
     "has_family_room": false,
@@ -402,7 +428,8 @@
     "open": "10:00",
     "close": "17:00",
     "lat": 49.2797944,
-    "lng": -123.104133
+    "lng": -123.104133,
+    "setting": "outdoor"
   },
   {
     "name": "Marine Gateway",
@@ -417,6 +444,7 @@
     "open": "10:00",
     "close": "21:00",
     "lat": 49.209901,
-    "lng": -123.1161706
+    "lng": -123.1161706,
+    "setting": "indoor"
   }
 ]

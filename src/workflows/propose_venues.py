@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .. import candidates, db, osm
 from ..agents import call_openrouter, parse_json_reply
-from ..data_loader import CITIES, NEIGHBOURHOODS, VENUE_TYPES
+from ..data_loader import CITIES, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
 from ..components.extract_form import _FILLER, _words
 from ..components.place_search import PlaceSearchError, search_places
 from ..components.search_web import WebSearchError, search_web
@@ -86,6 +86,11 @@ def _one_of(values):
 VENUE_PROPERTIES = {
     "name": {"type": "string"},
     "type": _one_of(VENUE_TYPES),
+    # Whether a visit is spent under cover. Asked of the model because a search
+    # result usually does establish it -- "indoor play space", "waterfront
+    # park" -- unlike hours or amenities, which it never does. Enum-constrained
+    # and null-allowed like the rest, and a reviewer confirms it either way.
+    "setting": _one_of(SETTINGS),
     "neighbourhood": _one_of(NEIGHBOURHOODS),
     "evidence": {"type": ["string", "null"]},
 }
@@ -172,6 +177,7 @@ def _messages(results, known) -> list:
               .replace("{results}", formatted)
               .replace("{known}", ", ".join(sorted(known)) or "(none yet)")
               .replace("{types}", ", ".join(VENUE_TYPES))
+              .replace("{settings}", ", ".join(SETTINGS))
               .replace("{neighbourhoods}", ", ".join(NEIGHBOURHOODS)))
     return [{"role": "system", "content": prompt}]
 
@@ -214,7 +220,7 @@ def _grounded(venue, said) -> dict:
     if name.strip().casefold() in GENERIC_NAMES:
         return {}
     kept = {"name": name}
-    for field in ("type", "neighbourhood", "evidence"):
+    for field in ("type", "setting", "neighbourhood", "evidence"):
         value = (venue.get(field) or "").strip()
         kept[field] = value
     # A neighbourhood the results never mention is a guess from the name.
@@ -225,7 +231,7 @@ def _grounded(venue, said) -> dict:
     # outside the list is worse than a blank here: blank asks the reviewer a
     # question, wrong tells them an answer. Blanked rather than dropped, since
     # the venue itself may still be a good find.
-    for field, allowed in (("type", VENUE_TYPES),
+    for field, allowed in (("type", VENUE_TYPES), ("setting", SETTINGS),
                            ("neighbourhood", NEIGHBOURHOODS)):
         kept[field] = in_enum(kept[field], allowed)
     # A name identical to its own type says nothing: "Museum", type museum.

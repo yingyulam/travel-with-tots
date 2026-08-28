@@ -101,7 +101,9 @@ def park_entry(record):
         "name": CURATED_ALIASES.get(name, name),
         "source_url": opendata.record_url(opendata.PARKS, "parkid",
                                           record["parkid"]),
-        "fields": {"type": "park",
+        # A park is open air by definition; the City publishes nothing that
+        # would make one anything else.
+        "fields": {"type": "park", "setting": "outdoor",
                    "neighbourhood": _neighbourhood(record.get("neighbourhoodname")),
                    "city": "Vancouver",
                    "address": address or None,
@@ -123,7 +125,10 @@ def centre_entry(record):
         "name": f"{record['name']} Community Centre",
         "source_url": opendata.record_url(opendata.COMMUNITY_CENTRES, "name",
                                           record["name"]),
-        "fields": {"type": "community centre",
+        # A visit to a community centre is the building: the gym, the pool,
+        # the drop-in room. Several have a playground outside, but that is not
+        # what the visit is, so "indoor" rather than "both".
+        "fields": {"type": "community centre", "setting": "indoor",
                    "neighbourhood": _neighbourhood(record.get("geo_local_area")),
                    "city": "Vancouver",
                    "address": record.get("address") or None,

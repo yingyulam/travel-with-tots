@@ -75,6 +75,8 @@
           <input type="text" name="{{ c.id }}-name" value="{{ c.name }}"></label>
         <label class="field"><span>Type</span>
           <select name="{{ c.id }}-type">{{ options(venue_types, c.type) }}</select></label>
+        <label class="field"><span>Indoor or out</span>
+          <select name="{{ c.id }}-setting">{{ options(settings, c.setting) }}</select></label>
         <label class="field"><span>Neighbourhood</span>
           <select name="{{ c.id }}-neighbourhood">{{ options(neighbourhoods, c.neighbourhood) }}</select></label>
         <label class="field"><span>City</span>
@@ -149,7 +151,7 @@
       {% if not v.city %}<p class="meta"><strong>No city, so it cannot be verified.</strong></p>{% endif %}
 
       <p class="meta">
-        {{ v.type or 'no type' }}
+        {{ v.type or 'no type' }}{% if v.setting %} &middot; {{ v.setting }}{% endif %}
         {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
         {%- if v.city %}, {{ v.city }}{% endif %}
       </p>

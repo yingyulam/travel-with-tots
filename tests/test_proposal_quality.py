@@ -17,7 +17,7 @@ from unittest import mock
 
 import app as app_module
 from src import candidates, osm
-from src.data_loader import CITIES, NEIGHBOURHOODS, VENUE_TYPES
+from src.data_loader import CITIES, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
 from src.workflows import propose_venues as pv
 
 
@@ -289,8 +289,8 @@ class ExactOsmMatchTest(unittest.TestCase):
 
 
 class ApprovalGuardTest(unittest.TestCase):
-    READY = {"name": "X", "type": "museum", "city": "Vancouver",
-             "neighbourhood": "Downtown",
+    READY = {"name": "X", "type": "museum", "setting": "indoor",
+             "city": "Vancouver", "neighbourhood": "Downtown",
              "open_time": "09:00", "close_time": "17:00"}
 
     def test_a_ready_candidate_passes(self):
@@ -323,22 +323,25 @@ class ApprovalGuardTest(unittest.TestCase):
     def test_every_enum_the_guard_checks_is_the_one_the_form_offers(self):
         self.assertEqual(dict(app_module.APPROVAL_ENUMS)["type"], VENUE_TYPES)
         self.assertEqual(dict(app_module.APPROVAL_ENUMS)["city"], CITIES)
+        self.assertEqual(dict(app_module.APPROVAL_ENUMS)["setting"], SETTINGS)
 
 
 class UnknownValueDisplayTest(unittest.TestCase):
     def test_the_fields_a_reviewer_must_answer_are_named(self):
-        row = {"type": "activity", "neighbourhood": "Central Vancouver",
-               "city": "Vancouver"}
+        row = {"type": "activity", "setting": "indoor",
+               "neighbourhood": "Central Vancouver", "city": "Vancouver"}
         self.assertEqual(app_module._unknown_values(row),
                          ["type", "neighbourhood"])
 
     def test_a_clean_row_asks_nothing(self):
-        row = {"type": "museum", "neighbourhood": "Downtown", "city": "Vancouver"}
+        row = {"type": "museum", "setting": "indoor",
+               "neighbourhood": "Downtown", "city": "Vancouver"}
         self.assertEqual(app_module._unknown_values(row), [])
 
     def test_a_blank_is_not_an_unknown_value(self):
         self.assertEqual(app_module._unknown_values(
-            {"type": "", "neighbourhood": None, "city": "Vancouver"}), [])
+            {"type": "", "setting": "", "neighbourhood": None,
+             "city": "Vancouver"}), [])
 
 
 class NameFoldingTest(unittest.TestCase):

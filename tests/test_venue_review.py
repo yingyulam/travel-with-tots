@@ -191,6 +191,7 @@ class CandidateBatchTest(_ReviewTest):
         """The fields approval will not proceed without, keyed for one row."""
         fields = {f"{row['id']}-name": row["name"],
                   f"{row['id']}-type": row["type"] or "park",
+                  f"{row['id']}-setting": row["setting"] or "outdoor",
                   f"{row['id']}-city": row["city"] or "Vancouver",
                   f"{row['id']}-open_time": "10:00",
                   f"{row['id']}-close_time": "17:00"}
@@ -398,16 +399,17 @@ class CandidateBatchTest(_ReviewTest):
         row = self._propose()
         self._post("approve", [row["id"]], **{
             f"{row['id']}-city": "Vancouver",
+            f"{row['id']}-setting": "indoor",
             f"{row['id']}-open_time": "10:00",
             f"{row['id']}-close_time": "17:00",
             f"{row['id']}-has_family_room": "on",
-
         })
         record = candidates.load()[0]
         self.assertEqual(record["status"], candidates.APPROVED)
         self.assertEqual(record["open_time"], "10:00")
         self.assertEqual(record["close_time"], "17:00")
         self.assertEqual(record["has_family_room"], "1")
+        self.assertEqual(record["setting"], "indoor")
 
         self.assertEqual(record["can_eat"], "")
 
