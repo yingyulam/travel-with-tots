@@ -167,6 +167,43 @@
 </section>
 
 <section class="card">
+  <h2>Hours to check</h2>
+  <p class="meta">
+    OpenStreetMap says something different. You decide.
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Source</a>
+  </p>
+
+  {% if not hours_checks %}
+    <p class="meta">Nothing to check. Run <code>python3 scripts/verify_hours.py --write</code>.</p>
+  {% else %}
+    <p class="meta">{{ hours_checks|length }} to settle.</p>
+    {% for c in hours_checks %}
+    <div class="plan-option">
+      <p><strong>{{ c.name }}</strong>
+        <span class="meta">{{ c.type or 'no type' }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
+      <p class="meta">Ours: {{ c.current_open or '?' }}&ndash;{{ c.current_close or '?' }}</p>
+      <p class="meta">OSM: {{ c.source_says }}</p>
+      {% if c.finding == 'more_detail' %}
+        <p class="meta">More than one pair holds. Set a season or day slot for the rest.</p>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('venue_hours_decide', check_id=c.id) }}" class="section-form">
+        <input type="hidden" name="venue_id" value="{{ c.venue_id }}">
+        <div class="review-fields">
+          <label class="field"><span>Opens</span>
+            <input type="time" name="open_time" value="{{ c.current_open or '' }}"></label>
+          <label class="field"><span>Closes</span>
+            <input type="time" name="close_time" value="{{ c.current_close or '' }}"></label>
+        </div>
+        <button type="submit" name="action" value="update" class="cta">Update hours</button>
+        <button type="submit" name="action" value="keep" class="cta-secondary">Keep ours</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+
+<section class="card">
   <h2>Set aside</h2>
   <p class="meta">Rejected, not deleted. Anything here can go back.</p>
 

@@ -69,16 +69,19 @@ from src.db import (
     get_logged_venues_for_parent,
     get_parent,
     get_parent_by_email,
-    get_unverified_venues,
-    mark_verified,
+    get_pending_hours_checks,
     get_pending_submissions,
     get_rejected_submissions,
     get_trip_for_parent,
     get_trips_for_parent,
+    get_unverified_venues,
     init_db,
+    mark_verified,
     promote_submission,
     reject_submission,
+    resolve_hours_check,
     restore_submission,
+    set_venue_default_hours,
     update_child,
     update_venue,
 )
@@ -350,6 +353,7 @@ def venue_review():
             dict(r, source_link=_safe_url(r.get("source_url")))
             for r in candidates.load(candidates.REJECTED)],
         rejected_submissions=get_rejected_submissions(),
+        hours_checks=get_pending_hours_checks(),
         submissions=get_pending_submissions(),
         unverified=unverified[:UNVERIFIED_PAGE_SIZE],
         unverified_total=len(unverified),
@@ -568,6 +572,34 @@ def _as_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+@app.route("/venues/hours/<int:check_id>", methods=["POST"])
+@login_required
+@admin_required
+def venue_hours_decide(check_id):
+    """Settle one hours comparison: correct our hours, or keep them.
+
+    The tool never changes hours itself. It reports what an outside source says
+    and a person decides, because half of what it finds needs judgment: a mall
+    tagged as closing at half four is more likely a mis-tagged building than a
+    mall that closes at half four.
+    """
+    admin_id = _current_parent()["id"]
+    opens = (request.form.get("open_time") or "").strip()
+    closes = (request.form.get("close_time") or "").strip()
+    venue_id = request.form.get("venue_id", type=int)
+
+    if request.form.get("action") == "update" and venue_id:
+        if not (opens and closes):
+            flash("Both an opening and a closing time are needed.")
+            return redirect(url_for("venue_review"))
+        set_venue_default_hours(venue_id, opens, closes)
+        flash(f"Hours updated to {opens}-{closes}.")
+    else:
+        flash("Kept our hours.")
+    resolve_hours_check(check_id, admin_id)
+    return redirect(url_for("venue_review"))
 
 
 @app.route("/venues/restore", methods=["POST"])

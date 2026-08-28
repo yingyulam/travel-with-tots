@@ -98,6 +98,24 @@ CREATE TABLE IF NOT EXISTS venues (
     seed_rank           INTEGER                 -- position in venues.json: see _seed_venues
 );
 
+-- A comparison between our stored hours and an outside source, and what a
+-- person decided about it. The point is that hours change: they are entered
+-- once at review and nothing else ever writes them, so without this a venue's
+-- hours are frozen at whatever was typed the day it was approved.
+CREATE TABLE IF NOT EXISTS venue_hours_checks (
+    id          INTEGER PRIMARY KEY,
+    venue_id    INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+    source      TEXT NOT NULL,      -- where the comparison came from, e.g. "osm"
+    source_says TEXT NOT NULL,      -- the source's own words, shown to a person
+    our_open    TEXT,               -- what we held when the check ran
+    our_close   TEXT,
+    finding     TEXT NOT NULL,      -- differs | more_detail | unverifiable
+    checked_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    status      TEXT NOT NULL DEFAULT 'pending',   -- pending | resolved
+    decided_at  TEXT,
+    decided_by  INTEGER REFERENCES parents(id) ON DELETE SET NULL
+);
+
 -- Hours that differ from the venue's default pair, by season and day type.
 -- A venue with the same hours all year needs no row here: venues.open_time and
 -- venues.close_time are the fallback, and these are refinements on top. That
@@ -157,6 +175,11 @@ CREATE INDEX IF NOT EXISTS idx_venue_reports_venue ON venue_reports(venue_id, fi
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_slot
     ON venue_hours(venue_id, season, day_type);
+
+-- One open check per venue per source: a re-run updates the finding rather
+-- than stacking another row to dismiss.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_check_open
+    ON venue_hours_checks(venue_id, source) WHERE status = 'pending';
 """
 
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
@@ -828,6 +851,49 @@ def mark_verified(venue_id, admin_id):
         "UPDATE venues SET verified_at = datetime('now'), verified_by = ? "
         f"WHERE id = ? AND {source_clause}",
         [admin_id, venue_id, *source_params])
+
+
+def set_venue_default_hours(venue_id, open_time, close_time):
+    """Correct a venue's default hours.
+
+    The only path by which an approved venue's hours can change. Until this
+    existed they were frozen at whatever was typed the day it was approved:
+    EDITABLE_VENUE_FIELDS deliberately excludes hours, so not even the parent
+    who submitted a place could fix them, and nothing else wrote them.
+    """
+    _write("UPDATE venues SET open_time = ?, close_time = ? WHERE id = ?",
+           (open_time or None, close_time or None, venue_id))
+
+
+def record_hours_check(venue_id, source, source_says, finding,
+                        our_open=None, our_close=None):
+    """Note that an outside source disagrees with our hours, for a person to
+    settle. Replaces any open check from the same source for the same venue, so
+    re-running the tool refreshes a finding instead of stacking duplicates."""
+    _write("DELETE FROM venue_hours_checks WHERE venue_id = ? AND source = ? "
+           "AND status = 'pending'", (venue_id, source))
+    return _write(
+        "INSERT INTO venue_hours_checks (venue_id, source, source_says, "
+        "finding, our_open, our_close) VALUES (?, ?, ?, ?, ?, ?)",
+        (venue_id, source, source_says, finding, our_open, our_close))
+
+
+def get_pending_hours_checks():
+    """Open hours comparisons, with the venue they concern."""
+    with closing(connect()) as conn:
+        return conn.execute("""
+            SELECT c.*, v.name, v.type, v.neighbourhood,
+                   v.open_time AS current_open, v.close_time AS current_close
+            FROM venue_hours_checks c JOIN venues v ON v.id = c.venue_id
+            WHERE c.status = 'pending'
+            ORDER BY c.checked_at DESC, c.id DESC""").fetchall()
+
+
+def resolve_hours_check(check_id, admin_id=None):
+    """Close a comparison, whether the hours were changed or kept."""
+    _write("UPDATE venue_hours_checks SET status = 'resolved', "
+           "decided_at = datetime('now'), decided_by = ? WHERE id = ?",
+           (admin_id, check_id))
 
 
 def set_venue_hours(venue_id, season, day_type, open_time, close_time):

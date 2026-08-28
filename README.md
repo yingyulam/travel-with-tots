@@ -913,6 +913,42 @@ database, a Christmas Day plan comes back empty, and says so rather than
 offering a day built on a guess. The fix is data, and the report names exactly
 which venue needs which day's hours.
 
+### Keeping hours from going stale
+
+Hours are typed in once when a venue is approved, and nothing else ever writes
+them: `EDITABLE_VENUE_FIELDS` deliberately excludes them, so not even the parent
+who submitted a place could fix them. Without a step like this a venue's hours
+are frozen at whatever was entered that day, while the planner trusts them
+completely.
+
+```
+python3 scripts/verify_hours.py            # dry run, prints a report
+python3 scripts/verify_hours.py --write    # flags findings for review
+```
+
+It compares our stored pair against OpenStreetMap and sends disagreements to a
+"Hours to check" section on `/venues/review`, where you correct the hours or keep
+them. It never changes anything itself, because about half of what it finds needs
+judgment: a mall tagged as closing at half four is more likely a mis-tagged
+building than a mall that closes at half four.
+
+OSM rather than a commercial API for two reasons: it is openly licensed, so a
+result can be stored and shown with attribution, which is the restriction that
+took Google Places out of the proposal path; and it is free, which matters for
+something meant to run repeatedly. The trade is coverage, measured at about half
+of Vancouver's museums. A venue OSM knows nothing about is reported as
+**unverifiable**, never as agreeing.
+
+The first real run found, among 17 venues: the Vancouver Aquarium opening at
+10:00 where we held 09:30, so a family would have arrived half an hour early; the
+Maritime Museum closed on Mondays from September; Grouse Mountain with its own
+Christmas Eve hours; and Capilano's seasonal bands. Nine were unverifiable.
+
+**Not this tool's job: same-day closures.** A private event or a burst pipe needs
+a live call, which at three to five stops a plan costs about two orders of
+magnitude more than the whole AI step. Every stop carries a Google Maps link
+instead, and both the plan and trip pages say plainly that hours can change.
+
 ### Two known gaps
 
 - **Boxing Day and Easter Monday** are not statutory in BC and are not treated
