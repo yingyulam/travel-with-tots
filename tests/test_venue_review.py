@@ -187,6 +187,16 @@ class CandidateBatchTest(_ReviewTest):
                          "evidence": "domed garden", **fields}])
         return candidates.load()[-1]
 
+    def _required(self, row, **extra):
+        """The fields approval will not proceed without, keyed for one row."""
+        fields = {f"{row['id']}-name": row["name"],
+                  f"{row['id']}-type": row["type"] or "park",
+                  f"{row['id']}-city": row["city"] or "Vancouver",
+                  f"{row['id']}-open_time": "10:00",
+                  f"{row['id']}-close_time": "17:00"}
+        fields.update({f"{row['id']}-{k}": v for k, v in extra.items()})
+        return fields
+
     def _post(self, action, picked=(), on_page=None, **fields):
         # on_page defaults to every pending id: the route only touches rows the
         # page actually rendered, so a test that omits it would change nothing.
@@ -198,13 +208,7 @@ class CandidateBatchTest(_ReviewTest):
 
     def test_approving_inserts_the_venue_with_its_citation_and_stamp(self):
         row = self._propose()
-        self._post("approve", [row["id"]], **{
-            f"{row['id']}-name": row["name"],
-            f"{row['id']}-city": "Vancouver",
-            f"{row['id']}-open_time": "10:00",
-            f"{row['id']}-close_time": "17:00",
-            f"{row['id']}-has_family_room": "on",
-        })
+        self._post("approve", [row["id"]], **self._required(row, has_family_room="on"))
         venue = self._venue("Bloedel Conservatory")
         self.assertIsNotNone(venue)
         self.assertEqual(venue["source"], "curated")
@@ -218,9 +222,7 @@ class CandidateBatchTest(_ReviewTest):
     def test_an_unticked_candidate_stays_pending(self):
         keep = self._propose("Keep Pending")
         other = self._propose("Approve Me")
-        self._post("approve", [other["id"]], **{
-            f"{other['id']}-city": "Vancouver",
-        })
+        self._post("approve", [other["id"]], **self._required(other))
         by_name = {r["name"]: r["status"] for r in candidates.load()}
         self.assertEqual(by_name["Keep Pending"], candidates.PENDING)
         self.assertEqual(by_name["Approve Me"], candidates.APPROVED)
@@ -255,6 +257,37 @@ class CandidateBatchTest(_ReviewTest):
         row = self._propose()
         self._post("reject", [row["id"]])
         self.assertEqual(candidates.add([{"name": "Bloedel Conservatory"}]), 0)
+
+    def test_approving_without_hours_is_refused(self):
+        # A venue with no hours is treated as open all day by the planner, which
+        # is how a museum gets scheduled at eight in the evening. Deciding
+        # whether a place can be visited at a time is most of what the planner
+        # does, so hours are not optional.
+        row = self._propose()
+        self._post("approve", [row["id"]], **{
+            f"{row['id']}-name": row["name"],
+            f"{row['id']}-type": "garden",
+            f"{row['id']}-city": "Vancouver",
+        })
+        self.assertIsNone(self._venue(row["name"]))
+        self.assertEqual(candidates.load()[0]["status"], candidates.PENDING)
+
+    def test_approving_without_a_type_is_refused(self):
+        # type is not a label: is_nap_friendly reads it, so a blank one silently
+        # changes which venues can hold a nap.
+        row = self._propose()
+        fields = self._required(row)
+        fields[f"{row['id']}-type"] = ""
+        self._post("approve", [row["id"]], **fields)
+        self.assertIsNone(self._venue(row["name"]))
+
+    def test_the_hours_reach_the_venue(self):
+        row = self._propose()
+        self._post("approve", [row["id"]],
+                   **self._required(row, open_time="08:30", close_time="16:45"))
+        venue = self._venue(row["name"])
+        self.assertEqual(venue["open_time"], "08:30")
+        self.assertEqual(venue["close_time"], "16:45")
 
     def test_a_candidate_already_in_the_database_is_flagged(self):
         db.add_venue("Bloedel Conservatory", source="curated", city="Vancouver")

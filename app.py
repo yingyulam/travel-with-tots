@@ -46,7 +46,14 @@ from src.components.place_search import PlaceSearchError, search_places
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
-from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, get_venues
+from src.data_loader import (
+    CITIES,
+    FEATURE_LABELS,
+    NEIGHBOURHOODS,
+    SUPPORTED_CITIES,
+    VENUE_TYPES,
+    get_venues,
+)
 from src.dates import compute_age
 from src.db import (
     PromotionError,
@@ -346,7 +353,10 @@ def venue_review():
         unverified=unverified[:UNVERIFIED_PAGE_SIZE],
         unverified_total=len(unverified),
         flag_labels=FLAG_LABELS,
-        conditional_flags=db.CONDITIONAL_ON_CAN_EAT)
+        conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
+        venue_types=VENUE_TYPES,
+        neighbourhoods=NEIGHBOURHOODS,
+        cities=CITIES)
 
 
 @app.route("/venues/review/<int:venue_id>", methods=["POST"])
@@ -441,6 +451,7 @@ def venue_review_candidates():
     on_page = set(request.form.getlist("on_page"))
     admin_id = _current_parent()["id"]
     saved = approved = rejected = 0
+    refused = []
 
     for row in candidates.load(candidates.PENDING):
         if row["id"] not in on_page:
@@ -455,7 +466,12 @@ def venue_review_candidates():
             candidates.set_status(row["id"], candidates.REJECTED, decided_by=admin_id)
             rejected += 1
         elif action == "approve":
-            _approve_candidate({**row, **edits}, admin_id)
+            merged = {**row, **edits}
+            missing = _cannot_approve(merged)
+            if missing:
+                refused.append(f"{merged.get('name') or 'a venue'} ({missing})")
+                continue
+            _approve_candidate(merged, admin_id)
             approved += 1
 
     parts = []
@@ -465,6 +481,8 @@ def venue_review_candidates():
         parts.append(f"approved {approved}")
     if rejected:
         parts.append(f"rejected {rejected}")
+    for name in refused:
+        parts.append(f"{name} not approved")
     flash(("; ".join(parts) or "Nothing selected") + ".")
     return redirect(url_for("venue_review"))
 
@@ -483,6 +501,22 @@ def _candidate_edits(candidate_id, form):
         elif key in form:
             edits[field] = (form.get(key) or "").strip()
     return edits
+
+
+def _cannot_approve(row):
+    """Why this candidate is not ready, or "" if it is.
+
+    Hours are required. A venue with none is treated as open all day by
+    itinerary.venue_open_for, which is how a museum gets scheduled at eight in
+    the evening, and deciding whether a place can be visited at a given time is
+    most of what the planner does.
+    """
+    for field, label in (("open_time", "opening time"),
+                         ("close_time", "closing time"),
+                         ("type", "type"), ("city", "city")):
+        if not (row.get(field) or "").strip():
+            return f"no {label}"
+    return ""
 
 
 def _approve_candidate(row, admin_id):

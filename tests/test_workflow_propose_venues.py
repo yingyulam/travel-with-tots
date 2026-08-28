@@ -178,6 +178,34 @@ class ProposeVenuesTest(unittest.TestCase):
         result = self._run(_reply({"name": "Beaty  Biodiversity-Museum"}))
         self.assertEqual(result["proposed"], 0)
 
+    def test_the_city_name_alone_is_not_evidence(self):
+        # A live run accepted "Vancouver Public Library" cited to an article
+        # about Vancouver, Washington restaurants: a real venue with a citation
+        # that says nothing about it. The only shared word was the city.
+        results = [{"title": "Best kid-friendly restaurants in Vancouver, Washington",
+                    "url": "https://example.org/wa",
+                    "snippet": "The family-friendly suburb of Vancouver, "
+                               "Washington offers many places for kids to dine."}]
+        with mock.patch.object(propose_venues, "search_web", return_value=results), \
+             mock.patch.object(propose_venues, "call_openrouter",
+                               return_value=(_reply({"name": "Vancouver Public Library",
+                                                     "type": "library"}), {}, 0.4)), \
+             mock.patch.object(propose_venues, "search_places", return_value=[]):
+            result = propose_venues.propose(batch_size=1)
+        self.assertEqual(result["proposed"], 0)
+
+    def test_a_name_whose_distinctive_words_appear_is_still_kept(self):
+        results = [{"title": "Vancouver library story times", "url": "https://example.org/l",
+                    "snippet": "The Vancouver Public Library central branch runs "
+                               "free story times for toddlers."}]
+        with mock.patch.object(propose_venues, "search_web", return_value=results), \
+             mock.patch.object(propose_venues, "call_openrouter",
+                               return_value=(_reply({"name": "Vancouver Public Library",
+                                                     "type": "library"}), {}, 0.4)), \
+             mock.patch.object(propose_venues, "search_places", return_value=[]):
+            result = propose_venues.propose(batch_size=1)
+        self.assertEqual(result["proposed"], 1)
+
     def test_it_is_kept_out_of_the_chat_router(self):
         # A parent never asks for this, and offering it to the intent classifier
         # would let a message trigger a batch of API calls.

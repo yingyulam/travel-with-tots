@@ -43,6 +43,33 @@ VENUE_KEYS = ("id", "name", "type", "neighbourhood",
 BOOL_KEYS = ("has_washroom", "has_family_room", "has_nursing_room",
              "stroller_accessible", "has_highchair", "can_eat")
 
+# The kinds of place this app plans days around. A closed list rather than free
+# text because `type` is not a label: is_nap_friendly reads it, so a typo
+# silently changes which venues can hold a nap.
+VENUE_TYPES = ("park", "garden", "beach", "seawall", "playground",
+               "mall", "market", "museum", "aquarium", "attraction",
+               "community centre", "library", "pool", "farm")
+
+# Vancouver's 22 local areas as the City publishes them, plus the informal areas
+# people actually use for a venue's location and the neighbouring
+# municipalities. A closed list so a reviewer picks rather than types, which is
+# what stops "Central Vancouver" and "Downtown Vancouver" becoming two places.
+NEIGHBOURHOODS = (
+    "Arbutus Ridge", "Downtown", "Dunbar-Southlands", "Fairview",
+    "Grandview-Woodland", "Hastings-Sunrise", "Kensington-Cedar Cottage",
+    "Kerrisdale", "Killarney", "Kitsilano", "Marpole", "Mount Pleasant",
+    "Oakridge", "Renfrew-Collingwood", "Riley Park", "Shaughnessy",
+    "South Cambie", "Strathcona", "Sunset", "Victoria-Fraserview",
+    "West End", "West Point Grey",
+    # Informal, but how a parent and every listing names them.
+    "Chinatown", "False Creek", "Gastown", "Granville Island", "Point Grey",
+    "Stanley Park", "UBC", "Yaletown",
+    # Outside the City, still a day out from it.
+    "Burnaby", "North Vancouver", "Richmond", "West Vancouver")
+
+CITIES = ("Vancouver", "North Vancouver", "West Vancouver", "Burnaby",
+          "Richmond")
+
 # Somewhere a stroller nap works: open space to keep walking, or a mall to walk
 # indoors when it rains. Derived from the kind of place rather than stored,
 # because it is not a judgment anyone should have to make twice, and because

@@ -163,7 +163,11 @@ def _grounded(venue, said) -> dict:
     name = (venue.get("name") or "").strip()
     if not name:
         return {}
-    mine = _words(name) - _FILLER
+    # The city's own name is not evidence. "Vancouver Public Library" shares
+    # "vancouver" with an article about Vancouver, Washington restaurants, and a
+    # live run accepted exactly that: a real venue carrying a citation that says
+    # nothing about it. What has to overlap is the distinctive part of the name.
+    mine = _words(name) - _FILLER - _words(CITY)
     if not mine or not (mine & said):
         return {}
     if NOT_A_VENUE.search(name):
