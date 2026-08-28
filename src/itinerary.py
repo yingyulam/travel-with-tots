@@ -236,7 +236,14 @@ def _reason(venue, kind, theme):
     if venue is None:
         return "No venue matched your chosen features for this slot."
     if kind == "nap":
-        return f"Nap-friendly {venue['type']} -- nap on the go so the day keeps flowing."
+        # Says why the slot is here (the parent told us to expect a nap then)
+        # without claiming how the child sleeps. The old wording asserted "nap
+        # on the go" to every parent, including one who had said their child
+        # needs a proper place, and called whatever it picked "Nap-friendly"
+        # even when the fallback had handed it a swimming pool.
+        fit = ("somewhere a rest fits easily" if venue.get("nap_friendly")
+               else "the best fit open at this hour")
+        return f"Timed around the nap you expect -- a {venue['type']}, {fit}."
     return f"{theme['label']} pick: {venue['type']} in {venue['neighbourhood']}."
 
 
@@ -314,7 +321,33 @@ def _lunch_stop(stops, naps, preferred_lunch_min=None):
     }
 
 
-def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lunch_min=None):
+# A nap stop is never checked against more than this, however long a caller
+# says the nap is. Not a policy about naps -- form_helpers already clamps the
+# form to 15-180 minutes -- but a guard, because generate_plans takes a plain
+# dict: an implausible length would fail every venue's hours check and the nap
+# stop would disappear from the day rather than fail loudly.
+MAX_NAP_STOP_MIN = 180
+
+
+def _nap_minutes(naps):
+    """{nap start time: how long the parent said it runs}, for the ones that
+    gave a usable length. A missing or unusable value is left out, so the slot
+    falls back to STOP_DURATION_MIN rather than to a guess."""
+    found = {}
+    for nap in naps:
+        if not nap.get("start"):
+            continue
+        try:
+            minutes = int(nap.get("duration_min"))
+        except (TypeError, ValueError):
+            continue
+        if minutes > 0:
+            found[_parse(nap["start"])] = min(minutes, MAX_NAP_STOP_MIN)
+    return found
+
+
+def _build_plan(matches, wake, bedtime, naps, count, theme, dining,
+                preferred_lunch_min=None, nap_minutes=None):
     """Build one themed plan: an ordered list of timed stops.
 
     ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
@@ -341,13 +374,21 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
     # No lunch pool: lunch is taken at a stop the day already includes, or it
     # is a block with a handoff. See _lunch_stop.
 
-    # Nap spots are stroller/carrier rests at parks, gardens or a mall stroll.
-    # Theme-matching spots come first, so a rainy-day nap is an indoor mall
-    # stroll rather than an outdoor park (with parks as a graceful fallback so
-    # a nap is never dropped for lack of a themed spot).
-    nap_candidates = [v for v in matches if v.get("nap_friendly")]
-    naps_pool = sorted(nap_candidates,
-                       key=lambda v: 0 if _matches_theme(v) else 1) or activities
+    # The nap window prefers somewhere restful, it does not require it. A nap
+    # is a soft constraint: a child's actual nap does not follow the plan, and
+    # what happens on the day is handled by Replan on the Go ("nap happened
+    # here"), not by finding a perfect venue in advance.
+    #
+    # This was a filter, with a fallback that only rescued a day where nothing
+    # at all was nap-friendly. So a single nap-friendly venue in the pool was
+    # enough to exclude every other option, and if that one venue happened to
+    # be shut at nap time the whole stop silently vanished from the day.
+    #
+    # Nap-friendliness first, theme match second, so a rainy-day nap is still
+    # an indoor mall stroll rather than an outdoor park. Stable sort, so the
+    # curator's seed_rank order survives inside each group.
+    naps_pool = sorted(matches, key=lambda v: (0 if v.get("nap_friendly") else 1,
+                                               0 if _matches_theme(v) else 1))
 
     # Lay out the stop times, then anchor naps: each nap retimes its nearest
     # still-unassigned stop so a nap-friendly venue lands in the nap window.
@@ -359,6 +400,7 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
             break
         nearest = min(free, key=lambda s: abs(s["time"] - nap))
         nearest["time"], nearest["kind"] = nap, "nap"
+        nearest["minutes"] = (nap_minutes or {}).get(nap)
     for slot in slots:
         if slot["kind"] is None:
             slot["kind"] = "activity"  # dining is added separately, not a stop
@@ -369,7 +411,12 @@ def _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lu
     stops = []
     for slot in slots:
         start_min = slot["time"].hour * 60 + slot["time"].minute
-        venue = _pick(pools[slot["kind"]], used, start_min, stop_duration(slot["kind"]))
+        # A nap uses the length the parent actually gave, so a venue that
+        # shuts partway through it is not offered. The flat STOP_DURATION_MIN
+        # meant a thirty-minute nap and a three-hour one were checked
+        # identically, and a museum closing at two could host either.
+        venue = _pick(pools[slot["kind"]], used, start_min,
+                      slot.get("minutes") or stop_duration(slot["kind"]))
         if venue is None:
             continue  # nothing open fits this slot -> skip it
         stops.append({
@@ -410,6 +457,7 @@ def generate_plans(venues, inputs):
     wake = _parse(inputs["wake_up"])
     bedtime = _parse(inputs["bedtime"])
     naps = sorted(_parse(n["start"]) for n in inputs.get("naps", []) if n.get("start"))
+    nap_minutes = _nap_minutes(inputs.get("naps", []))
     total_months = int(inputs["age_years"]) * 12 + int(inputs["age_months"])
     requested_count = int(inputs["stop_count"])
     count = realistic_stop_count(requested_count, total_months)
@@ -419,7 +467,8 @@ def generate_plans(venues, inputs):
     preferred_lunch_min = hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
     theme = combine_themes(resolve_themes(inputs.get("themes")))
-    stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining, preferred_lunch_min)
+    stops = _build_plan(matches, wake, bedtime, naps, count, theme, dining,
+                        preferred_lunch_min, nap_minutes)
     leave = _leave_stop(accommodation, stops)
     if leave:
         stops = [leave] + stops
