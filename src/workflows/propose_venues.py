@@ -227,8 +227,7 @@ def _grounded(venue, said) -> dict:
     # the venue itself may still be a good find.
     for field, allowed in (("type", VENUE_TYPES),
                            ("neighbourhood", NEIGHBOURHOODS)):
-        if kept[field] and kept[field] not in allowed:
-            kept[field] = ""
+        kept[field] = in_enum(kept[field], allowed)
     # A name identical to its own type says nothing: "Museum", type museum.
     if kept["type"] and candidates.normalize_name(name) == candidates.normalize_name(kept["type"]):
         return {}
@@ -336,6 +335,20 @@ def _hours_from_osm(names) -> dict:
     return out
 
 
+def in_enum(value, allowed) -> str:
+    """`value` if the app knows it, "" otherwise.
+
+    One helper rather than a check at each source, because the enum has to hold
+    wherever a value enters and it very nearly did not: the schema constrains
+    what the model may say, but _locate writes a neighbourhood and a city from
+    the place lookup *after* grounding, and a geocoder does not know our list.
+    "Central Vancouver" reached the review queue that way, past a fix aimed
+    only at the model.
+    """
+    value = (value or "").strip()
+    return value if value in allowed else ""
+
+
 def _in_metro_vancouver(lat, lng) -> bool:
     """Whether a located coordinate is actually in Metro Vancouver."""
     south, north, west, east = METRO_VANCOUVER_BOUNDS
@@ -361,8 +374,14 @@ def _locate(name) -> dict:
     if lat is not None and lng is not None and not _in_metro_vancouver(lat, lng):
         print(f"Rejecting {name}: resolved to {lat},{lng}, outside Metro Vancouver")
         return {"out_of_area": True}
+    # The lookup's own area names are its own, not ours: it says "Central
+    # Vancouver" and "Downtown Vancouver" where our list says neither. Held to
+    # the same enum as the model's answer, so an unrecognised area arrives
+    # blank for the reviewer to pick rather than pre-filled with a value
+    # nothing in the app can use.
     return {"address": place["address"], "lat": lat, "lng": lng,
-            "city": place["city"] or CITY, "neighbourhood": place["neighbourhood"]}
+            "city": in_enum(place["city"], CITIES) or CITY,
+            "neighbourhood": in_enum(place["neighbourhood"], NEIGHBOURHOODS)}
 
 
 def _queries(batch_size) -> list:

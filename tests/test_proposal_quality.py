@@ -66,6 +66,44 @@ class GeneratedValuesTest(unittest.TestCase):
         self.assertEqual(kept["type"], "garden")
 
 
+class LocatedValuesTest(unittest.TestCase):
+    """The enum has to hold wherever a value enters, not only at the model.
+
+    _locate runs after _grounded and writes a neighbourhood and a city from the
+    place lookup. A geocoder does not know our list, so the first fix -- aimed
+    at the model -- left this open, and "Central Vancouver" reached the review
+    queue through it.
+    """
+
+    def _located(self, place):
+        with mock.patch.object(pv, "search_places", return_value=[place]):
+            return pv._locate("Somewhere")
+
+    PLACE = {"address": "1 Main St", "lat": 49.27, "lng": -123.12,
+             "city": "Vancouver", "neighbourhood": "Yaletown"}
+
+    def test_an_area_the_lookup_invents_arrives_blank(self):
+        found = self._located({**self.PLACE, "neighbourhood": "Central Vancouver"})
+        self.assertEqual(found["neighbourhood"], "")
+
+    def test_a_real_area_survives(self):
+        self.assertEqual(self._located(self.PLACE)["neighbourhood"], "Yaletown")
+
+    def test_a_city_we_do_not_plan_falls_back_rather_than_being_written(self):
+        found = self._located({**self.PLACE, "city": "Vancouver, BC"})
+        self.assertEqual(found["city"], pv.CITY)
+
+    def test_the_coordinates_are_still_kept(self):
+        # Only the names are held to the enum. A coordinate is not a label.
+        found = self._located({**self.PLACE, "neighbourhood": "Nowhere"})
+        self.assertEqual((found["lat"], found["lng"]), (49.27, -123.12))
+
+    def test_the_guard_is_shared_with_the_models_answer(self):
+        self.assertEqual(pv.in_enum("Yaletown", NEIGHBOURHOODS), "Yaletown")
+        self.assertEqual(pv.in_enum("Central Vancouver", NEIGHBOURHOODS), "")
+        self.assertEqual(pv.in_enum(None, NEIGHBOURHOODS), "")
+
+
 class SourceTrustTest(unittest.TestCase):
     def test_a_domain_is_read_off_any_shape_of_url(self):
         self.assertEqual(pv.domain("https://www.roundhouse.ca/x?y=1"),
