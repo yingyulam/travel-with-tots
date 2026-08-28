@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
@@ -465,6 +466,18 @@ class ResubmittingAPlaceTest(_VenueDbTest):
     def test_an_unknown_field_fails_loudly(self):
         with self.assertRaises(ValueError):
             db.add_or_update_submission("X", parent_id=self.parent_id, sneaky=1)
+
+    def test_the_database_refuses_a_duplicate_even_without_the_guard(self):
+        # The code guard loses a race between two simultaneous submits. This is
+        # the backstop, and it is why the two stray Science World rows had to be
+        # removed before the index could exist.
+        self._store()
+        with self.assertRaises(sqlite3.IntegrityError):
+            with closing(db.connect()) as conn, conn:
+                conn.execute(
+                    "INSERT INTO venues (name, source, parent_id) "
+                    "VALUES ('Science World', 'user_submitted', ?)",
+                    (self.parent_id,))
 
     def test_source_cannot_be_smuggled_in(self):
         # The verification gate is not a caller's to set.

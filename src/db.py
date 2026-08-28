@@ -114,6 +114,13 @@ INDEXES = """-- Two curated copies of one place is the duplicate _seed_venues ma
 CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_curated_identity
     ON venues(name, city) WHERE source = 'curated';
 
+-- One submission per place per parent. add_or_update_submission already
+-- replaces a parent's earlier submission rather than adding a second row; this
+-- is what closes the gap it cannot, two simultaneous submits both finding
+-- nothing and both inserting.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_submission_identity
+    ON venues(parent_id, name) WHERE source = 'user_submitted';
+
 -- What lets a re-run import update its rows instead of duplicating them.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_external_id
     ON venues(external_id) WHERE external_id IS NOT NULL;
