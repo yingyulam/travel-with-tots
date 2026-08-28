@@ -138,8 +138,19 @@ class CandidateStoreTest(unittest.TestCase):
         # If these drift, the review form offers flags the planner ignores, or
         # misses ones it needs.
         from src.db import CANDIDATE_FEATURE_COLUMNS
-        self.assertEqual(set(candidates.REVIEWED_COLUMNS) - {"open_time", "close_time"},
+        hours = {"open_time", "close_time", *candidates.HOUR_SLOT_COLUMNS}
+        self.assertEqual(set(candidates.REVIEWED_COLUMNS) - hours,
                          set(CANDIDATE_FEATURE_COLUMNS))
+
+    def test_there_is_a_column_for_every_season_and_day_type(self):
+        from src.dates import DAY_TYPES, SEASONS
+        self.assertEqual(len(candidates.HOUR_SLOT_COLUMNS),
+                         len(SEASONS) * len(DAY_TYPES) * 2)
+        for season in SEASONS:
+            for day_type in DAY_TYPES:
+                for bound in ("open", "close"):
+                    self.assertIn(f"{bound}_{season}_{day_type}",
+                                  candidates.HOUR_SLOT_COLUMNS)
 
 
 if __name__ == "__main__":

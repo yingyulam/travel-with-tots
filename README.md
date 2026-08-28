@@ -860,10 +860,33 @@ parent's own words and every report about the venue with it. Both appear under
 | `min_age_months`, `max_age_months` | 0 and 60 on every row ever written; the age clause never excluded a venue. Age paces the day instead |
 | `children.gender` | Collected, stored, and read back only by the form that collected it |
 
+### Hours, and the day being planned
+
+The plan form carries a **date**, because which hours apply depends on it. A
+venue has a default open/close pair, required before it can be approved, and
+optionally hours for any of four slots: summer or winter, weekday or weekend.
+
+`data_loader.get_venues(on_date=...)` resolves the pair for that day, so
+`itinerary.venue_open_for` and every other caller stay date-unaware and read the
+same two keys they always did. A venue with the same hours all year needs no
+slot rows at all, which is most of them.
+
+```
+2026-07-15  summer weekday   slot set   -> 09:00-18:00
+2026-07-11  summer weekend   slot set   -> 08:00-20:00
+2026-01-14  winter weekday   no slot    -> the default pair
+```
+
+Hours are required to approve a venue. A blank pair is treated as open all day
+by `venue_open_for`, which is how a museum ends up scheduled at eight in the
+evening, and deciding whether a place can be visited at a time is most of what
+the planner does.
+
 ### Two known gaps
 
-- **Hours are one open/close pair.** A museum closed on Mondays, scheduled on a
-  Monday, is a confidently wrong plan.
+- **Public holidays.** A venue on a holiday Monday may keep its Sunday hours,
+  and nothing here knows the calendar, so a plan built on weekday hours for a
+  closed Monday is a confidently wrong plan.
 - **Nothing records whether a place costs money.** A free park and a $30
   aquarium plan very differently, and it is part of why a paid attraction makes
   a poor nap stop.

@@ -17,6 +17,8 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
+from .dates import DAY_TYPES, SEASONS
+
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = _DATA_DIR / "app.db"
 VENUES_SEED = _DATA_DIR / "venues.json"
@@ -96,6 +98,20 @@ CREATE TABLE IF NOT EXISTS venues (
     seed_rank           INTEGER                 -- position in venues.json: see _seed_venues
 );
 
+-- Hours that differ from the venue's default pair, by season and day type.
+-- A venue with the same hours all year needs no row here: venues.open_time and
+-- venues.close_time are the fallback, and these are refinements on top. That
+-- way "we only know the summer weekend hours" is expressible, and so is
+-- "always 9 to 5".
+CREATE TABLE IF NOT EXISTS venue_hours (
+    id         INTEGER PRIMARY KEY,
+    venue_id   INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+    season     TEXT NOT NULL,      -- one of dates.SEASONS
+    day_type   TEXT NOT NULL,      -- one of dates.DAY_TYPES
+    open_time  TEXT NOT NULL,
+    close_time TEXT NOT NULL
+);
+
 -- What somebody actually observed at a venue, and when. The venues table has
 -- columns for these too, but they are no longer what anything reads: a claim
 -- needs an author and a date, and "nobody has said" has to differ from
@@ -138,6 +154,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_external_id
 CREATE INDEX IF NOT EXISTS idx_venues_source_city ON venues(source, city);
 
 CREATE INDEX IF NOT EXISTS idx_venue_reports_venue ON venue_reports(venue_id, field);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_slot
+    ON venue_hours(venue_id, season, day_type);
 """
 
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
@@ -809,6 +828,49 @@ def mark_verified(venue_id, admin_id):
         "UPDATE venues SET verified_at = datetime('now'), verified_by = ? "
         f"WHERE id = ? AND {source_clause}",
         [admin_id, venue_id, *source_params])
+
+
+def set_venue_hours(venue_id, season, day_type, open_time, close_time):
+    """Record hours for one season and day type, replacing any already there.
+
+    Refinements on the venue's default pair, not a replacement for it: a venue
+    with the same hours all year needs none of these.
+    """
+    if season not in SEASONS or day_type not in DAY_TYPES:
+        raise ValueError(f"unknown slot: {season}/{day_type}")
+    _write("INSERT INTO venue_hours (venue_id, season, day_type, open_time, "
+           "close_time) VALUES (?, ?, ?, ?, ?) "
+           "ON CONFLICT(venue_id, season, day_type) DO UPDATE SET "
+           "open_time = excluded.open_time, close_time = excluded.close_time",
+           (venue_id, season, day_type, open_time, close_time))
+
+
+def clear_venue_hours(venue_id, season, day_type):
+    """Drop one slot, so a venue can go back to its default pair."""
+    _write("DELETE FROM venue_hours WHERE venue_id = ? AND season = ? "
+           "AND day_type = ?", (venue_id, season, day_type))
+
+
+def venue_hours_by_slot(venue_ids=None):
+    """{venue_id: {(season, day_type): (open_time, close_time)}}.
+
+    One query for the whole set, like reported_flags: a venue's hours are looked
+    up once per plan, not once per venue.
+    """
+    sql = "SELECT venue_id, season, day_type, open_time, close_time FROM venue_hours"
+    params = []
+    if venue_ids is not None:
+        ids = list(venue_ids)
+        if not ids:
+            return {}
+        sql += f" WHERE venue_id IN ({', '.join('?' for _ in ids)})"
+        params = ids
+    hours = {}
+    with closing(connect()) as conn:
+        for row in conn.execute(sql, params):
+            hours.setdefault(row["venue_id"], {})[(row["season"], row["day_type"])] = (
+                row["open_time"], row["close_time"])
+    return hours
 
 
 def add_report(venue_id, field, value, reported_by=None, note=None):

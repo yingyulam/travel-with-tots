@@ -289,6 +289,36 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["open_time"], "08:30")
         self.assertEqual(venue["close_time"], "16:45")
 
+    def test_seasonal_hours_reach_the_venue(self):
+        row = self._propose()
+        fields = self._required(row)
+        fields.update({
+            f"{row['id']}-open_winter_weekday": "10:00",
+            f"{row['id']}-close_winter_weekday": "16:00",
+            f"{row['id']}-open_summer_weekend": "09:00",
+            f"{row['id']}-close_summer_weekend": "20:00",
+        })
+        self._post("approve", [row["id"]], **fields)
+        venue_id = self._venue(row["name"])["id"]
+        slots = db.venue_hours_by_slot([venue_id])[venue_id]
+        self.assertEqual(slots[("winter", "weekday")], ("10:00", "16:00"))
+        self.assertEqual(slots[("summer", "weekend")], ("09:00", "20:00"))
+        self.assertNotIn(("summer", "weekday"), slots)
+
+    def test_a_half_filled_hour_slot_is_skipped_not_guessed(self):
+        row = self._propose()
+        fields = self._required(row)
+        fields[f"{row['id']}-open_winter_weekday"] = "10:00"   # no closing time
+        self._post("approve", [row["id"]], **fields)
+        venue_id = self._venue(row["name"])["id"]
+        self.assertEqual(db.venue_hours_by_slot([venue_id]), {})
+
+    def test_no_seasonal_hours_means_the_default_pair_applies(self):
+        row = self._propose()
+        self._post("approve", [row["id"]], **self._required(row))
+        venue_id = self._venue(row["name"])["id"]
+        self.assertEqual(db.venue_hours_by_slot([venue_id]), {})
+
     def test_a_candidate_already_in_the_database_is_flagged(self):
         db.add_venue("Bloedel Conservatory", source="curated", city="Vancouver")
         self._propose()

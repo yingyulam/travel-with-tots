@@ -1,7 +1,9 @@
 """Trip-planning form parsing and validation -- pure functions operating on
 the raw form dict app.py's routes already parse, no Flask dependency."""
 
-from .dates import compute_age
+from datetime import date
+
+from .dates import parse_date, compute_age
 from .db import get_children
 
 # Age is capped at this many years, 0 months.
@@ -45,6 +47,9 @@ DEFAULTS = {
     "age_years": "2",
     "age_months": "0",
     "destination": "Vancouver",
+    # The day being planned. Decides which of a venue's hours apply,
+    # so it is a planning input rather than a label on a saved trip.
+    "trip_date": "",
     "accommodation": "",
     "transit": ["stroller"],
     "stop_count": "3",
@@ -85,6 +90,15 @@ def _total_months(date_of_birth):
     return years * 12 + months
 
 
+def default_form():
+    """A blank planning form. Separate from DEFAULTS because the trip date has
+    to be today at request time, not at import time: a long-running server would
+    otherwise keep offering the day it booted."""
+    values = dict(DEFAULTS)
+    values["trip_date"] = date.today().isoformat()
+    return values
+
+
 def read_form(form):
     """Normalise the raw request form into the shape the logic expects."""
     age_years, age_months = _read_age(form)
@@ -106,6 +120,7 @@ def read_form(form):
         "age_years": age_years,
         "age_months": age_months,
         "destination": form.get("destination") or DEFAULTS["destination"],
+        "trip_date": parse_date(form.get("trip_date")).isoformat(),
         "accommodation": form.get("accommodation", "").strip(),
         "transit": form.getlist("transit"),
         "stop_count": str(clamp_int(form.get("stop_count"), STOP_COUNT_FORM_MIN,

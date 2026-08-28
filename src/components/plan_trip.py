@@ -11,10 +11,11 @@ import requests
 
 from ..agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
 from ..data_loader import get_venues
+from ..dates import parse_date
 from ..itinerary import generate_plans
 
 
-def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
+def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedtime="20:00",
                stop_count=3, dining="dine_out", features=None, naps=None,
                preferred_lunch_time="", nap_notes="", extra_notes="",
                transit=None, accommodation="", strict_schedule=False,
@@ -40,7 +41,9 @@ def plan_trip(*, destination, age_months, wake_up="07:00", bedtime="20:00",
         "accommodation": accommodation, "preferred_lunch_time": preferred_lunch_time,
         "transit_nap": transit_nap,
     }
-    plan = generate_plans(get_venues(), inputs)[0]
+    # The day being planned decides which of each venue's hours apply, so it is
+    # resolved once here rather than threaded through the planner.
+    plan = generate_plans(get_venues(on_date=parse_date(trip_date)), inputs)[0]
     adjusted = True
     try:
         adjustment = PlanningAgent(model).adjust_plan(

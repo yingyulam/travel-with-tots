@@ -58,6 +58,7 @@ class Trip:
     original: Plan
     current_time: str = ""
     features: list = field(default_factory=list)
+    trip_date: str = ""
     bedtime: str = ""
     age_months: int = 0
     dining: str = ""
@@ -80,6 +81,7 @@ class Trip:
             "transit": self.transit,
             "current_time": self.current_time,
             "features": self.features,
+            "trip_date": self.trip_date,
             "bedtime": self.bedtime,
             "age_months": self.age_months,
             "dining": self.dining,

@@ -6,9 +6,11 @@ database rows into the plain dicts the rest of the app expects, so nothing
 above it knows which database is underneath.
 """
 
+from datetime import date
 from urllib.parse import quote_plus
 
 from . import db
+from .dates import day_type_for, season_for
 
 # Feature keys we know about, with display labels, in presentation order.
 FEATURE_LABELS = {
@@ -101,7 +103,7 @@ def maps_url(name, city=SUPPORTED_CITIES[0]):
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 
 
-def _as_venue(row, reported=None):
+def _as_venue(row, reported=None, hours=None, slot=None):
     """One database row as the venue dict the planners expect.
 
     `open`/`close` rather than the columns' own open_time/close_time: the
@@ -116,13 +118,19 @@ def _as_venue(row, reported=None):
     # nothing reads them for this: a claim needs an author and a date.
     venue.update(reported or {})
     venue["nap_friendly"] = is_nap_friendly(venue)
-    venue["open"] = row["open_time"]
-    venue["close"] = row["close_time"]
+    # Hours for the day being planned. A venue whose hours vary by season or by
+    # weekday has a row for that slot; everything else uses its default pair.
+    # Resolved here so venue_open_for and every caller stay date-unaware.
+    opens, closes = row["open_time"], row["close_time"]
+    if hours and slot in hours:
+        opens, closes = hours[slot]
+    venue["open"] = opens
+    venue["close"] = closes
     venue["maps_url"] = maps_url(row["name"])
     return venue
 
 
-def get_venues(city=""):
+def get_venues(city="", on_date=None):
     """Every verified venue in `city`, as plain dicts with a maps_url attached.
 
     Read per call rather than cached, so a venue added to the table shows up in
@@ -133,6 +141,11 @@ def get_venues(city=""):
     planner picks the first venue that fits a slot, so the order of
     data/venues.json is a ranking of what to offer first.
 
+    `on_date` is the day being planned, defaulting to today. A venue's `open`
+    and `close` are resolved for that date, so a museum that shuts at four in
+    the winter is not offered a five o'clock slot in January. Every caller stays
+    date-unaware: itinerary.venue_open_for reads the same two keys it always did.
+
     Amenities come from venue_reports, so a field nobody has reported on is
     absent rather than False. That is the difference between "nobody has said"
     and "somebody looked and there was none", and it is why the planner no
@@ -141,6 +154,11 @@ def get_venues(city=""):
     rows = db.get_venues_in_city(city)
     rows.sort(key=lambda row: UNRANKED if row["seed_rank"] is None
               else row["seed_rank"])
-    # One query for the whole set, not one per venue.
-    reported = db.reported_flags(row["id"] for row in rows)
-    return [_as_venue(row, reported.get(row["id"])) for row in rows]
+    ids = [row["id"] for row in rows]
+    # One query each for the whole set, not one per venue.
+    reported = db.reported_flags(ids)
+    hours = db.venue_hours_by_slot(ids)
+    on_date = on_date or date.today()
+    slot = (season_for(on_date), day_type_for(on_date))
+    return [_as_venue(row, reported.get(row["id"]), hours.get(row["id"]), slot)
+            for row in rows]

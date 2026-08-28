@@ -54,7 +54,7 @@ from src.data_loader import (
     VENUE_TYPES,
     get_venues,
 )
-from src.dates import compute_age
+from src.dates import DAY_TYPES, SEASONS, compute_age, parse_date
 from src.db import (
     PromotionError,
     TRIP_FIELDS,
@@ -84,6 +84,7 @@ from src.db import (
 )
 from src.form_helpers import (
     DEFAULTS,
+    default_form,
     DINING_OPTIONS,
     MAX_AGE_YEARS,
     MAX_MONTHS,
@@ -354,6 +355,8 @@ def venue_review():
         unverified_total=len(unverified),
         flag_labels=FLAG_LABELS,
         conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
+        seasons=SEASONS,
+        day_types=DAY_TYPES,
         venue_types=VENUE_TYPES,
         neighbourhoods=NEIGHBOURHOODS,
         cities=CITIES)
@@ -525,7 +528,7 @@ def _approve_candidate(row, admin_id):
     The only path that turns a proposal into a venue, and it runs because a
     person clicked. The agent writes candidates and nothing else.
     """
-    add_venue(
+    venue_id = add_venue(
         row["name"],
         source="curated",
         venue_type=row.get("type") or None,
@@ -541,7 +544,23 @@ def _approve_candidate(row, admin_id):
         verified_by=admin_id,
         **{flag: row.get(flag) in ("1", 1, True)
            for flag in db.CANDIDATE_FEATURE_COLUMNS})
+    _save_hour_slots(venue_id, row)
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
+
+
+def _save_hour_slots(venue_id, row):
+    """Store whichever season/day-type hours the reviewer filled in.
+
+    A slot needs both ends to mean anything, so a half-filled pair is skipped
+    rather than guessed at. An empty slot is not an omission: it means the
+    venue's default pair applies, which is the common case.
+    """
+    for season in SEASONS:
+        for day_type in DAY_TYPES:
+            opens = (row.get(f"open_{season}_{day_type}") or "").strip()
+            closes = (row.get(f"close_{season}_{day_type}") or "").strip()
+            if opens and closes:
+                db.set_venue_hours(venue_id, season, day_type, opens, closes)
 
 
 def _as_float(value):
@@ -1247,7 +1266,7 @@ def save_trip():
     fields["naps"] = json.dumps(trip_form.get("naps", []))
     fields["plan_label"] = plan_data.get("label")
     fields["plan_json"] = json.dumps(plan_data)
-    fields["trip_date"] = date.today().isoformat()
+    fields["trip_date"] = trip_form.get("trip_date") or date.today().isoformat()
     for child_id in child_ids:
         add_trip(parent["id"], int(child_id), **fields)
     return redirect(url_for("dashboard"))
@@ -1273,7 +1292,7 @@ def plan():
     if request.method == "POST":
         form = read_form(request.form)
     else:
-        form = dict(DEFAULTS)
+        form = default_form()
 
     resolve_plan_child(form, _current_parent())
 
@@ -1292,6 +1311,7 @@ def plan():
         age_months = int(form["age_years"]) * 12 + int(form["age_months"])
         result = plan_trip(
             destination=form["destination"], age_months=age_months,
+            trip_date=form["trip_date"],
             wake_up=form["wake_up"], bedtime=form["bedtime"],
             stop_count=int(form["stop_count"]), dining=form["dining"],
             naps=form["naps"], preferred_lunch_time=form["preferred_lunch_time"],
@@ -1353,12 +1373,13 @@ def plan():
 
 
 def _build_trip(destination, transit, bedtime, age_months, dining, plan_data,
-                 nap_notes="", extra_notes=""):
+                 trip_date="", nap_notes="", extra_notes=""):
     """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
     and reopening a saved itinerary from the dashboard."""
     return Trip(
         destination=destination or "Vancouver",
         transit=transit,
+        trip_date=trip_date,
         bedtime=bedtime,
         age_months=age_months,
         dining=dining,
@@ -1435,6 +1456,7 @@ def view_trip(trip_id):
     trip = _build_trip(
         destination=row["destination"],
         transit=json.loads(row["transit"] or "[]"),
+        trip_date=row["trip_date"] or "",
         bedtime=row["bedtime"] or "",
         age_months=age_months,
         dining=row["dining"] or "",
@@ -1491,7 +1513,8 @@ def replan_route():
     if not plan or not current_time:
         return jsonify({"error": "plan and current_time are required"}), 400
     return jsonify(replan(plan, data.get("situation", ""), current_time,
-                          get_venues(), data.get("features") or [],
+                          get_venues(on_date=parse_date(data.get("trip_date"))),
+                          data.get("features") or [],
                           bedtime=data.get("bedtime"), minutes=data.get("minutes"),
                           theme=data.get("theme")))
 

@@ -26,6 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .dates import DAY_TYPES, SEASONS
 from .db import CANDIDATE_FEATURE_COLUMNS
 
 CANDIDATES_PATH = Path(__file__).resolve().parent.parent / "data" / "venue_candidates.csv"
@@ -46,7 +47,16 @@ PROPOSED_COLUMNS = ("name", "type", "neighbourhood", "city",
 # and an amenity nobody checked is a claim rather than a fact, so the agent
 # leaves every one of these blank. Built from CANDIDATE_FEATURE_COLUMNS rather
 # than typed out, so the review form and the planner's filters cannot drift.
-REVIEWED_COLUMNS = ("open_time", "close_time") + tuple(sorted(CANDIDATE_FEATURE_COLUMNS))
+# Hours by season and day type, written only when a venue's hours actually
+# vary. The default pair above covers a venue that is the same all year, which
+# is most of them, so these stay blank unless a reviewer fills them in.
+HOUR_SLOT_COLUMNS = tuple(
+    f"{bound}_{season}_{day_type}"
+    for season in SEASONS for day_type in DAY_TYPES
+    for bound in ("open", "close"))
+
+REVIEWED_COLUMNS = (("open_time", "close_time") + HOUR_SLOT_COLUMNS
+                    + tuple(sorted(CANDIDATE_FEATURE_COLUMNS)))
 
 COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
            + ("proposed_at", "decided_at", "decided_by"))
