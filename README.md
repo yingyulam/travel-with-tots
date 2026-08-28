@@ -961,6 +961,83 @@ stay out of the confirm backlog all the same, which is scoped to `curated` rows,
 so that list remains the ~28 things only a person can vouch for rather than 245
 parks.
 
+### What a parent asks for, and what a venue is
+
+Three concepts, one dimension each. This replaced a single `theme` control that
+was doing all three jobs at once.
+
+| | | |
+|---|---|---|
+| **`type`** | venue fact | what the place *is*: park, garden, beach, museum, market. Descriptive only |
+| **`setting`** | venue fact | where a **visit is spent**: `indoor`, `outdoor`, `both`. Shelter, nothing else |
+| **`interest`** | parent preference | which kinds of place they want. Optional, multi-select, sorts only |
+| weather | context | attached to a *time*, not to a day |
+
+**Why themes had to go.** "Rainy-day" was a weather condition, "Outdoorsy" a
+physical setting, "Culture" an activity interest -- three dimensions in one
+control. So a day could not be both outdoor and cultural, and a garden, which
+is both, matched none of the three themes at all. Two faults came with it:
+selecting no theme applied "Mixed", which was the union of the three type sets
+and therefore deprioritised 10 of the 14 types, so *no preference was a
+preference*; and asking for Rainy-day and Outdoorsy together produced a
+preference for indoor and outdoor equally, which says nothing.
+
+**`interest` is the type list itself, not a grouping over it.** Groups like
+"Museums & galleries" were measured and added nothing: a grouped selection gave
+results identical to the equivalent types, because an interest only ever
+*sorts*. Asking for `museum` still reaches the aquarium at position 6 of 266.
+A grouping layer would only have been a second vocabulary to keep in sync with
+`VENUE_TYPES`, which is exactly how the themes rotted. The options are read
+from the venues that exist, so the form never offers a kind of place there is
+nothing behind, and an empty selection sorts nothing at all.
+
+The day that was previously inexpressible:
+
+```
+interest = garden
+   9:00 AM  Stanley Park Seawall        seawall  outdoor
+  11:30 AM  VanDusen Botanical Garden   garden   outdoor   <- what you asked for
+   1:00 PM  Bloedel Conservatory        garden   indoor
+```
+
+**`setting` exists because `type` cannot carry it.** `attraction` is a
+legitimate residual -- somewhere that fits none of the other types -- and its
+eight venues split four indoor, four outdoor. Avoiding the field would mean
+types like `mountain` and `observation tower`, which is worse.
+
+`both` means either mode is a real visit on its own, **not** that some part of
+the venue has a roof. Capilano has a gift shop and a cafe and is plainly
+outdoor: nobody goes there in the rain to stand in the shop. Two of 28 curated
+venues are `both`, and none of the 249 imported ones.
+
+Two tiers, never three. `SHELTERED` and `OPEN_AIR` both contain `both`, because
+ranking it below an exact match measurably drops Grouse Mountain below all 222
+imported parks, throwing away the curator's ranking for a weaker heuristic. It
+also confines the field's ambiguity to where it cannot matter: `indoor` and
+`both` share a tier, so if you cannot decide which the Aquarium is, it makes no
+difference -- while the indoor-versus-outdoor call that *does* change a plan is
+never the ambiguous one.
+
+**Weather is context, not a day-level preference.** A parent wants to mix indoor
+and outdoor stops, and no preference already gives that, because the curated
+ranking alternates. So there is no "keep us indoors" setting. Instead:
+
+```
+"It's raining"   reads setting for the stops still ahead      available now
+a forecast       would mark individual slots wet              not built
+```
+
+That replan path used to look for a Rainy-day *theme* whose type set was
+`{museum, mall, cafe}`. It could reach **8 of 39 indoor venues** -- it could not
+offer the Aquarium, Bloedel Conservatory, the Lookout, or any of the 27 imported
+community centres, and one of its three targets was a type that no longer
+exists.
+
+Weather only ever pushes *towards* shelter: rain makes indoors better, dry
+weather does not make outdoors obligatory. So `suits_weather` treats "dry" and
+"no forecast" as the same path, which is what lets a forecast be added later
+without changing how a day with no forecast is planned.
+
 ### No restaurants
 
 The venue table holds attractions. Restaurants are the data hardest to maintain
