@@ -343,12 +343,15 @@ def dashboard():
 def venue_review():
     """Everything no person has checked yet, in one place.
 
-    Three sections because they need three different actions, not because they
-    are three different kinds of thing: agent proposals need correcting before
-    they are usable, parent submissions need publishing, and the seeded demo
-    venues are already being planned around and only need confirming. What they
-    share is the criterion, verified_at IS NULL, which is what the trust gate
-    will eventually be.
+    Three sections because they need three different actions: agent proposals
+    need correcting before they are usable, parent submissions need publishing,
+    and the seeded curated venues are already being planned around and only need
+    confirming.
+
+    What they share is that a person is the only thing that can finish them.
+    Municipal imports are absent for exactly that reason: the City is
+    authoritative about its own parks, so those rows are trusted by provenance
+    and never queue here. See db.VERIFIED_SOURCES for the two routes to trust.
     """
     unverified = get_unverified_venues()
     missing_hours = get_venues_missing_hours()

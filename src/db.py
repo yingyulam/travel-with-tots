@@ -192,10 +192,25 @@ CONDITIONAL_ON_CAN_EAT = ("has_highchair",)
 SEED_FIELDS = ("type", "setting", "neighbourhood", "can_eat",
                "open_time", "close_time", "seed_rank")
 
-# Venue sources trustworthy enough to plan a family's day around: everything
-# that reached the table through review, whether hand-curated or ingested from
-# a municipal open-data set. Excludes 'user_submitted', which is whatever a
-# parent typed in and hasn't been verified yet.
+# Venue sources trustworthy enough to plan a family's day around. Excludes
+# 'user_submitted', which is whatever a parent typed in and nobody has checked.
+#
+# Trust has **two routes, not one**: provenance or inspection. The City is
+# authoritative about its own parks, so a municipal row is trusted because of
+# where it came from and is never put in front of a reviewer. Everything else
+# earns it by being looked at, which is what `verified_at` records. So the gate
+# this is heading for is
+#
+#     source = 'municipal_open_data' OR verified_at IS NOT NULL
+#
+# and *not* `verified_at IS NOT NULL` alone, which would demand a person
+# confirm 238 parks the City already publishes. That is review as theatre, and
+# a backlog nobody clears makes the queue useless for the rows that need it.
+#
+# "Trusted" is scoped to what the City actually publishes: name, location,
+# existence. Not hours -- importers.PARK_HOURS is our judgment, because the
+# City publishes none -- and not whether a place suits a toddler, which is why
+# three municipal golf courses are plannable today.
 VERIFIED_SOURCES = ("curated", "municipal_open_data")
 
 # Keeps the AI planner's prompt cheap: enough venues for a real choice,
@@ -949,22 +964,20 @@ def get_unverified_venues(limit=None):
     """Venues in the searchable set that no human has confirmed: verified_at
     IS NULL.
 
-    One criterion rather than a list of sources, because that is what the trust
-    gate is eventually going to be. Today `source` decides what the planner may
-    use, which means the 28 seeded venues are trusted purely because of how they
-    were typed in: they are labelled 'curated' but nobody ever checked them.
-    Stamping verified_at as they are confirmed is what makes flipping the gate
-    to `verified_at IS NOT NULL` a one-line change later instead of a redesign.
+    Scoped to 'curated' on purpose, and that is the whole verification model in
+    one line: **only hand-curated rows owe a person a look.** They are trusted
+    today purely because of how they were typed in, which is the one tier where
+    provenance proves nothing. Stamping verified_at as they are confirmed is
+    what lets the planner's gate become "municipal, or checked" (see
+    VERIFIED_SOURCES) rather than a redesign.
+
+    Municipal rows also carry verified_at IS NULL, and are deliberately left
+    that way: the City is authoritative about its own parks, so there are 238 of
+    them and confirming "the City lists this park" is review as theatre.
 
     Excludes user_submitted rows: those are a different queue with different
     guards (see get_pending_submissions), and showing them twice would invite
     confirming one without the clash and missing-city checks.
-
-    Scoped to 'curated' rather than to VERIFIED_SOURCES, which is what keeps
-    this a short list of things a person can usefully confirm. Imported rows
-    also carry verified_at IS NULL, correctly -- nobody checked them -- but
-    there are 245 of them and confirming "the City lists this park" is review
-    as theatre. Their trust comes from `source`, which is the three-tier rule.
     """
     sql = ("SELECT * FROM venues WHERE source = 'curated' "
            "AND verified_at IS NULL "

@@ -1012,10 +1012,20 @@ wastes one of an 18-venue budget, and 27 of them would crowd out most of it.
 They appear under **Needs hours** on `/venues/review` instead, where reading the
 centre's page and typing two times is what finishes the row.
 
-Imported rows carry `verified_at IS NULL`, correctly: nobody checked them. They
-stay out of the confirm backlog all the same, which is scoped to `curated` rows,
-so that list remains the ~28 things only a person can vouch for rather than 245
-parks.
+Imported rows carry `verified_at IS NULL` and are meant to keep it. **Trust has
+two routes, not one:** provenance or inspection. The City is authoritative about
+its own parks, so a municipal row is trusted for where it came from and is never
+put in front of a reviewer; `curated` rows are the one tier where provenance
+proves nothing, so they are the only ones in the confirm backlog. That keeps the
+list the 28 things a person can actually vouch for rather than 238 parks, and it
+means the gate this is heading for is `source = 'municipal_open_data' OR
+verified_at IS NOT NULL` rather than `verified_at IS NOT NULL` alone.
+
+The municipal claim is scoped to what the City publishes: name, location,
+existence. It does **not** cover hours, since `importers.PARK_HOURS` is our own
+06:00-22:00 judgment and the City publishes none, and it does not cover whether
+a place suits a toddler, which is why three City golf courses are plannable
+today. Neither is something per-row review would fix.
 
 ### What a parent asks for, and what a venue is
 
