@@ -175,6 +175,75 @@ def single_pair(osm_hours):
 
 _ALL_WEEK = re.compile(r"\bMo\s*-\s*Sun?\b", re.IGNORECASE)
 
+# Monday first, matching date.weekday(), so a parsed day indexes straight into
+# the venue_hours table without a second mapping to get wrong.
+WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+_WEEKDAY_INDEX = {day.lower(): i for i, day in enumerate(WEEKDAYS)}
+
+# A whole clause: some days, then one range. "Mo-Th 09:00-21:00",
+# "Sa,Su 09:00-18:00", "Fr 10:00-20:00".
+_CLAUSE = re.compile(
+    r"^(?P<days>(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:\s*[-,]\s*(?:Mo|Tu|We|Th|Fr|Sa|Su))*)"
+    r"\s+(?P<open>\d{1,2}:\d{2})\s*-\s*(?P<close>\d{1,2}:\d{2})$",
+    re.IGNORECASE)
+
+# A month name anywhere means the string is seasonal, which no weekday table can
+# hold. Capilano's eight bands and Grouse's Christmas Eve both land here, and
+# they belong in hours_note rather than in a column.
+_SEASONAL = re.compile(
+    r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b", re.IGNORECASE)
+
+
+def _days_in(text):
+    """The weekday numbers a clause's day part names, expanding ranges."""
+    days = []
+    for part in text.split(","):
+        part = part.strip()
+        if "-" in part:
+            first, last = (_WEEKDAY_INDEX[x.strip().lower()]
+                           for x in part.split("-", 1))
+            span = range(first, last + 1) if last >= first \
+                else list(range(first, 7)) + list(range(0, last + 1))
+            days.extend(i % 7 for i in span)
+        else:
+            days.append(_WEEKDAY_INDEX[part.lower()])
+    return days
+
+
+def per_day_hours(osm_hours):
+    """{weekday: (open, close)} when OSM describes a plain week, else None.
+
+    A plain week is one where every clause is days plus a single range, and the
+    seven days are all accounted for. That is the shape the venue_hours table
+    holds exactly, so it is the shape a reviewer may accept in one click.
+
+    Returns None for anything else, which is the point. Seasonal bands, a
+    "Dec 25 off", a second range in a day: all of those need a person, because
+    collapsing them would quietly drop hours a family relies on.
+
+    Measured against every string we hold, this reads 12 of 17, against 7 for a
+    weekday/weekend split. The five it refuses are seasonal, and no small model
+    holds those.
+    """
+    if not osm_hours or _SEASONAL.search(osm_hours):
+        return None
+    if osm_hours.strip() == "24/7":
+        return {day: ("00:00", "23:59") for day in range(7)}
+    table = {}
+    for clause in (c.strip() for c in osm_hours.split(";")):
+        if not clause:
+            continue
+        found = _CLAUSE.match(clause)
+        if not found:
+            return None
+        pair = (_pad(found.group("open")), _pad(found.group("close")))
+        for day in _days_in(found.group("days")):
+            table[day] = pair
+    # A partial week is refused rather than read as "closed the rest". OSM
+    # omitting Sunday usually means nobody tagged it, and guessing shut would
+    # remove a venue from every Sunday plan on the strength of a gap.
+    return table if len(table) == 7 else None
+
 
 # A bare "HH:MM-HH:MM". Enough to tell whether our single pair appears in what
 # OSM says, without implementing the opening_hours grammar, which is a rabbit
@@ -187,14 +256,21 @@ _DAY_SPECIFIC = re.compile(
     r"\b(Mo|Tu|We|Th|Fr|Sa|Su|PH|SH)\b|\boff\b|\bclosed\b", re.IGNORECASE)
 
 
-def compare(our_open, our_close, osm_hours):
-    """What to tell a reviewer about the gap between our pair and OSM's string.
+def compare(our_open, our_close, osm_hours, our_per_day=None):
+    """What to tell a reviewer about the gap between our hours and OSM's string.
 
     Returns one of:
-      "agrees"      our pair appears in what OSM says, and OSM says no more.
-      "more_detail" OSM names particular days, which one pair cannot hold.
-      "differs"     OSM's times are not ours.
+      "agrees"      what OSM says is what we hold, and OSM says no more.
+      "more_detail" OSM holds a pattern the weekday table cannot express.
+      "differs"     OSM's times are not ours, and OSM's are storable.
       "unverifiable" OSM has nothing, or nothing readable as a time.
+
+    `our_per_day` is the venue's {weekday: (open, close)}, or None when it keeps
+    one pair all week.
+
+    "more_detail" means *we cannot hold this*, not merely that OSM named a day.
+    A whole week of per-day hours is storable now, so it is a difference to
+    settle; a seasonal band still is not.
 
     Deliberately shallow. A reviewer reads the raw string and decides; this only
     has to be right about whether the string is worth their attention.
@@ -202,6 +278,11 @@ def compare(our_open, our_close, osm_hours):
     if not osm_hours:
         return "unverifiable"
     text = osm_hours.strip()
+    theirs = per_day_hours(text)
+    if theirs is not None:
+        ours = our_per_day or ({day: (our_open, our_close) for day in range(7)}
+                               if our_open and our_close else {})
+        return "agrees" if ours == theirs else "differs"
     if text == "24/7":
         return "agrees" if (our_open, our_close) == ("00:00", "23:59") else "differs"
     # "Mo-Su" names every day and excludes none, so it holds no more than one

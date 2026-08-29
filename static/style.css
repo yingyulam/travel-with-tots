@@ -1221,3 +1221,24 @@ textarea:focus {
   color: var(--blue);
   margin-bottom: 0.5rem;
 }
+
+/* Seven days of hours, behind a disclosure because most venues need only the
+   pair above it. */
+.per-day > summary {
+  cursor: pointer;
+  color: var(--blue);
+  margin: 0.5rem 0;
+}
+
+.per-day-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.per-day-name {
+  font-size: 0.85rem;
+  color: var(--muted, #6b7785);
+}

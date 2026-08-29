@@ -104,6 +104,26 @@ CREATE TABLE IF NOT EXISTS venues (
 -- person decided about it. The point is that hours change: they are entered
 -- once at review and nothing else ever writes them, so without this a venue's
 -- hours are frozen at whatever was typed the day it was approved.
+-- Opening hours for one day of the week, when a venue's hours are not the same
+-- every day. Keyed on the weekday alone: 0 is Monday, matching date.weekday().
+--
+-- Two rules, and they are what make the table unambiguous:
+--   * a venue with **no rows** keeps venues.open_time/close_time all week,
+--     which is what most venues are and why adding this needed no migration;
+--   * a venue with **any rows** is described entirely by them, so a weekday
+--     with no row is closed that day.
+--
+-- The second rule is the reason for a table rather than columns: "closed on
+-- Mondays" is the commonest real closure and a nullable column cannot say it
+-- differently from "not filled in".
+CREATE TABLE IF NOT EXISTS venue_hours (
+    venue_id   INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+    weekday    INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+    open_time  TEXT NOT NULL,
+    close_time TEXT NOT NULL,
+    PRIMARY KEY (venue_id, weekday)
+);
+
 CREATE TABLE IF NOT EXISTS venue_hours_checks (
     id          INTEGER PRIMARY KEY,
     venue_id    INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
@@ -248,6 +268,10 @@ def create_schema(conn):
     _ensure_columns' job. Callers use this rather than executescript(SCHEMA)
     so they cannot get the order wrong.
     """
+    # Before the schema runs: CREATE TABLE IF NOT EXISTS would skip the new
+    # venue_hours while the old one still holds the name, and dropping after
+    # would then leave no table at all.
+    _drop_stale_venue_hours(conn)
     conn.executescript(SCHEMA)
     _ensure_columns(conn)
     conn.executescript(INDEXES)
@@ -263,6 +287,20 @@ def init_db():
         _migrate_seed_claims(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
+
+
+def _drop_stale_venue_hours(conn):
+    """Remove the (season, day_type) hours table so the per-weekday one can
+    take its name.
+
+    That table was created, never written to by anything, and left behind when
+    the slot model was dropped. It carries no rows to lose, and the check is on
+    its shape rather than its name so this cannot eat the new one.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(venue_hours)")}
+    if "season" in columns:
+        with conn:
+            conn.execute("DROP TABLE venue_hours")
 
 
 def _ensure_columns(conn):
@@ -1005,16 +1043,66 @@ def mark_verified(venue_id, admin_id):
         [admin_id, venue_id, *source_params])
 
 
-def set_venue_default_hours(venue_id, open_time, close_time):
-    """Correct a venue's default hours.
+def get_venue_hours(venue_ids=None):
+    """{venue_id: {weekday: (open, close)}} for venues that vary by day.
+
+    A venue absent from the result keeps one pair all week. One query for a
+    whole set, like reported_flags, because the planner resolves every venue's
+    hours for one date and must not do that venue by venue.
+    """
+    if venue_ids is not None and not venue_ids:
+        return {}
+    sql = "SELECT venue_id, weekday, open_time, close_time FROM venue_hours"
+    params = []
+    if venue_ids is not None:
+        sql += f" WHERE venue_id IN ({', '.join('?' * len(venue_ids))})"
+        params = list(venue_ids)
+    out = {}
+    with closing(connect()) as conn:
+        for row in conn.execute(sql, params):
+            out.setdefault(row["venue_id"], {})[row["weekday"]] = (
+                row["open_time"], row["close_time"])
+    return out
+
+
+def set_venue_hours(venue_id, by_weekday):
+    """Replace a venue's per-day hours with `by_weekday`, or clear them.
+
+    `by_weekday` is {weekday: (open, close)}. Written as a replacement rather
+    than a merge, because the rows are a complete description: leaving an old
+    row behind would say a venue is open on a day the new answer omits, which
+    is exactly the mistake this table exists to make impossible.
+
+    An empty mapping deletes every row, which hands the venue back to its single
+    pair. That is the way out of a per-day answer somebody entered by mistake.
+    """
+    rows = [(venue_id, day, opens, closes)
+            for day, (opens, closes) in sorted(by_weekday.items())
+            if opens and closes]
+    with closing(connect()) as conn, conn:
+        conn.execute("DELETE FROM venue_hours WHERE venue_id = ?", (venue_id,))
+        if rows:
+            conn.executemany(
+                "INSERT INTO venue_hours (venue_id, weekday, open_time, "
+                "close_time) VALUES (?, ?, ?, ?)", rows)
+    return len(rows)
+
+
+def set_venue_default_hours(venue_id, open_time, close_time, hours_note=None):
+    """Correct a venue's usual hours, and what no timetable can hold.
 
     The only path by which an approved venue's hours can change. Until this
     existed they were frozen at whatever was typed the day it was approved:
     EDITABLE_VENUE_FIELDS deliberately excludes hours, so not even the parent
     who submitted a place could fix them, and nothing else wrote them.
+
+    `hours_note` is the seasonal band, the Christmas closure, the second range
+    in a day: what defeats any weekday model and belongs in words a parent
+    reads. It travels with the hours because it is decided in the same breath.
     """
-    _write("UPDATE venues SET open_time = ?, close_time = ? WHERE id = ?",
-           (open_time or None, close_time or None, venue_id))
+    _write("UPDATE venues SET open_time = ?, close_time = ?, hours_note = ? "
+           "WHERE id = ?",
+           (open_time or None, close_time or None, hours_note or None, venue_id))
 
 
 def record_hours_check(venue_id, source, source_says, finding,
@@ -1035,7 +1123,8 @@ def get_pending_hours_checks():
     with closing(connect()) as conn:
         return conn.execute("""
             SELECT c.*, v.name, v.type, v.neighbourhood,
-                   v.open_time AS current_open, v.close_time AS current_close
+                   v.open_time AS current_open, v.close_time AS current_close,
+                   v.hours_note AS current_note
             FROM venue_hours_checks c JOIN venues v ON v.id = c.venue_id
             WHERE c.status = 'pending'
             ORDER BY c.checked_at DESC, c.id DESC""").fetchall()

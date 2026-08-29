@@ -33,6 +33,10 @@ _REASONS = {
     # back to its ordinary pair on a holiday, because there is nothing to lock.
     "holiday_unknown": (UNVERIFIED, "we do not know its holiday hours"),
     "missing": (UNVERIFIED, "we do not have its opening hours"),
+    # A venue whose timetable names other days but not this one. Different from
+    # "missing": somebody recorded the week and this day was not in it.
+    "closed_today": (CLOSED, "it is closed that day"),
+    "per_day": (CLOSED, "it is closed then"),
     "default": (CLOSED, "it is closed then"),
 }
 

@@ -19,6 +19,38 @@
   {%- endfor %}
 {% endmacro %}
 
+{# Hours for a venue. One pair covers most of them, so seven days sit behind a
+   disclosure: filling any day in makes the week the answer and the single pair
+   a fallback nothing reads. A day left blank in that week means closed, which
+   is the only way to say "shut on Mondays". #}
+{% macro hour_fields(weekdays, pair=None, per_day=None, note=None) %}
+  <div class="review-fields">
+    <label class="field"><span>Opens</span>
+      <input type="time" name="open_time" value="{{ pair[0] if pair else '' }}"></label>
+    <label class="field"><span>Closes</span>
+      <input type="time" name="close_time" value="{{ pair[1] if pair else '' }}"></label>
+  </div>
+  <details class="per-day" {{ 'open' if per_day }}>
+    <summary>Hours differ by day</summary>
+    <p class="field-hint">Leave a day blank to say it is closed that day.
+      Filling any day in replaces the pair above.</p>
+    {% for index, label in weekdays %}
+    <div class="per-day-row">
+      <span class="per-day-name">{{ label }}</span>
+      <input type="time" name="day{{ index }}_open"
+             value="{{ per_day[index][0] if per_day and index in per_day else '' }}">
+      <input type="time" name="day{{ index }}_close"
+             value="{{ per_day[index][1] if per_day and index in per_day else '' }}">
+    </div>
+    {% endfor %}
+  </details>
+  <label class="field field-full"><span>Anything no timetable can hold</span>
+    <input type="text" name="hours_note" value="{{ note or '' }}"
+           placeholder="e.g. shorter hours in January">
+    <span class="field-hint">Seasons and one-off closures live here. Parents see it
+      on the plan and trip pages.</span></label>
+{% endmacro %}
+
 {% macro flags(prefix, row, conditional=()) %}
   <div class="badges">
     {% for key, label in flag_labels %}
@@ -209,12 +241,7 @@
       </p>
       {% endif %}
       <form method="post" action="{{ url_for('venue_set_hours', venue_id=v.id) }}" class="section-form">
-        <div class="review-fields">
-          <label class="field"><span>Opens</span>
-            <input type="time" name="open_time" required></label>
-          <label class="field"><span>Closes</span>
-            <input type="time" name="close_time" required></label>
-        </div>
+        {{ hour_fields(weekdays, note=v.hours_note) }}
         <button type="submit" class="cta">Set hours</button>
       </form>
     </div>
@@ -234,7 +261,14 @@
     <div class="plan-option">
       <p><strong>{{ c.name }}</strong>
         <span class="meta">{{ c.type or 'no type' }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
-      <p class="meta">Ours: {{ c.current_open or '?' }}&ndash;{{ c.current_close or '?' }}</p>
+      <p class="meta">Ours:
+        {%- if c.current_per_day %}
+          {% for index, label in weekdays %}
+            {{ label }} {{ c.current_per_day[index][0] ~ '-' ~ c.current_per_day[index][1]
+                            if index in c.current_per_day else 'closed' }}{{ ", " if not loop.last }}
+          {%- endfor %}
+        {%- else %} {{ c.current_open or '?' }}&ndash;{{ c.current_close or '?' }}, every day
+        {%- endif %}</p>
       {# Two sources reach this queue now, and they say different kinds of
          thing: OpenStreetMap quotes hours, a parent says ours look wrong. #}
       {% if c.source == 'parent' %}
@@ -242,19 +276,27 @@
       {% else %}
         <p class="meta">{{ c.source|upper }}: {{ c.source_says }}</p>
       {% endif %}
-      {% if c.finding == 'more_detail' %}
-        <p class="meta">More than one pair holds. Set a season or day slot for the rest.</p>
+      {# Worked out now rather than read off the row, so these say what is true
+         today. See app._settleable. #}
+      {% if c.finding == 'agrees' %}
+        <p class="meta"><strong>This agrees with what we hold.</strong> Nothing to change.</p>
+      {% elif c.finding == 'more_detail' %}
+        <p class="meta"><strong>Seasonal, so no timetable holds it.</strong>
+          Set the ordinary week below and put the rest in the note.</p>
       {% endif %}
 
       <form method="post" action="{{ url_for('venue_hours_decide', check_id=c.id) }}" class="section-form">
         <input type="hidden" name="venue_id" value="{{ c.venue_id }}">
-        <div class="review-fields">
-          <label class="field"><span>Opens</span>
-            <input type="time" name="open_time" value="{{ c.current_open or '' }}"></label>
-          <label class="field"><span>Closes</span>
-            <input type="time" name="close_time" value="{{ c.current_close or '' }}"></label>
-        </div>
-        <button type="submit" name="action" value="update" class="cta">Update hours</button>
+        <input type="hidden" name="source_says" value="{{ c.source_says }}">
+        {{ hour_fields(weekdays, (c.current_open, c.current_close),
+                       c.current_per_day, c.current_note) }}
+        {# Offered only where OSM describes a plain week. Anything seasonal has
+           no button, on purpose: collapsing it is a judgment. #}
+        {% if c.osm_week and c.finding != 'agrees' %}
+        <button type="submit" name="action" value="take_osm" class="cta">
+          Take OpenStreetMap's whole week</button>
+        {% endif %}
+        <button type="submit" name="action" value="update" class="cta-secondary">Save what I typed</button>
         <button type="submit" name="action" value="keep" class="cta-secondary">Keep ours</button>
       </form>
     </div>

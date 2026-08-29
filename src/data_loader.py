@@ -183,7 +183,7 @@ def maps_url(name, city=SUPPORTED_CITIES[0]):
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 
 
-def _as_venue(row, reported=None, day_type="weekday"):
+def _as_venue(row, reported=None, day_type="weekday", weekday=0, per_day=None):
     """One database row as the venue dict the planners expect.
 
     `open`/`close` rather than the columns' own open_time/close_time: the
@@ -202,7 +202,7 @@ def _as_venue(row, reported=None, day_type="weekday"):
     # Read them with .get(). An absent key is not the same as "no".
     venue.update(reported or {})
     venue["nap_friendly"] = is_nap_friendly(venue)
-    venue.update(_hours_for(row, day_type))
+    venue.update(_hours_for(row, day_type, weekday, per_day))
     venue["maps_url"] = maps_url(row["name"])
     return venue
 
@@ -210,7 +210,7 @@ def _as_venue(row, reported=None, day_type="weekday"):
 UNKNOWN_HOURS = {"open": None, "close": None}
 
 
-def _hours_for(row, day_type):
+def _hours_for(row, day_type, weekday=0, per_day=None):
     """A venue's open/close for a kind of day, and where they came from.
 
     Three outcomes:
@@ -230,17 +230,28 @@ def _hours_for(row, day_type):
     the app useless on 11 days a year: Canada Day produced a plan with zero
     stops, while 222 imported parks sat there open.
 
-    There is deliberately no season or weekday dimension. A `venue_hours` table
-    keyed on (season, day_type) existed for exactly that and never held a single
-    row, and it could not express what the real data turned out to contain --
-    a museum closed on Mondays from September, a mountain with its own Christmas
-    Eve hours. What a single pair cannot hold now goes in `hours_note`, in words
-    a parent reads.
+    - **a venue whose hours vary by day**: `per_day` is its whole timetable, so
+      the pair for `weekday`, and closed when that day has no entry. Measured
+      against real OpenStreetMap data, a weekday/weekend split could not hold
+      five of our venues: the Art Gallery opens late on Fridays only, and four
+      community centres keep different Saturday and Sunday hours. Collapsing
+      those to one weekend pair over-schedules by up to four hours.
+
+    Season is deliberately not a dimension. It is the residue that defeats any
+    small model -- eight bands at Capilano, a Christmas Eve at Grouse -- and it
+    goes in `hours_note`, in words a parent reads.
     """
-    if not row["open_time"] or not row["close_time"]:
-        return {**UNKNOWN_HOURS, "hours_source": "missing"}
     if day_type == "holiday" and (row["type"] or "") not in HOURS_ARE_A_CONVENTION:
         return {**UNKNOWN_HOURS, "hours_source": "holiday_unknown"}
+    if per_day:
+        # Any row at all means the timetable is complete, so a day with none is
+        # shut rather than unrecorded. That is the whole reason for a table.
+        if weekday not in per_day:
+            return {**UNKNOWN_HOURS, "hours_source": "closed_today"}
+        opens, closes = per_day[weekday]
+        return {"open": opens, "close": closes, "hours_source": "per_day"}
+    if not row["open_time"] or not row["close_time"]:
+        return {**UNKNOWN_HOURS, "hours_source": "missing"}
     return {"open": row["open_time"], "close": row["close_time"],
             "hours_source": "default"}
 
@@ -270,7 +281,10 @@ def get_venues(city="", on_date=None):
     rows.sort(key=lambda row: UNRANKED if row["seed_rank"] is None
               else row["seed_rank"])
     ids = [row["id"] for row in rows]
-    # One query for the whole set, not one per venue.
+    # One query each for the whole set, not one per venue.
     reported = db.reported_flags(ids)
-    day_type = day_type_for(on_date or date.today())
-    return [_as_venue(row, reported.get(row["id"]), day_type) for row in rows]
+    per_day = db.get_venue_hours(ids)
+    on = on_date or date.today()
+    day_type, weekday = day_type_for(on), on.weekday()
+    return [_as_venue(row, reported.get(row["id"]), day_type, weekday,
+                      per_day.get(row["id"])) for row in rows]

@@ -287,8 +287,8 @@ travel-with-tots/
 **Data lives in SQLite** at `data/app.db`, built by `src/db.py`, which is the
 only module that writes SQL. Everything else works in plain dicts. The tables
 are `parents`, `children`, `trips`, `venues`, `venue_reports` (one amenity claim
-each) and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a
-decision). Ratings, candidates and intent logs are flat files in `data/`.
+each), `venue_hours` (one day's opening hours, only for venues that vary by day)
+and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a decision). Ratings, candidates and intent logs are flat files in `data/`.
 
 **Scripts** cover the jobs too slow or too rude for a web request:
 `import_open_data.py` (dry run by default), `propose_venues.py`,

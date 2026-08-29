@@ -43,6 +43,7 @@ from src.components.geocode import (
     reverse_geocode,
 )
 from src.components.place_search import PlaceSearchError, search_places
+from src import osm
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
@@ -337,6 +338,28 @@ def dashboard():
                            places=places, amenity_options=AMENITY_OPTIONS)
 
 
+def _settleable(check):
+    """One pending hours check, with its finding worked out now.
+
+    `finding` is stored on the row by whichever tool filed it, and a stored
+    judgment goes stale the moment the rule behind it changes: every card read
+    "more than one pair holds" including one where OpenStreetMap agreed with us
+    exactly. It is a pure function of our hours and the string, both of which
+    are here, so it is derived rather than trusted.
+
+    `osm_week` is filled only when the string is a plain week the venue_hours
+    table holds exactly. It is what turns the card into one click; a seasonal
+    string leaves it empty and asks for judgment.
+    """
+    row = dict(check)
+    ours = db.get_venue_hours([row["venue_id"]]).get(row["venue_id"])
+    row["current_per_day"] = ours
+    row["finding"] = osm.compare(row["current_open"], row["current_close"],
+                                 row["source_says"], our_per_day=ours)
+    row["osm_week"] = osm.per_day_hours(row["source_says"])
+    return row
+
+
 @app.route("/venues/review")
 @login_required
 @admin_required
@@ -369,7 +392,8 @@ def venue_review():
             dict(r, source_link=_safe_url(r.get("source_url")))
             for r in candidates.load(candidates.REJECTED)],
         rejected_submissions=get_rejected_submissions(),
-        hours_checks=get_pending_hours_checks(),
+        hours_checks=[_settleable(c) for c in get_pending_hours_checks()],
+        weekdays=list(enumerate(osm.WEEKDAYS)),
         missing_hours=[dict(row, source_link=_safe_url(row["source_url"]))
                        for row in missing_hours[:MISSING_HOURS_PAGE_SIZE]],
         missing_hours_total=len(missing_hours),
@@ -709,6 +733,43 @@ def _as_float(value):
         return None
 
 
+def _per_day_from_form(form):
+    """{weekday: (open, close)} from the per-day inputs, empty when untouched.
+
+    A day left blank is simply absent, which the table reads as closed. That is
+    the only way to say "shut on Mondays", so it must not be filled in for them.
+    """
+    table = {}
+    for day in range(7):
+        opens, closes = _hour_pair(form, f"day{day}_open", f"day{day}_close")
+        if opens and closes:
+            table[day] = (opens, closes)
+    return table
+
+
+def _store_week(venue_id, week, hours_note=None):
+    """Write a venue's whole week, collapsing it when every day agrees.
+
+    A venue open the same hours all week is described by its single pair, so the
+    per-day rows are deleted rather than written seven times. Only a week that
+    actually varies earns rows, which keeps the table small and keeps "has rows"
+    meaning "is unusual".
+
+    The single pair is kept in step either way. Nothing plans from it once rows
+    exist, but get_venues_missing_hours reads it, and a venue with a full
+    timetable must not appear under "no hours at all".
+    """
+    if not week:
+        return 0
+    # Every day present *and* identical. A six-day week is not uniform however
+    # alike its days are: the seventh day is a closure, and collapsing it would
+    # quietly reopen the venue on the day it shuts.
+    uniform = len(week) == 7 and len(set(week.values())) == 1
+    usual = max(set(week.values()), key=list(week.values()).count)
+    set_venue_default_hours(venue_id, usual[0], usual[1], hours_note)
+    return db.set_venue_hours(venue_id, {} if uniform else week)
+
+
 @app.route("/venues/hours/<int:check_id>", methods=["POST"])
 @login_required
 @admin_required
@@ -721,15 +782,35 @@ def venue_hours_decide(check_id):
     mall that closes at half four.
     """
     admin_id = _current_parent()["id"]
-    opens, closes = _hour_pair(request.form)
+    action = request.form.get("action")
     venue_id = request.form.get("venue_id", type=int)
+    note = request.form.get("hours_note", "").strip() or None
 
-    if request.form.get("action") == "update" and venue_id:
-        if not (opens and closes):
+    # "Take OpenStreetMap's" is offered only where the string is a plain week,
+    # so the times come from osm rather than the form: the reviewer is accepting
+    # what they read, not retyping seven rows.
+    if action == "take_osm" and venue_id:
+        week = osm.per_day_hours(request.form.get("source_says", ""))
+        if not week:
+            flash("Those hours are not a shape we can store. Set them by hand.")
+            return redirect(url_for("venue_review"))
+        rows = _store_week(venue_id, week, note)
+        flash(f"Took OpenStreetMap's hours"
+              + (f", {rows} days differing." if rows else ", the same all week."))
+    elif action == "update" and venue_id:
+        week = _per_day_from_form(request.form)
+        opens, closes = _hour_pair(request.form)
+        if week:
+            rows = _store_week(venue_id, week, note)
+            flash(f"Hours updated"
+                  + (f", {rows} days differing." if rows else ", the same all week."))
+        elif opens and closes:
+            db.set_venue_hours(venue_id, {})
+            set_venue_default_hours(venue_id, opens, closes, note)
+            flash(f"Hours updated to {opens}-{closes}, the same all week.")
+        else:
             flash("Both an opening and a closing time are needed, as HH:MM.")
             return redirect(url_for("venue_review"))
-        set_venue_default_hours(venue_id, opens, closes)
-        flash(f"Hours updated to {opens}-{closes}.")
     else:
         flash("Kept our hours.")
     resolve_hours_check(check_id, admin_id)
@@ -748,11 +829,19 @@ def venue_set_hours(venue_id):
     stays out of every plan, which is the right answer to unknown hours and a
     dead end at the same time. This is the way out of it.
     """
+    note = request.form.get("hours_note", "").strip() or None
+    week = _per_day_from_form(request.form)
+    if week:
+        rows = _store_week(venue_id, week, note)
+        flash("Hours set"
+              + (f", {rows} days differing." if rows else ", the same all week.")
+              + " It can be planned around now.")
+        return redirect(url_for("venue_review"))
     opens, closes = _hour_pair(request.form)
     if not (opens and closes):
         flash("Both an opening and a closing time are needed, as HH:MM.")
         return redirect(url_for("venue_review"))
-    set_venue_default_hours(venue_id, opens, closes)
+    set_venue_default_hours(venue_id, opens, closes, note)
     flash(f"Hours set to {opens}-{closes}. It can be planned around now.")
     return redirect(url_for("venue_review"))
 
