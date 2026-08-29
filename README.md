@@ -1,27 +1,35 @@
 # Travel with Tots
 
-A Flask web app that plans a **nap-friendly day out in Vancouver** for parents
-of children aged 0 to 5.
+Planning a day out with a toddler is not the same problem as planning a day out.
+The museum shuts at four, the nap lands at one whether you like it or not, and
+three kilometres between stops is a very different ask on foot than in a car.
 
-A parent describes their day (wake-up, bedtime, naps, how they get around,
-where they are staying). The app returns a timed list of real places, checked
-against opening hours, and then helps them adjust it while the day is actually
-happening.
+**Travel with Tots** builds a realistic single day in Vancouver for parents of
+children aged 0 to 5. You tell it when your child wakes, naps and sleeps, how
+you are getting around and where you are staying. It gives you a timed list of
+real places, checked against real opening hours, and then helps you rearrange it
+while the day is actually happening.
+
+Built with Flask, SQLite and a handful of AI features that are used where
+judgment is genuinely needed.
 
 ---
 
-## What it does
+## What you can do
 
-- **Plans a day** (`/plan`). A rule-based draft, smoothed by an LLM, from a
-  curated venue database.
-- **Runs the day** (`/trip`). A live timeline that re-plans when a nap runs
-  long, it starts raining, or a stop overruns.
-- **Answers questions.** A chat bubble on every page, backed by a
-  tool-calling agent with retrieval over the site's own knowledge base.
-- **Finds somewhere nearby.** Share a location, name a need (nursing room,
-  lunch, quiet spot), get ranked venues with map links.
-- **Saves accounts.** Children, past trips, and places a parent logged.
-- **Grows its own data.** An agent proposes new venues; a human approves them.
+- **Plan a day.** Fill in the form, or just describe your day to the chat bubble
+  and let it fill the form for you.
+- **Run the day.** A live timeline you can nudge: the nap ran long, it started
+  raining, you want to skip the next stop.
+- **Ask questions.** A chat bubble on every page that knows how the site works.
+- **Find somewhere nearby.** Share your location, say what you need (a nursing
+  room, lunch, somewhere quiet), get real places with map links.
+- **Save things.** Your children's ages, past trips, and places you found.
+- **Help it grow.** Log a place the app is missing, or report what you found
+  when you got there.
+
+Admins get more: a review queue for new venues, an editable knowledge base, and
+test pages for every AI component.
 
 ---
 
@@ -38,31 +46,31 @@ python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))" >> .en
 python app.py
 ```
 
-Open **http://localhost:8016**. The database, schema and demo data are created
-on first boot.
+Open **http://localhost:8016**. The database, schema and demo data are built on
+first boot, so there is nothing to migrate or import.
 
-**Seeded accounts:**
+Sign in with either seeded account:
 
 | Role   | Email                      | Password    |
 | ------ | -------------------------- | ----------- |
 | Parent | `demo@travelwithtots.app`  | `demo1234`  |
 | Admin  | `admin@travelwithtots.app` | `admin1234` |
 
-The first chatbot message downloads an embedding model (~90MB) and builds the
-vector index. That takes a few seconds, once.
+The first chat message downloads an embedding model (~90MB) and builds the
+search index. That takes a few seconds, once.
 
-### Configuration
+### API keys
 
-All keys load from `.env` via `os.environ`. None is ever sent to the browser.
+Keys load from `.env`. None is ever sent to the browser.
 
-| Variable              | Required | Used for                                  |
+| Variable              | Needed?  | Used for                                  |
 | --------------------- | -------- | ----------------------------------------- |
-| `SECRET_KEY`          | yes      | Signs the session cookie. No default.     |
-| `OPENROUTER_API_KEY`  | yes      | Every LLM call (chatbot, agent, planner). |
-| `TAVILY_API_KEY`      | no       | Web search fallback, venue proposals.     |
-| `GOOGLE_MAPS_API_KEY` | no       | Place search and geocoding.               |
+| `SECRET_KEY`          | Yes      | Signs the session cookie.                 |
+| `OPENROUTER_API_KEY`  | Yes      | Every LLM call.                           |
+| `TAVILY_API_KEY`      | Optional | Web search, and finding new venues.       |
+| `GOOGLE_MAPS_API_KEY` | Optional | Searching for a place by name.            |
 
-Without the optional keys those features fail cleanly and the rest of the app
+Leave the optional ones out and those features say so cleanly. Everything else
 keeps working.
 
 ### Tests
@@ -71,204 +79,157 @@ keeps working.
 python3 -m unittest discover -s tests
 ```
 
-About 1100 tests across 56 files. No network calls: every external service is
-stubbed.
+Around 1100 tests, all offline: every external service is stubbed.
 
 ---
 
-## Stack
+## Take it for a spin
 
-| Layer     | Choice                                                       |
-| --------- | ------------------------------------------------------------ |
-| Backend   | Flask, SQLite (no ORM, `src/db.py` is the only module with SQL) |
-| Auth      | Session cookies, Werkzeug password hashing                   |
-| LLM       | OpenRouter, so the model is swappable per request            |
-| Agent     | LangGraph tool-calling loop                                  |
-| Retrieval | `sentence-transformers` (all-MiniLM-L6-v2) + ChromaDB        |
-| Frontend  | Jinja templates, vanilla JS, Leaflet maps (vendored, no CDN) |
-| Data      | Vancouver Open Data, OpenStreetMap, Nominatim, Google Places, Tavily |
+A five-minute tour, roughly in the order a parent would meet it.
+
+1. **Go to `/plan`.** Set a wake-up and bedtime, add a nap, pick how you are
+   getting around, and drop a pin on your hotel. Plan the day.
+2. **Read the stops.** Each one says why it was picked and how far it is from
+   the last, so you can see the transport mode doing its job.
+3. **Start the day.** Hit *Start this day* for the live timeline, then press
+   *Nap happened here* and watch the rest of the day shift.
+4. **Open the chat bubble.** Ask how the planner handles naps. Then try
+   "we're in Vancouver next Tuesday with a 2 year old" and watch it fill the
+   form for you.
+5. **Sign in as the admin.** `/components` and `/workflows` are a live inventory
+   of the app's parts, each with a page that runs the real thing.
 
 ---
 
-## How a day gets planned
+## How planning works
 
-1. **The form** collects wake-up, bedtime, naps, transport mode, stop count,
-   lunch preference, interests, and an accommodation pin.
-2. **The rule-based planner** (`src/itinerary.py`) lays out stop times, anchors
-   naps, and picks a venue per slot.
+A day is built in four steps, and only one of them is AI.
+
+1. **The form** collects the shape of your day: wake-up, bedtime, naps,
+   transport, how many stops, lunch, any interests, and where you are staying.
+2. **The planner** (`src/itinerary.py`) lays out the times, anchors the naps,
+   and picks a venue for each slot.
 3. **The hours check** (`src/components/validate_hours.py`) tests every stop
-   against that venue's hours for the trip date, then swaps or frees the slot.
-4. **The AI adjuster** smooths pacing and wording. If it fails, the rule-based
-   draft is shown instead, and the parent is not told either way.
+   against that venue's hours for that date, then swaps or frees any slot that
+   does not work.
+4. **The AI adjuster** smooths the pacing and the wording. If it fails, you get
+   the draft, and it is not something you need to know about.
 
-### The rules that shape a day
+### What makes it toddler-shaped
 
-**Preferences sort, they never filter.** Interests, nap-friendliness, shelter
-and proximity all reorder the candidate pool. Nothing is excluded. A filter can
-empty a day; a sort cannot.
+**Naps come first, gently.** The day is structured around the nap you expect,
+and restful places are preferred during it. The app does not pretend to know
+where your child will actually fall asleep, which is what the live timeline is
+for.
 
-**The nap is a soft constraint.** The planner structures the day around the nap
-the parent expects. It does not predict where a child will actually sleep, which
-is what in-trip replanning is for.
+**How you travel decides how far apart stops can sit.** The form asks how you
+get *between* stops. Everyone is assumed to have a stroller once they are
+there.
 
-**Transport mode sets a reach, not a route.** How far apart two consecutive
-stops may sit:
+| Getting around                | Stops sit within |
+| ----------------------------- | ---------------- |
+| On foot                       | 1.5 km           |
+| Public transit                | 5 km             |
+| Car, taxi or ride-share       | 8 km             |
 
-| Mode                    | Reach  |
-| ----------------------- | ------ |
-| `walk`                  | 1.5 km |
-| `transit`               | 5 km   |
-| `car` (incl. taxi/ride-share) | 8 km |
+There is no travel-time estimate, on purpose. Real durations need routes,
+schedules and transfers. The app tells you the distance and trusts you to judge
+the rest.
 
-This is one question: how you get *between* stops. Every family is assumed to
-have a stroller *at* a stop. There is deliberately **no travel-time model**;
-routing needs schedules and transfers, so the app reports distances and lets the
-parent judge.
+**Your hotel anchors both ends.** Pin it and the first stop is chosen from where
+you wake up, the last from where you have to get back to. Skip it and the day
+still plans, just without that anchor.
 
-**The accommodation anchors both ends.** Pin it on the map and the first stop is
-chosen from where you wake up, the last from where you have to get back to.
-Optional: without a pin the day plans the same way, unanchored.
+**Preferences nudge, they never exclude.** Interests, shelter, nap-friendliness
+and distance all reorder the options rather than narrowing them, so a preference
+can never leave you with an empty day.
 
-**Unknown hours mean not schedulable.** A venue whose hours we do not know for
-the trip date is never scheduled and never offered as a candidate. On statutory
-holidays, only places with no door (parks, beaches, the seawall) keep their
-usual hours.
+**A place with unknown hours is never scheduled.** If the app cannot tell
+whether somewhere is open on your date, it stays out. On statutory holidays,
+only places without a door (parks, beaches, the seawall) keep their usual hours.
 
-### Running the day (`/trip`)
+### While the day is happening
 
-A timeline with a current-time marker. Six situation buttons re-plan the rest of
-the day:
+The trip page is a timeline with a marker on the current time. Six buttons
+rearrange what is left:
 
 `Nap happened here` · `Need to stay here longer` · `Skip next stop` ·
 `Finished this stop early` · `It's raining` · `Do something else`
 
-Each runs the same draft-then-smooth pattern as planning. Parents can also
-report amenities they found at a stop.
+You can also report what you found at a stop, which feeds back into the venue
+data for everyone else.
 
 ---
 
-## Venue data
+## Where the venues come from
 
-268 venues, from three sources with different trust rules.
+Every stop is a real place, from one of three sources.
 
-| Source                | Rows | How it gets in                          | Needs review? |
-| --------------------- | ---: | --------------------------------------- | ------------- |
-| `municipal_open_data` |  238 | Imported from the City of Vancouver     | No            |
-| `curated`             |   28 | Hand-typed seed (`data/venues.json`)    | Yes           |
-| `user_submitted`      |    2 | A parent logged it                      | Yes, before use |
+**The City of Vancouver** publishes its parks, community centres and public
+washrooms as open data. Those come straight in: the City is authoritative about
+its own parks, so nobody needs to check them by hand. That covers most of the
+database.
 
-**Trust has two routes: provenance or inspection.** The City is authoritative
-about its own parks, so those rows are trusted for where they came from and are
-never queued for review. Everything else earns trust by being looked at, which
-is what `verified_at` records.
+**A hand-curated seed** (`data/venues.json`) holds the places the City does not
+own: Science World, the Aquarium, Grouse Mountain, the Granville Island markets.
+These are checked by a person through the review queue.
 
-That claim is scoped to what the City publishes: name, location, existence. It
-does not cover opening hours, which the City does not publish for parks.
+**Parents** log places the app is missing, and report the amenities they find
+when they visit. Logged places wait for review before they appear in anyone's
+plan; amenity reports do not, because the person who was just there is the best
+source there is.
 
-**Agent-proposed venues** follow their own flow. `src/workflows/propose_venues.py`
-searches the web, grounds each candidate against Nominatim and OpenStreetMap,
-and writes to `data/venue_candidates.csv`. It never writes a venue. A human
-approves them at `/venues/review`, which stamps `verified_at`. Rejections are
-remembered so the same place is never proposed twice.
+There is also **an agent that goes looking.** It searches the web for places a
+parent might take a toddler, grounds each one against OpenStreetMap and
+Nominatim, and writes it to a candidate file. It never adds a venue itself. A
+human approves them ten or so at a time at `/venues/review`, and anything turned
+down is remembered so it is never suggested again.
 
-**No restaurants.** The table holds attractions. Lunch happens at a stop that
-serves food, or it is a free block with a find-nearby handoff. Google has live
-hours and reviews and we cannot.
+**No restaurants.** The database holds attractions. Lunch is either a stop that
+happens to serve food, or a free block with a "find somewhere nearby" handoff,
+because Google has live hours and reviews and this app cannot.
 
-### A venue's fields
-
-| Field           | Meaning                                                    |
-| --------------- | ---------------------------------------------------------- |
-| `type`          | What the place is, for a human to read. 14 values.          |
-| `setting`       | Where the visit is spent: `indoor`, `outdoor`, `both`.      |
-| `neighbourhood` | A grouping a parent recognises ("Stanley Park"), stored not derived. |
-| `open_time` / `close_time` | One pair per venue. Required before approval.    |
-| `hours_note`    | Free text for what a pair cannot hold ("closed Mondays").   |
-| `lat` / `lng`   | Used for proximity sorting and distances.                   |
-| `can_eat`       | Food on site, so lunch needs no extra travel leg.           |
-
-**Amenities are reports, not columns.** Washrooms, nursing rooms, high chairs
-and step-free access live in `venue_reports`, one row per claim with an author
-and a date. Newest wins. This keeps "nobody has said" different from "somebody
-looked and there was none". Read them with `.get()`; an unreported field is
-absent.
+Amenities like nursing rooms and step-free access are stored as individual
+reports, each carrying who said it and when, so "nobody has told us" stays
+distinct from "someone looked, and there wasn't one".
 
 ---
 
-## AI features
+## The AI parts
 
-Every LLM call goes through OpenRouter, so the model is a per-request choice
-made in the chat widget's dropdown.
+Every model call goes through **OpenRouter**, so the model is a per-request
+choice you can change from the chat widget's dropdown.
 
-### Chatbot (RAG)
+**The chatbot** answers questions about the site. `data/knowledge_base.md` is
+chunked, embedded with `all-MiniLM-L6-v2` and stored in ChromaDB, and the index
+rebuilds itself when the knowledge base changes. Admins edit it at `/settings`.
 
-`data/knowledge_base.md` is chunked (128 words), embedded with all-MiniLM-L6-v2,
-and stored in ChromaDB. The index rebuilds when the knowledge base changes.
-Admins edit the source at `/settings` and inspect chunking at `/chunks`.
+**The agent** behind the chat bubble is a LangGraph tool-calling loop. It either
+hands the message to a workflow or picks from four tools: answer from the
+knowledge base, build a day, read a described day into the form, or find
+somewhere nearby.
 
-### Agent
+**Components** are the single-purpose pieces, each with an admin page that runs
+it in isolation.
 
-`src/agent.py` routes a chat message either to a workflow or to a LangGraph
-tool-calling agent with four tools:
+| Component        | Kind          | What it does                              |
+| ---------------- | ------------- | ----------------------------------------- |
+| `plan_trip`      | AI-backed     | A draft day, then smoothing               |
+| `replan_trip`    | AI-backed     | The same, for a mid-trip change           |
+| `extract_form`   | AI-backed     | A sentence into the planning form         |
+| `validate_hours` | Deterministic | Every stop against that venue's hours     |
+| `find_nearby`    | Deterministic | Ranks real places by distance, then need  |
+| `search_web`     | API-backed    | Tavily, when the database has nothing     |
+| `place_search`   | API-backed    | Google Places, "which one did you mean?"  |
+| `geocode`        | API-backed    | An address into coordinates               |
 
-- `answer_faq_tool`, the knowledge base
-- `plan_trip_tool`, build a day
-- `extract_form_tool`, read a described day into the planning form
-- `find_nearby_tool`, somewhere nearby for a need
+**Workflows** chain those into complete use cases: planning from chat,
+replanning on the go, finding a nearby place, logging a place, and proposing new
+venues. Each has a page at `/workflows` that runs the real thing.
 
-`src/intent.py` classifies a message to a workflow name or `none`, logging every
-decision to `data/intents.jsonl`.
-
-### Components and workflows
-
-**Components** are single-purpose units, each with its own admin test page,
-listed at `/components`.
-
-| Component        | Kind          | Job                                        |
-| ---------------- | ------------- | ------------------------------------------ |
-| `plan_trip`      | AI-backed     | Rule-based draft, then smoothing           |
-| `replan_trip`    | AI-backed     | The same, for a mid-trip situation         |
-| `extract_form`   | AI-backed     | A sentence into the planning form          |
-| `validate_hours` | deterministic | Every stop against that venue's hours      |
-| `find_nearby`    | deterministic | Rank venues by real distance, then need    |
-| `search_web`     | API-backed    | Tavily, when the venue table has nothing   |
-| `place_search`   | API-backed    | Google Places, "which place did you mean"  |
-| `geocode`        | API-backed    | An address into coordinates                |
-
-**Workflows** chain components into an end-to-end use case, listed at
-`/workflows`, each with a test page that runs the real thing.
-
-| Workflow            | Trigger   | What it does                              |
-| ------------------- | --------- | ----------------------------------------- |
-| Plan from chat      | message   | Fills the planning form over a few turns  |
-| Replan on the go    | message   | Shifts the rest of the day                |
-| Find a nearby place | message   | Answers "somewhere nearby" with map links |
-| Log a place         | message   | Adds a place the app does not have        |
-| Propose new venues  | scheduled | A batch of candidates for review          |
-
-### Memory
-
-`src/memory.py` recalls what the app already knows about a parent (a child's
-age, the routine from their last saved trip) so the chat need not ask again.
-Read-only, recomputed per call, never a new source of truth. The chat shows what
-it remembered and lets the parent reject it.
-
----
-
-## Admin tools
-
-All behind `@admin_required`.
-
-| Page             | Purpose                                          |
-| ---------------- | ------------------------------------------------ |
-| `/components`    | Inventory of data sources, agent and components  |
-| `/workflows`     | The end-to-end use cases, each runnable          |
-| `/venues/review` | Approve proposals, confirm venues, fill hours    |
-| `/propose-venues`| Run a proposal batch                             |
-| `/settings`      | Edit the knowledge base and system prompts       |
-| `/chunks`        | Inspect and re-run chunking                      |
-| `/results`       | Thumbs up/down ratings and stats                 |
-| `/agent`         | Watch the chat bubble's real traffic             |
+**Memory** (`src/memory.py`) lets the chat reuse what the app already knows, like
+a child's age or the routine from your last saved trip, instead of asking again.
+It is read-only, and the chat shows you what it remembered so you can reject it.
 
 ---
 
@@ -276,91 +237,60 @@ All behind `@admin_required`.
 
 ```
 travel-with-tots/
-├── app.py                     # Flask entry point: routes, auth, form handling
+├── app.py                     # Flask entry point: routes, auth, forms
 ├── src/
-│   ├── db.py                  # the only module with SQL: schema, writes, reports
-│   ├── data_loader.py         # venues as plain dicts, hours for a date, constants
-│   ├── models.py              # Plan and Trip domain objects
-│   ├── itinerary.py           # generate_plans: the rule-based day
-│   ├── interactions.py        # replan() + find_nearby() in-trip logic
+│   ├── db.py                  # the only module with SQL
+│   ├── data_loader.py         # venues as plain dicts, hours for a date
+│   ├── models.py              # Plan and Trip objects
+│   ├── itinerary.py           # builds the day
+│   ├── interactions.py        # replanning and find-nearby logic
 │   ├── form_helpers.py        # form parsing and validation, no Flask
-│   ├── geo.py                 # distance, reach per transport mode, bounds guard
-│   ├── dates.py               # date and age utilities
-│   ├── memory.py              # recall(): what the app already knows
-│   ├── agents.py              # chatbot + plan/replan adjusters over OpenRouter
-│   ├── agent.py               # LangGraph tool-calling agent
-│   ├── intent.py              # message to workflow name, or none
+│   ├── geo.py                 # distance, and reach per transport mode
+│   ├── dates.py               # date and age helpers
+│   ├── memory.py              # what the app already knows about a parent
+│   ├── agents.py              # chatbot and the plan/replan adjusters
+│   ├── agent.py               # the LangGraph tool-calling agent
+│   ├── intent.py              # routes a message to a workflow, or not
 │   ├── rag.py                 # chunking, embeddings, retrieval
-│   ├── results.py             # thumbs up/down ratings by kind
-│   ├── candidates.py          # the venue candidate store
+│   ├── results.py             # thumbs up/down ratings
+│   ├── candidates.py          # proposed venues awaiting review
 │   ├── opendata.py            # Vancouver Open Data client
-│   ├── importers.py           # open-data records onto venue rows
-│   ├── osm.py                 # OpenStreetMap hours + websites, via Overpass
-│   ├── nominatim.py           # keyless geocoding for the proposal path
-│   ├── components/            # one file per component (see table above)
+│   ├── importers.py           # open data onto venue rows
+│   ├── osm.py                 # OpenStreetMap hours, via Overpass
+│   ├── nominatim.py           # keyless geocoding
+│   ├── components/            # one file per component
 │   ├── workflows/             # one file per workflow
-│   └── prompts/               # system prompts, editable from /settings
+│   └── prompts/               # system prompts, editable at /settings
 ├── templates/                 # Jinja, all extending base.html
-├── static/                    # CSS, JS, vendor/ (Leaflet, vendored not CDN)
+├── static/                    # CSS, JS, and vendored Leaflet
 ├── data/
-│   ├── app.db                 # SQLite, the runtime source of truth
-│   ├── venues.json            # curated seed, copied in on every boot
-│   ├── venue_candidates.csv   # agent proposals and human decisions
-│   ├── knowledge_base.md      # chatbot facts, edited directly
-│   └── chroma/                # vector index (generated, gitignored)
-├── scripts/                   # CLI jobs, see below
+│   ├── app.db                 # SQLite, the source of truth at runtime
+│   ├── venues.json            # the curated seed
+│   ├── venue_candidates.csv   # proposals and what a human decided
+│   ├── knowledge_base.md      # what the chatbot knows
+│   └── chroma/                # the vector index (generated)
+├── scripts/                   # CLI jobs
 └── tests/                     # stdlib unittest
 ```
 
-### Scripts
+**Data lives in SQLite** at `data/app.db`, built by `src/db.py`, which is the
+only module that writes SQL. Everything else works in plain dicts. The tables
+are `parents`, `children`, `trips`, `venues`, `venue_reports` (one amenity claim
+each) and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a
+decision). Ratings, candidates and intent logs are flat files in `data/`.
 
-| Script                 | Job                                             |
-| ---------------------- | ----------------------------------------------- |
-| `import_open_data.py`  | Import City parks and centres. Dry run by default. |
-| `propose_venues.py`    | Run a proposal batch too slow for a browser     |
-| `verify_hours.py`      | Flag hours that disagree with OpenStreetMap     |
-| `geocode_venues.py`    | Fill missing venue coordinates                  |
-| `replay_candidates.py` | Restore approved venues after a rebuild         |
-
----
-
-## Data model
-
-SQLite at `data/app.db`, created by `src/db.py`. Foreign keys are enforced per
-connection; every write is parameterized and transactional.
-
-| Table                | Holds                                                      |
-| -------------------- | ---------------------------------------------------------- |
-| `parents`            | Accounts: email, password hash, `is_admin`                 |
-| `children`           | Name and date of birth. Age is computed, never stored.     |
-| `trips`              | A saved day: the form's answers plus `plan_json`           |
-| `venues`             | The venue table, with provenance and verification columns  |
-| `venue_reports`      | One amenity claim, with its author and date                |
-| `venue_hours_checks` | Disagreements with OpenStreetMap, awaiting a decision      |
-
-Ratings live in `data/results.json`, candidates in `data/venue_candidates.csv`,
-and intent decisions in `data/intents.jsonl`.
+**Scripts** cover the jobs too slow or too rude for a web request:
+`import_open_data.py` (dry run by default), `propose_venues.py`,
+`verify_hours.py`, `geocode_venues.py` and `replay_candidates.py`.
 
 ---
 
-## Routes
+## Conventions worth knowing
 
-| Public                 | Logged in            | Admin                                |
-| ---------------------- | -------------------- | ------------------------------------ |
-| `/` landing            | `/dashboard`         | `/components`, `/workflows`          |
-| `/plan` build a day    | `/trip/<id>` saved   | `/venues/review`, `/propose-venues`  |
-| `/trip` run a day      | `/log-place`         | `/settings`, `/chunks`, `/results`   |
-| `/login`, `/signup`    | `/save-trip`         | Component and workflow test pages    |
-| `/chatbot`, `/feedback`| child and place CRUD | `/agent`                             |
-
----
-
-## Conventions
-
-- **`src/db.py` owns all SQL.** Everything else takes plain dicts.
-- **Fail clearly.** No silent fallbacks that hide a broken step.
-- **Enums are enforced where a value enters**, not only where it is offered, so
-  a stale page or hand-made post cannot introduce one.
-- **Keys stay server-side.** Maps are Leaflet with OpenStreetMap tiles; Google
-  Places is proxied through the server.
-- **Third-party JS is vendored**, never loaded from a CDN.
+- Anything a parent can pick is a closed list, checked on the way in as well as
+  on the way out, so a stale page cannot introduce a value nothing supports.
+- Failures are loud. There are no silent fallbacks that hide a broken step.
+- API keys stay on the server. Maps are Leaflet with OpenStreetMap tiles, and
+  Google Places is proxied.
+- Third-party JavaScript is vendored into `static/vendor/`, never loaded from a
+  CDN.
