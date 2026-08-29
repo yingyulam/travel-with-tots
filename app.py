@@ -739,15 +739,19 @@ def _as_float(value):
         return None
 
 
-def _per_day_from_form(form):
+def _per_day_from_form(form, prefix=""):
     """{weekday: (open, close)} from the per-day inputs, empty when untouched.
 
     A day left blank is simply absent, which the table reads as closed. That is
     the only way to say "shut on Mondays", so it must not be filled in for them.
+
+    `prefix` because the confirm list puts many venues' hours in one form, the
+    way the proposal rows already do.
     """
     table = {}
     for day in range(7):
-        opens, closes = _hour_pair(form, f"day{day}_open", f"day{day}_close")
+        opens, closes = _hour_pair(form, f"{prefix}day{day}_open",
+                                   f"{prefix}day{day}_close")
         if opens and closes:
             table[day] = (opens, closes)
     return table
@@ -886,15 +890,54 @@ def venue_confirm_batch():
     """
     admin_id = _current_parent()["id"]
     picked = request.form.getlist("picked")
+    saved = sum(_save_reviewed_venue(int(vid), vid, admin_id)
+                for vid in request.form.getlist("on_page"))
+
     cited = 0
     for venue_id in picked:
         source_url = _safe_url(request.form.get(f"{venue_id}-source_url", "").strip())
         cited += bool(source_url)
         mark_verified(int(venue_id), admin_id, source_url or None)
-    flash(f"Confirmed {len(picked)} venue{'s' if len(picked) != 1 else ''}"
-          + (f", {cited} with a citation." if cited else ".")
-          if picked else "Nothing selected.")
+
+    parts = []
+    if saved:
+        parts.append(f"Saved {saved} venue{'s' if saved != 1 else ''}")
+    if picked:
+        parts.append(f"confirmed {len(picked)}"
+                     + (f", {cited} with a citation" if cited else ""))
+    flash(", ".join(parts) + "." if parts else "Nothing selected.")
     return redirect(url_for("venue_review"))
+
+
+def _save_reviewed_venue(venue_id, prefix, admin_id):
+    """Apply one confirm row's edits. Returns 1 if the row was on the page.
+
+    Three stores, because a venue's data lives in three places: the columns a
+    reviewer may correct, its hours, and its amenities as dated reports. Each
+    underlying write already skips an unchanged value, so a row nobody touched
+    costs a comparison rather than a spurious edit or a moved timestamp.
+    """
+    fields = {name: (request.form.get(f"{prefix}-{name}") or "").strip()
+              for name in db.REVIEWABLE_VENUE_FIELDS
+              if name != "can_eat" and f"{prefix}-{name}" in request.form}
+    fields["can_eat"] = 1 if request.form.get(f"{prefix}-can_eat") else 0
+    db.update_reviewed_venue(venue_id, **fields)
+
+    note = request.form.get(f"{prefix}-hours_note", "").strip() or None
+    week = _per_day_from_form(request.form, prefix=f"{prefix}-")
+    if week:
+        _store_week(venue_id, week, note)
+    else:
+        db.set_venue_hours(venue_id, {})
+        opens, closes = _hour_pair(request.form, f"{prefix}-open_time",
+                                   f"{prefix}-close_time")
+        set_venue_default_hours(venue_id, opens, closes, note)
+
+    db.record_amenities(
+        venue_id,
+        {f: bool(request.form.get(f"{prefix}-{f}")) for f in db.REPORTABLE_FIELDS},
+        reported_by=admin_id, note="Checked at review.")
+    return 1
 
 
 @app.route("/propose-venues")

@@ -203,11 +203,13 @@ class ReviewPageTest(_ReviewTest):
         # The list used to be a name and a type. Hours were mentioned only when
         # missing, so the one field the planner acts on was invisible on every
         # venue somebody was being asked to vouch for.
-        self._awaiting(lat=49.28, lng=-123.12)
+        venue = self._awaiting(lat=49.28, lng=-123.12)
         body = self.client.get("/venues/review").get_data(as_text=True)
         block = body[body.index("3. Confirm"):]
-        for needed in ("Hours 09:00", "Check the location on a map",
-                       "Checked against"):
+        for needed in (f'name="{venue}-name"', f'name="{venue}-type"',
+                       f'name="{venue}-open_time" value="09:00"',
+                       f'name="{venue}-hours_note"',
+                       "Check the location on a map", "Checked against"):
             with self.subTest(needed=needed):
                 self.assertIn(needed, block)
 
@@ -251,14 +253,79 @@ class ReviewPageTest(_ReviewTest):
                                (venue["id"],)).fetchone()
         self.assertIsNotNone(row["verified_at"])
 
-    def test_a_per_day_timetable_is_not_described_as_every_day(self):
-        self._awaiting()
-        venue = db.get_unverified_venues()[0]
-        db.set_venue_hours(venue["id"], {day: ("10:00", "17:00")
-                                         for day in range(1, 7)})
+    def test_a_per_day_timetable_arrives_in_the_form(self):
+        venue = self._awaiting()
+        db.set_venue_hours(venue, {day: ("10:00", "17:00") for day in range(1, 7)})
         body = self.client.get("/venues/review").get_data(as_text=True)
-        block = body[body.index("3. Confirm"):]
-        self.assertIn("Mo closed", " ".join(block.split()))
+        # The template wraps attributes across lines, so compare on one line.
+        block = " ".join(body[body.index("3. Confirm"):].split())
+        # Tuesday filled in, Monday left blank, which is how the table says shut.
+        self.assertIn(f'name="{venue}-day1_open" value="10:00"', block)
+        self.assertIn(f'name="{venue}-day0_open" value=""', block)
+
+    def test_an_edit_is_saved_when_the_row_is_confirmed(self):
+        venue = self._awaiting(name="Wrong Name")
+        self.client.post("/venues/confirm", data={
+            "on_page": str(venue), "picked": str(venue),
+            f"{venue}-name": "Right Name", f"{venue}-type": "aquarium",
+            f"{venue}-setting": "indoor", f"{venue}-city": "Vancouver",
+            f"{venue}-open_time": "11:00", f"{venue}-close_time": "16:00",
+            f"{venue}-has_washroom": "on"})
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT * FROM venues WHERE id = ?",
+                               (venue,)).fetchone()
+        self.assertEqual(row["name"], "Right Name")
+        self.assertEqual(row["type"], "aquarium")
+        self.assertEqual((row["open_time"], row["close_time"]), ("11:00", "16:00"))
+        self.assertTrue(row["verified_at"])
+        self.assertIs(db.reported_flags([venue])[venue]["has_washroom"], True)
+
+    def test_a_row_can_be_corrected_without_confirming_it(self):
+        venue = self._awaiting(name="Wrong Name")
+        self.client.post("/venues/confirm", data={
+            "on_page": str(venue), f"{venue}-name": "Right Name",
+            f"{venue}-open_time": "09:00", f"{venue}-close_time": "17:00"})
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT name, verified_at FROM venues WHERE id = ?",
+                               (venue,)).fetchone()
+        self.assertEqual(row["name"], "Right Name")
+        self.assertIsNone(row["verified_at"])
+
+    def test_a_typed_week_is_saved_from_the_confirm_row(self):
+        venue = self._awaiting()
+        data = {"on_page": str(venue)}
+        for day in range(1, 7):
+            data[f"{venue}-day{day}_open"] = "10:00"
+            data[f"{venue}-day{day}_close"] = "17:00"
+        self.client.post("/venues/confirm", data=data)
+        week = db.get_venue_hours([venue])[venue]
+        self.assertNotIn(0, week)          # blank Monday means closed
+        self.assertEqual(week[1], ("10:00", "17:00"))
+
+    def test_a_venue_not_on_the_page_is_untouched(self):
+        # on_page is what says a row was on screen. Without it an absent row
+        # would be indistinguishable from one whose fields all came back empty.
+        venue = self._awaiting(name="Left Alone")
+        self.client.post("/venues/confirm", data={f"{venue}-name": "Hijacked"})
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT name FROM venues WHERE id = ?",
+                               (venue,)).fetchone()
+        self.assertEqual(row["name"], "Left Alone")
+
+    def test_sections_fold_and_a_section_with_work_starts_open(self):
+        self._awaiting()
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        confirm = body[body.index("3. Confirm") - 200:body.index("3. Confirm")]
+        self.assertIn('class="review-section"', confirm)
+        self.assertIn("open", confirm)
+
+    def test_a_section_with_nothing_in_it_starts_shut(self):
+        # Nothing has been proposed or submitted in this fixture, so Decide has
+        # no work and should not cost a screen.
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        decide = body[body.index("1. Decide") - 200:body.index("1. Decide")]
+        self.assertIn('class="review-section"', decide)
+        self.assertNotIn("open", decide)
 
     def test_a_non_admin_is_redirected(self):
         with mock.patch.object(

@@ -778,6 +778,38 @@ def add_or_update_submission(name, *, parent_id, **fields):
 # letting an edit rewrite it would turn "correct my typo" into "publish this".
 EDITABLE_VENUE_FIELDS = ("name", "type", "setting", "neighbourhood", "notes")
 
+# What a reviewer may correct on a venue the app is already planning around.
+# Wider than EDITABLE_VENUE_FIELDS, which is the parent's own form: an admin
+# confirming a hand-typed row is checking exactly these against a source, and a
+# wrong `type` or `city` is the kind of thing they are there to catch.
+#
+# Excludes hours, which go through set_venue_default_hours and set_venue_hours,
+# and amenities, which are reports rather than columns. Excludes source and
+# parent_id, which are never a caller's to rewrite.
+REVIEWABLE_VENUE_FIELDS = ("name", "type", "setting", "neighbourhood", "city",
+                           "can_eat")
+
+
+def update_reviewed_venue(venue_id, **fields):
+    """Correct a venue already in the searchable set, from the review queue.
+
+    Scoped to VERIFIED_SOURCES in the SQL rather than trusting the caller, the
+    same way update_venue is scoped to one parent: a pending submission belongs
+    to the other queue, with its own clash and missing-city checks.
+
+    Unknown field names raise rather than being ignored, so a typo in a form
+    name fails loudly instead of silently dropping an edit.
+    """
+    unknown = set(fields) - set(REVIEWABLE_VENUE_FIELDS)
+    if unknown:
+        raise ValueError(f"not reviewable: {', '.join(sorted(unknown))}")
+    if not fields:
+        return
+    source_clause, source_params = _verified_source_clause()
+    assignments = ", ".join(f"{name} = ?" for name in fields)
+    _write(f"UPDATE venues SET {assignments} WHERE id = ? AND {source_clause}",
+           [*fields.values(), venue_id, *source_params])
+
 
 def update_venue(venue_id, parent_id, **fields):
     """Update one of this parent's own submissions.

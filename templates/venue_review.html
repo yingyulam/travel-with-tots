@@ -23,12 +23,12 @@
    disclosure: filling any day in makes the week the answer and the single pair
    a fallback nothing reads. A day left blank in that week means closed, which
    is the only way to say "shut on Mondays". #}
-{% macro hour_fields(weekdays, pair=None, per_day=None, note=None) %}
+{% macro hour_fields(weekdays, pair=None, per_day=None, note=None, prefix="") %}
   <div class="review-fields">
     <label class="field"><span>Opens</span>
-      <input type="time" name="open_time" value="{{ pair[0] if pair else '' }}"></label>
+      <input type="time" name="{{ prefix }}open_time" value="{{ pair[0] if pair else '' }}"></label>
     <label class="field"><span>Closes</span>
-      <input type="time" name="close_time" value="{{ pair[1] if pair else '' }}"></label>
+      <input type="time" name="{{ prefix }}close_time" value="{{ pair[1] if pair else '' }}"></label>
   </div>
   <details class="per-day" {{ 'open' if per_day }}>
     <summary>Hours differ by day</summary>
@@ -37,15 +37,15 @@
     {% for index, label in weekdays %}
     <div class="per-day-row">
       <span class="per-day-name">{{ label }}</span>
-      <input type="time" name="day{{ index }}_open"
+      <input type="time" name="{{ prefix }}day{{ index }}_open"
              value="{{ per_day[index][0] if per_day and index in per_day else '' }}">
-      <input type="time" name="day{{ index }}_close"
+      <input type="time" name="{{ prefix }}day{{ index }}_close"
              value="{{ per_day[index][1] if per_day and index in per_day else '' }}">
     </div>
     {% endfor %}
   </details>
   <label class="field field-full"><span>Anything no timetable can hold</span>
-    <input type="text" name="hours_note" value="{{ note or '' }}"
+    <input type="text" name="{{ prefix }}hours_note" value="{{ note or '' }}"
            placeholder="e.g. shorter hours in January">
     <span class="field-hint">Seasons and one-off closures live here. Parents see it
       on the plan and trip pages.</span></label>
@@ -67,7 +67,8 @@
 {% block content %}
 
 <section class="card">
-  <h2>1. Decide<span class="queue-count">{{ proposals_total + submissions|length }}</span></h2>
+  <details class="review-section" {% if proposals_total + submissions|length %}open{% endif %}>
+  <summary><h2>1. Decide<span class="queue-count">{{ proposals_total + submissions|length }}</span></h2></summary>
   <p class="meta">Is this a venue at all? Nothing here reaches a plan until you say so.</p>
 
   <h3>Proposed by the agent</h3>
@@ -214,10 +215,12 @@
     </div>
     {% endfor %}
   {% endif %}
+  </details>
 </section>
 
 <section class="card">
-  <h2>2. Finish<span class="queue-count">{{ missing_hours_total + hours_checks|length }}</span></h2>
+  <details class="review-section" {% if missing_hours_total + hours_checks|length %}open{% endif %}>
+  <summary><h2>2. Finish<span class="queue-count">{{ missing_hours_total + hours_checks|length }}</span></h2></summary>
   <p class="meta">Already in the database, and held back by its hours. Both of
     these are the same job, so they sit together.</p>
 
@@ -302,10 +305,12 @@
     </div>
     {% endfor %}
   {% endif %}
+  </details>
 </section>
 
 <section class="card">
-  <h2>3. Confirm<span class="queue-count">{{ unverified_total }}</span></h2>
+  <details class="review-section" {% if unverified_total %}open{% endif %}>
+  <summary><h2>3. Confirm<span class="queue-count">{{ unverified_total }}</span></h2></summary>
   <p class="meta">Hand-typed venues the app already plans around, that no person
     has checked. Confirming records that you did and changes nothing else.</p>
 
@@ -317,33 +322,35 @@
       {{ unverified|length }} of {{ unverified_total }}.
     </p>
     {% for v in unverified %}
-    {# Everything the row already carried but did not show. Hours especially:
-       they were mentioned only when missing, so the one field the planner acts
-       on was invisible on every venue a reviewer was being asked to vouch for. #}
+    {# The same fields the proposal rows offer, because this is the same job:
+       these are the least-checked rows in the table, so a reviewer has to be
+       able to correct one before vouching for it, not only tick it. #}
     <div class="plan-option">
       <label class="review-pick">
         <input type="checkbox" name="picked" value="{{ v.id }}">
-        <span><strong>{{ v.name }}</strong> &middot; {{ v.type or 'no type' }}
-          {%- if v.setting %} &middot; {{ v.setting }}{% endif %}
-          {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
-          {%- if v.city %}, {{ v.city }}{% endif %}</span>
+        <span><strong>{{ v.name }}</strong>
+          {%- if not v.open_time %} &middot; <strong>no hours, so it is never
+            scheduled</strong>{% endif %}</span>
       </label>
 
-      {% set week = unverified_hours.get(v.id) %}
-      <p class="meta">
-        {% if week %}
-          {% for index, label in weekdays %}
-            {{ label }} {{ week[index][0] ~ '-' ~ week[index][1]
-                           if index in week else 'closed' }}{{ ", " if not loop.last }}
-          {%- endfor %}
-        {% elif v.open_time and v.close_time %}
-          Hours {{ v.open_time }}&ndash;{{ v.close_time }}, every day
-        {% else %}
-          <strong>No hours, so it is never scheduled.</strong>
-        {% endif %}
-        {%- if v.hours_note %} &middot; {{ v.hours_note }}{% endif %}
-        {%- if v.can_eat %} &middot; food on site{% endif %}
-      </p>
+      <div class="review-fields">
+        <label class="field"><span>Name</span>
+          <input type="text" name="{{ v.id }}-name" value="{{ v.name }}"></label>
+        <label class="field"><span>Type</span>
+          <select name="{{ v.id }}-type">{{ options(venue_types, v.type) }}</select></label>
+        <label class="field"><span>Indoor or out</span>
+          <select name="{{ v.id }}-setting">{{ options(settings, v.setting) }}</select></label>
+        <label class="field"><span>Neighbourhood</span>
+          <select name="{{ v.id }}-neighbourhood">{{ options(neighbourhoods, v.neighbourhood) }}</select></label>
+        <label class="field"><span>City</span>
+          <select name="{{ v.id }}-city">{{ options(cities, v.city) }}</select></label>
+      </div>
+
+      {{ hour_fields(weekdays, (v.open_time, v.close_time),
+                     unverified_hours.get(v.id), v.hours_note, prefix=v.id ~ '-') }}
+
+      {{ flags(v.id, dict(v, **unverified_reports.get(v.id, {})), conditional_flags) }}
+
       {% if v.lat %}
       <p class="meta">
         <a href="https://www.google.com/maps/search/?api=1&query={{ v.lat }},{{ v.lng }}"
@@ -351,18 +358,6 @@
       </p>
       {% else %}
         <p class="meta">No coordinates, so distances cannot be measured from it.</p>
-      {% endif %}
-
-      {% set reported = unverified_reports.get(v.id, {}) %}
-      {% if reported %}
-      <div class="badges">
-        {% for key, label in flag_labels %}
-          {% if key in reported %}
-          <span class="badge{{ ' badge-pending' if not reported[key] }}">{{
-            label if reported[key] else 'No ' ~ label|lower }}</span>
-          {% endif %}
-        {% endfor %}
-      </div>
       {% endif %}
 
       {# Most of these were typed in with no citation, so there is often nothing
@@ -378,9 +373,16 @@
             the confirmation records it.{% endif %}</span></label>
     </div>
     {% endfor %}
+
+    <button type="submit" name="action" value="save" class="cta-secondary">Save changes</button>
     <button type="submit" class="cta">Confirm checked</button>
+    {# Every row on the page is submitted, so the ids travel too: a venue whose
+       fields round-trip unchanged still has to be known to have been on screen,
+       or an edit to it could not be told from a row that was never shown. #}
+    {% for v in unverified %}<input type="hidden" name="on_page" value="{{ v.id }}">{% endfor %}
   </form>
   {% endif %}
+  </details>
 </section>
 
 <section class="card">
