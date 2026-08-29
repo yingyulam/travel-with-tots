@@ -81,10 +81,15 @@
           <select name="{{ c.id }}-neighbourhood">{{ options(neighbourhoods, c.neighbourhood) }}</select></label>
         <label class="field"><span>City</span>
           <select name="{{ c.id }}-city">{{ options(cities, c.city) }}</select></label>
+        {# Not `required`. Every proposal on the page sits in one form, so a
+           required-but-empty pair on any card blocked the whole submit: with
+           two hourless candidates queued, Reject and Save were unreachable
+           too. _cannot_approve still refuses an approval without hours, which
+           is the check that matters. #}
         <label class="field"><span>Opens</span>
-          <input type="time" name="{{ c.id }}-open_time" value="{{ c.open_time }}" required></label>
+          <input type="time" name="{{ c.id }}-open_time" value="{{ c.open_time }}"></label>
         <label class="field"><span>Closes</span>
-          <input type="time" name="{{ c.id }}-close_time" value="{{ c.close_time }}" required></label>
+          <input type="time" name="{{ c.id }}-close_time" value="{{ c.close_time }}"></label>
       </div>
       {% if c.hours_note %}
         <p class="field-hint">{{ c.hours_note }}
