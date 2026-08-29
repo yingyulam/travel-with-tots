@@ -9,8 +9,14 @@
   <div class="plan-grid">
     <div class="plan-option">
       <h3 class="plan-option-title">Venues DB</h3>
-      <p class="meta">Curated SQLite table</p>
-      <p>Curated venue data (hours, age range, features) queried to ground every plan and replan.</p>
+      <p class="meta">SQLite, the runtime source of truth</p>
+      <p>One venues table grounding every plan and replan: name, type, setting
+      (indoor/outdoor/both), neighbourhood, coordinates, and one open/close pair
+      plus a free-text hours note for what a pair cannot hold. Three sources
+      write to it, and the source field records which: the curated seed, the
+      City's open data, and places a parent logged. Amenities are deliberately
+      not columns here -- they live in Parent reports, so a claim always carries
+      who made it and when.</p>
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">User initial trip input</h3>
@@ -21,6 +27,56 @@
       <h3 class="plan-option-title">User in-trip input</h3>
       <p class="meta">/trip page</p>
       <p>Situation buttons on the trip page ("Nap happened here", "Need to stay here longer", "Do something else"...), a typed duration for the two that need one, and a free-text note sent with every replan.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">City of Vancouver Open Data</h3>
+      <div class="badges"><span class="badge">API-backed</span><span class="badge badge-deterministic">no review</span></div>
+      <p>src/opendata.py talks to the City, src/importers.py decides what a
+      venue is. Parks and community centres are imported straight into the
+      venues table with no review step: the City is more reliable about its own
+      parks than any reviewer we could put in front of them. Public washrooms
+      are read as an attribute of a park, never as a venue of their own. An
+      import fills blanks and never overwrites a value, and it matches an
+      existing curated venue by name so the curator's ranked row is upgraded in
+      place rather than duplicated. Keyless and openly licensed. Run from
+      scripts/import_open_data.py, which is a dry run unless told otherwise, so
+      it has no page here.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">OpenStreetMap (Overpass)</h3>
+      <div class="badges"><span class="badge">API-backed</span></div>
+      <p>src/osm.py, the outside opinion on opening hours. Two callers, and
+      neither acts on what it finds: scripts/verify_hours.py compares our stored
+      hours against OSM and flags disagreements for a person, since hours are
+      entered once at review and nothing else writes them; and the Venue
+      proposer prefills a candidate's hours before review, so a reviewer
+      confirms instead of types. It also carries the venue's own website, which
+      is where Official site looks first. Chosen over a commercial API because
+      it is openly licensed, so a result can be stored and shown with
+      attribution. Overpass rate-limits hard, so names are batched into one
+      query per run and this is not called from a page.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Nominatim</h3>
+      <div class="badges"><span class="badge">API-backed</span></div>
+      <p>src/nominatim.py: a place name to coordinates, keyless and ODbL. Used
+      by the Venue proposer only, and nothing a parent touches, which is why it
+      has no page. It replaced Google Places on that path: Places terms allow
+      keeping a place id but restrict retaining returned content, and everything
+      the proposer writes lands in a CSV tracked in git. Paced at one request a
+      second, and a bare-name hit is accepted only when the result is really in
+      British Columbia, because searching for "Vancouver" reaches Washington
+      too.</p>
+    </div>
+    <div class="plan-option">
+      <h3 class="plan-option-title">Parent reports</h3>
+      <div class="badges"><span class="badge badge-deterministic">no review</span></div>
+      <p>The venue_reports table: what a parent found when they were actually
+      there (washroom, nursing room, high chair, step-free access), written from
+      the trip page and never gated on review. Every claim carries an author and
+      a date, so "nobody has said" reads differently from "somebody looked and
+      there was none", and the newest report wins a disagreement. This is why
+      amenities are not venue columns.</p>
     </div>
   </div>
 </section>
@@ -36,8 +92,13 @@
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">Memory</h3>
-      <div class="badges"><span class="badge badge-pending">not implemented yet</span></div>
-      <p>Nothing persists across sessions today. nap_notes/extra_notes are per-trip form fields, not learned preferences.</p>
+      <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
+      <p>src/memory.py: recall() turns a parent id into what the app already
+      knows -- a child's age, the routine from the last day they saved -- so the
+      chat can reuse it instead of asking again. Read only, and no new source of
+      truth: an age is recomputed from a date of birth on every call, and a
+      draft is not memory. Nothing is learned or inferred; nap_notes and
+      extra_notes are still per-trip form fields.</p>
     </div>
     <div class="plan-option">
       <h3 class="plan-option-title">Soul</h3>
@@ -66,23 +127,28 @@
       <h3 class="plan-option-title">Opening-hours check</h3>
       <div class="badges"><span class="badge badge-deterministic">deterministic</span></div>
       <p>src/components/validate_hours.py: the last thing a plan passes before a
-      parent sees it. Checks every stop against that venue's hours for the trip
-      date, accounting for summer/winter, weekday/weekend and statutory
-      holidays, then swaps a closed venue for an open one or leaves the slot
-      free. Deterministic on purpose: comparing a time to stored hours is
-      arithmetic. A venue whose hours we do not know is treated as closed, never
-      as open.</p>
+      parent sees it. Checks every stop against that venue's one open/close pair
+      for the trip date, then swaps a closed venue for an open one or leaves the
+      slot free. A statutory holiday is the one date that changes the answer:
+      somewhere with no door keeps its pair, everything else reads as unknown,
+      because a default pair says nothing about Christmas. Deterministic on
+      purpose: comparing a time to stored hours is arithmetic. A venue whose
+      hours we do not know is treated as closed, never as open.</p>
     </div>
 
     <div class="plan-option">
     <h3 class="plan-option-title">Venue proposer</h3>
       <div class="badges"><span class="badge">AI-backed</span></div>
-      <p>src/workflows/propose_venues.py: searches the web for real places a
-      parent could take a toddler and writes a small batch of candidates with the
-      URL each claim came from. It proposes no amenity and no opening hours,
-      because a search result cannot establish them, and it never writes a venue
-      itself. A person approves candidates in the review queue, and rejections
-      are remembered so a place you turn down is not offered again.</p>
+      <p>src/workflows/propose_venues.py: searches the web for the places the
+      City does not own -- museums, aquariums, attractions -- and writes a small
+      batch of candidates with the URL each claim came from. It never writes a
+      venue itself. Coordinates come from Nominatim and hours from
+      OpenStreetMap, never from the model, and only where OSM reads as one plain
+      pair; anything richer is left for the reviewer. It proposes no amenity,
+      because a search result cannot establish one. A person approves candidates
+      in the <a href="{{ url_for('venue_review') }}">review queue</a>, which is
+      the only path that turns a candidate into a venue, and rejections are
+      remembered so a place you turn down is not offered again.</p>
       <a class="cta-secondary" href="{{ url_for('propose_venues_page') }}">Try it</a>
     </div>
 
@@ -112,7 +178,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Place Search</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>src/components/place_search.py: finds a place by name via Google Places, so Log a Place can offer candidates to pick from instead of asking a parent to describe a location twice. Separate from Geocode on purpose: that one turns an address into coordinates, this one answers "which place did you mean", and geocoding a business name tends to return a street. Server-side like every other key, and the key travels in a header rather than a URL, so a logged request can't carry it.</p>
+      <p>src/components/place_search.py: finds a place by name via Google Places, so Log a Place can offer candidates to pick from instead of asking a parent to describe a location twice. Separate from Geocode on purpose: that one turns an address into coordinates, this one answers "which place did you mean", and geocoding a business name tends to return a street. It backs the parent-facing lookups only -- Log a Place, /place-search, Find Nearby -- since the proposal path moved to Nominatim, whose results it is allowed to store. Server-side like every other key, and the key travels in a header rather than a URL, so a logged request can't carry it.</p>
       <a class="cta-secondary" href="{{ url_for('place_search_page') }}">Try it</a>
     </div>
     <div class="plan-option">
