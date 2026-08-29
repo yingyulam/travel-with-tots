@@ -1171,6 +1171,76 @@ parent's own words and every report about the venue with it. Both appear under
 | `min_age_months`, `max_age_months` | 0 and 60 on every row ever written; the age clause never excluded a venue. Age paces the day instead |
 | `children.gender` | Collected, stored, and read back only by the form that collected it |
 
+### Getting between stops
+
+The form asks one question about transport: **how do you get from one stop to
+the next?** Car (covering taxi and ride-share), public transit, or on foot.
+
+It used to ask five things at once — car, bus, stroller, carrier, other — and
+the answer changed nothing at all. Five combinations, one plan:
+
+```
+['car']                    9:00 11:30 1:00 4:45   8.8 km
+['bus']                    9:00 11:30 1:00 4:45   8.8 km
+['stroller']               9:00 11:30 1:00 4:45   8.8 km
+['car','bus','stroller']   9:00 11:30 1:00 4:45   8.8 km
+```
+
+Identical venues, identical times, and a **4.1 km leg** handed to a family on
+foot with a toddler.
+
+**Why the list shrank to three.** It was mixing two different questions: how you
+travel between venues, and what you have with you at one. A stroller is not a way
+of covering three kilometres — it is what you push around a park once you get
+there. Every family is now assumed to have one, so it is not asked about;
+`stroller` and `carrier` are gone rather than merged, because they were answering
+a different question and differed nowhere in the code.
+
+And once it is only about the gap between two venues, **everyone walks**. Walking
+is the floor, not one option among several, so what actually varies is the
+furthest you can comfortably get — which makes it one choice, not a checklist.
+
+**How far is "reasonable" is a judgment, not a calculation:**
+
+```
+on foot           1.5 km      about 26 minutes pushing a stroller
+public transit    5 km
+car / taxi        8 km
+```
+
+There is no routing, no schedules, no transfers, no waiting, and no attempt to
+model that a SkyTrain covers more ground than a bus. The reach *is* the transit
+model, and it is honest about being a heuristic.
+
+**Proximity sorts the candidates; it never filters them.** Each stop after the
+first is chosen with the previous one as an anchor, and venues within reach go to
+the front — so the curator's ranking and what the parent asked for still decide
+*within* reach, and a distant venue stays reachable when nothing nearer is open.
+A filter would have emptied a day, which this codebase has been bitten by twice.
+
+The effect, measured over nine plans per mode:
+
+```
+driving    62.4 km -> 62.4 km    every plan byte-identical
+transit    62.4 km -> 51.2 km    changed only where a leg exceeded 5 km
+walking    62.4 km -> 19.7 km    68% less, no leg over 1.3 km
+```
+
+A walking day went from *Seawall → Science World → Queen Elizabeth Park →
+Oakridge Mall* to *Seawall → English Bay → Second Beach → Alexandra Park* — all
+four stops kept, and a real West End afternoon.
+
+Every stop now tells you how far it is: *"A beach in West End. 1.0 km from your
+last stop."* That is the only thing a parent can see that proves the mode was
+read, and it is how they judge whether a day is walkable.
+
+**No travel-time model, deliberately.** Stops are spread across the whole day, so
+gaps are hours wide and travel time disappears into them. At a 1.5 km walking
+reach the longest leg is about 26 minutes, which fits even the tightest gap the
+nap anchoring produces — so fixing *which venues are chosen* fixed the timing for
+free. A real estimate needs routing, and the honest version of that is the Google
+Maps link already on every stop.
+
 ### Hours, and the day being planned
 
 The plan form carries a **date**, because which hours apply depends on it. A
