@@ -231,5 +231,57 @@ class ThePlanRouteCarriesThePinTest(unittest.TestCase):
                 self.assertIn(needed, html)
 
 
+class TheSearchIsLiveTest(unittest.TestCase):
+    """Results appear as the parent types, so there is no button to press.
+
+    Every keystroke is a potential Google Places call, billed per request, on a
+    route open to anyone. The guards below are the whole reason that is not
+    reckless, so they are asserted rather than left to a comment.
+    """
+
+    def setUp(self):
+        with open("static/plan-accommodation.js") as f:
+            self.source = f.read()
+
+    def test_typing_is_what_triggers_a_search(self):
+        self.assertIn('nameInput.addEventListener("input", searchAfterPause)',
+                      self.source)
+
+    def test_there_is_no_search_button_left_to_press(self):
+        html = app_module.app.test_client().get("/plan").get_data(as_text=True)
+        self.assertNotIn("accommodation-search-go", html)
+        self.assertNotIn("accommodation-search-go", self.source)
+
+    def test_it_waits_for_a_pause_rather_than_firing_per_character(self):
+        self.assertIn("TYPING_PAUSE_MS", self.source)
+        self.assertIn("setTimeout(() => runSearch(query), TYPING_PAUSE_MS)",
+                      self.source)
+        self.assertIn("clearTimeout(pending)", self.source)
+
+    def test_a_fragment_too_short_to_mean_anything_is_not_searched(self):
+        self.assertIn("query.length < MIN_QUERY", self.source)
+
+    def test_a_stale_answer_cannot_overwrite_a_newer_one(self):
+        # "Syl" landing after "Sylvia" is the classic live-search bug.
+        self.assertIn("if (inFlight) inFlight.abort();", self.source)
+        self.assertIn("signal: request.signal", self.source)
+
+    def test_cancelling_is_not_reported_as_a_failure(self):
+        self.assertIn('if (e.name === "AbortError") return;', self.source)
+
+    def test_picking_a_result_does_not_search_for_itself(self):
+        # choosePlace writes the field, so without this the choice would look
+        # like typing and spend another call on the name just chosen.
+        self.assertIn("settled = place.name;", self.source)
+        self.assertIn("if (query === settled) return;", self.source)
+
+    def test_the_field_announces_its_results_to_a_screen_reader(self):
+        html = app_module.app.test_client().get("/plan").get_data(as_text=True)
+        for needed in ('role="combobox"', 'aria-controls="accommodation-results"',
+                       'role="listbox"', 'aria-live="polite"'):
+            with self.subTest(needed=needed):
+                self.assertIn(needed, html)
+
+
 if __name__ == "__main__":
     unittest.main()

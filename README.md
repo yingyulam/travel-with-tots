@@ -1292,6 +1292,20 @@ tiles are not. This is the same trade `static/log-a-place.js` already made, and
 the picker is deliberately the smaller sibling of that one: it needs coordinates
 only, so it does not reverse-geocode the pin to name it.
 
+**The search is live**, with no button: results appear as the parent types. Two
+guards make that affordable rather than reckless, because each search is a
+Google Places call billed per request on a route open to anyone. It waits
+**350ms for a pause in typing** instead of firing per character, and it ignores
+anything under **3 characters**, which is too short to mean a place. Picking a
+result writes the field, so the chosen name is remembered and does not
+immediately search for itself.
+
+Every search also **aborts the one before it**. Without that, the answer to
+"Syl" can land after the answer to "Sylvia" and overwrite it, which is the
+standard way a live search ends up showing results for a query nobody can see.
+A cancelled request is this code's own doing, so it is not reported as a
+failure.
+
 One bug fell out of writing this: `components/plan_trip.py` built the planner's
 inputs **without `transit`**, so the transport mode reached the AI prompt but
 never the rule-based draft. Every plan a parent saw had been using the default

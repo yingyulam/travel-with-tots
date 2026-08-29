@@ -18,9 +18,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const latInput = document.getElementById("accommodation-lat");
   const lngInput = document.getElementById("accommodation-lng");
   const status = document.getElementById("accommodation-status");
-  const searchBtn = document.getElementById("accommodation-search-go");
   const searchHint = document.getElementById("accommodation-search-hint");
   const results = document.getElementById("accommodation-results");
+
+  // Results appear as they type, so every keystroke is a potential Google
+  // Places call, billed per request. These two are what keep that honest:
+  // wait for a pause rather than firing per character, and do not search a
+  // fragment too short to mean anything ("Sy" matches most of the city).
+  const TYPING_PAUSE_MS = 350;
+  const MIN_QUERY = 3;
 
   // Where the map opens before anyone has said anything: the city the curated
   // venues are in, so the first pin is somewhere plausible.
@@ -80,11 +86,25 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("accommodation-clear")
     ?.addEventListener("click", clearPin);
 
+  // The query whose results are on screen, so re-searching it is skipped.
+  // Set when a result is picked, since that writes the field.
+  let settled = null;
+  let pending = null;      // the typing-pause timer
+  let inFlight = null;     // the request to abandon when a newer one starts
+
+  function closeResults() {
+    results.replaceChildren();
+    nameInput.setAttribute("aria-expanded", "false");
+  }
+
   function choosePlace(place) {
     // The name they picked replaces whatever they typed, so the text and the
-    // pin describe the same place. The AI prompt reads this field.
+    // pin describe the same place. The AI prompt reads this field. Writing to
+    // the field does not fire `input`, but a later edit would, so `settled`
+    // stops the choice immediately re-searching for itself.
     nameInput.value = place.name;
-    results.replaceChildren();
+    settled = place.name;
+    closeResults();
     searchHint.textContent = "";
     if (place.lat != null && place.lng != null) {
       setPin(place.lat, place.lng,
@@ -94,10 +114,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderResults(places) {
     results.replaceChildren();
+    nameInput.setAttribute("aria-expanded", places.length ? "true" : "false");
     places.forEach((place) => {
       const card = document.createElement("button");
       card.type = "button";
       card.className = "place-result";
+      card.setAttribute("role", "option");
       const name = document.createElement("strong");
       name.textContent = place.name;
       const detail = document.createElement("span");
@@ -109,25 +131,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  async function runSearch() {
-    const query = nameInput.value.trim();
-    if (!query) {
-      searchHint.textContent = "Type where you're staying first.";
-      return;
-    }
-    searchBtn.disabled = true;
+  async function runSearch(query) {
+    // Abandon whatever was already running. Without this the answer to "Syl"
+    // can land after the answer to "Sylvia" and overwrite it, which is the
+    // classic way a live search shows results for a query nobody can see.
+    if (inFlight) inFlight.abort();
+    const request = new AbortController();
+    inFlight = request;
     searchHint.textContent = "Searching…";
-    results.replaceChildren();
     try {
       const centre = map.getCenter();
       const res = await fetch("/plan/accommodation-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, lat: centre.lat, lng: centre.lng }),
+        signal: request.signal,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Couldn't search for that.");
       if (!data.places.length) {
+        closeResults();
         searchHint.textContent =
           "Nothing matched. Click the map to drop the pin yourself.";
         return;
@@ -135,20 +158,48 @@ document.addEventListener("DOMContentLoaded", () => {
       searchHint.textContent = "Pick the right one:";
       renderResults(data.places);
     } catch (e) {
+      // A cancelled request is this code's own doing, not a failure to report.
+      if (e.name === "AbortError") return;
       // The typed text is still a complete answer on its own, and a pin they
       // already dropped still stands, so this never costs them what they had.
+      closeResults();
       searchHint.textContent = `${e.message} Click the map to pin it instead.`;
     } finally {
-      searchBtn.disabled = false;
+      if (inFlight === request) inFlight = null;
     }
   }
 
-  searchBtn.addEventListener("click", runSearch);
+  function searchAfterPause() {
+    clearTimeout(pending);
+    const query = nameInput.value.trim();
+    if (query === settled) return;
+    settled = null;
+    if (query.length < MIN_QUERY) {
+      // Below the threshold there is nothing to show, and an old result list
+      // for a query they have deleted is worse than none.
+      if (inFlight) inFlight.abort();
+      closeResults();
+      searchHint.textContent = "";
+      return;
+    }
+    pending = setTimeout(() => runSearch(query), TYPING_PAUSE_MS);
+  }
+
+  nameInput.addEventListener("input", searchAfterPause);
   nameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      clearTimeout(pending);
+      if (inFlight) inFlight.abort();
+      closeResults();
+      searchHint.textContent = "";
+    }
     if (e.key === "Enter") {
-      // The field lives inside the plan form, so Enter would submit it.
+      // The field lives inside the plan form, so Enter would submit it. With
+      // no button left, this is also how someone impatient skips the pause.
       e.preventDefault();
-      runSearch();
+      clearTimeout(pending);
+      const query = nameInput.value.trim();
+      if (query.length >= MIN_QUERY) runSearch(query);
     }
   });
 });

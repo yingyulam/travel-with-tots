@@ -141,20 +141,22 @@
         back to.</p>
       <label class="field field-full">
         <span>Hotel or address</span>
-        <div class="need-other-row">
-          <input type="text" id="accommodation" name="accommodation"
-                 value="{{ form.accommodation }}" autocomplete="off"
-                 placeholder="e.g. Sylvia Hotel, or an address">
-          <button type="button" class="tap-btn" id="accommodation-search-go">Search</button>
-        </div>
+        {# Searches as you type, so there is no button to press. role="combobox"
+           and the live region below are what tell a screen reader that results
+           appear without the field being submitted. #}
+        <input type="text" id="accommodation" name="accommodation"
+               value="{{ form.accommodation }}" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-autocomplete="list"
+               aria-controls="accommodation-results"
+               placeholder="e.g. Sylvia Hotel, or an address">
       </label>
-      <p class="field-hint" id="accommodation-search-hint"></p>
-      <div id="accommodation-results"></div>
+      <p class="field-hint" id="accommodation-search-hint" aria-live="polite"></p>
+      <div id="accommodation-results" role="listbox"></div>
       <div id="accommodation-map" class="place-map"></div>
       <div class="chips">
         <button type="button" class="tap-btn" id="accommodation-clear">Clear pin</button>
       </div>
-      <p id="accommodation-status" class="meta">Search for it, or click the map to drop a pin.</p>
+      <p id="accommodation-status" class="meta">Start typing to search, or click the map to drop a pin.</p>
       {# Both or neither: read_form drops half a coordinate rather than store a
          trip that looks pinned and is not. #}
       <input type="hidden" name="accommodation_lat" id="accommodation-lat"
