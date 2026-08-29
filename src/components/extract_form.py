@@ -25,7 +25,7 @@ import re
 from werkzeug.datastructures import MultiDict
 
 from ..agents import call_openrouter, parse_json_reply
-from ..data_loader import VENUE_TYPES
+from ..data_loader import SUPPORTED_CITIES, VENUE_TYPES
 from ..form_helpers import (
     DINING_OPTIONS,
     MAX_AGE_YEARS,
@@ -96,6 +96,12 @@ EXTRACTED_FORM_PROPERTIES = {
     "strict_schedule": _nullable("boolean"),
     # One value now, not an array: the form asks a single question about how
     # the family gets between stops.
+    # A closed list in the schema, not a sentence in the prompt. The form
+    # offers one city because the venue table holds one city, so a model that
+    # can only answer Vancouver or null cannot claim a destination we would
+    # then have to quietly overwrite.
+    "destination": {"type": ["string", "null"],
+                    "enum": [*SUPPORTED_CITIES, None]},
     "transit": {"type": ["string", "null"], "enum": [*TRANSIT_KEYS, None]},
     "interest": _enum_array(INTEREST_LABELS),
     "dining": {"type": ["string", "null"], "enum": [*DINING_KEYS, None]},

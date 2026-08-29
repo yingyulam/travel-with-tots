@@ -25,7 +25,7 @@ class PlanUsesTheChosenModelTest(unittest.TestCase):
                 "changed": True}
         with mock.patch.object(app_module, "plan_trip", return_value=plan) as planned:
             self.client.post("/plan",
-                              data={"destination": "Burnaby",
+                              data={"destination": "Vancouver",
                                     "generate": "1", **extra})
         return planned.call_args.kwargs["model"]
 
@@ -72,7 +72,7 @@ class ComponentsPassItToTheAgentTest(unittest.TestCase):
         from src.components import plan_trip as module
         with mock.patch.object(module, "PlanningAgent") as agent:
             agent.return_value.adjust_plan.return_value = {"stops": []}
-            module.plan_trip(destination="Burnaby", age_months=24, model=PICKED)
+            module.plan_trip(destination="Vancouver", age_months=24, model=PICKED)
         agent.assert_called_once_with(PICKED)
 
     def test_replan_trip_hands_the_model_to_the_replanning_agent(self):
@@ -88,7 +88,7 @@ class ComponentsPassItToTheAgentTest(unittest.TestCase):
         from src.components import plan_trip as module
         with mock.patch.object(module, "PlanningAgent") as agent:
             agent.return_value.adjust_plan.return_value = {"stops": []}
-            module.plan_trip(destination="Burnaby", age_months=24)
+            module.plan_trip(destination="Vancouver", age_months=24)
         agent.assert_called_once_with(DEFAULT_MODEL)
 
 

@@ -192,16 +192,18 @@ class TheRoutineTest(_MemoryTest):
         a = self._child("Sam", years=4)
         b = self._child("Baby", years=1)
         stamp = "2026-08-11 20:06:19"
+        # Distinguished by stop_count rather than destination: destination is a
+        # closed list of one now, so two rows cannot differ on it.
         with closing(db.connect()) as conn:
-            for child_id, dest in ((a, "Vancouver"), (b, "Burnaby")):
+            for child_id, stops in ((a, "2"), (b, "5")):
                 conn.execute(
                     "INSERT INTO trips (parent_id, child_id, destination, "
-                    "plan_json, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (self.parent_id, child_id, dest, PLAN, stamp))
+                    "stop_count, plan_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (self.parent_id, child_id, "Vancouver", stops, PLAN, stamp))
             conn.commit()
         result = memory.recall(self.parent_id)
         self.assertEqual(result["child"]["name"], "Baby")
-        self.assertEqual(result["form"]["destination"], "Burnaby")
+        self.assertEqual(result["form"]["stop_count"], "5")
 
 
 class DirtyRoutineTest(_MemoryTest):

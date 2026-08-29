@@ -61,9 +61,16 @@ chunk index, which can take a few seconds.
 - Collects trip details through a mobile-friendly form: wake-up/bedtime,
   naps (start time + duration, up to 4), destination, transport, pace,
   dining preference and preferred lunch time, desired features, and
-  free-text notes (accommodation, sleep habits, etc).
-- Picking **1-3 themes** (Outdoorsy / Rainy-day / Culture), or none for a
-  "Mixed" day, generates a **rule-based candidate plan** as a card with a
+  free-text notes (sleep habits, etc) alongside the accommodation pin.
+- **Destination is a dropdown, not free text**, and today it holds one option.
+  Every venue in the table is in Vancouver, and the planner never filters on
+  destination anyway, so a typed "Seattle" produced a Vancouver day wearing a
+  Seattle label. The options come from `data_loader.SUPPORTED_CITIES`, so
+  supporting a second city is a change to the data and that constant. Note this
+  is a different question from `CITIES`, which lists where a *venue* can be and
+  does include North Vancouver, since Grouse Mountain and Capilano are there.
+- Picking any **interests**, or none for a natural mix,
+  generates a **rule-based candidate plan** as a card with a
   stop preview.
 - **"✨ Try AI-assisted day"** builds an AI-generated alternative for the same
   theme(s) on demand, grounded only in real venues and shaped by the whole

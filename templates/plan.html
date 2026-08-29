@@ -122,7 +122,16 @@
       {% endif %}
       <label class="field">
         <span>Destination</span>
-        <input type="text" name="destination" value="{{ form.destination }}">
+        {# One option today, and a dropdown anyway: every venue in the table is
+           in Vancouver, so a free-text box invited a city we cannot plan. The
+           options come from data_loader.SUPPORTED_CITIES, so adding a city is
+           a change to the data and its constant, not to this template. #}
+        <select name="destination">
+          {% for city in supported_cities %}
+          <option value="{{ city }}"
+                  {{ 'selected' if city == form.destination }}>{{ city }}</option>
+          {% endfor %}
+        </select>
       </label>
       <label class="field">
         <span>Date</span>

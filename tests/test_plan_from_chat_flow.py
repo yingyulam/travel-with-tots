@@ -149,7 +149,12 @@ class KeepsPromptingTest(unittest.TestCase):
 
 class MergeTest(unittest.TestCase):
     """Each extraction returns a complete form, so a plain update would let a
-    later turn reset an earlier turn's answers back to their defaults."""
+    later turn reset an earlier turn's answers back to their defaults.
+
+    The destination values below are stubs fed straight to the merge, which is
+    field-agnostic and runs above validation. They are not values the form can
+    produce: the destination is a closed list of one supported city.
+    """
 
     def test_a_later_turn_does_not_reset_an_earlier_one(self):
         state = {"stage": STAGE_COLLECTING, "form": dict(DEFAULTS), "found": []}
@@ -542,18 +547,31 @@ class PrefillRouteTest(unittest.TestCase):
     def test_prefill_fills_the_form_without_planning(self):
         with mock.patch.object(self.app_module, "plan_trip") as planned:
             resp = self.client.post("/plan", data={"prefill": "1",
-                                                   "destination": "Burnaby",
+                                                   "destination": "Vancouver",
                                                    "wake_up": "06:30"})
         planned.assert_not_called()
         html = resp.get_data(as_text=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("Burnaby", html)
+        # The destination is a select now, so "it came back" means the right
+        # option is selected. Matching the bare word would pass on the page
+        # title, which says Vancouver whatever was posted.
+        self.assertRegex(html, r'<option value="Vancouver"\s*\n?\s*selected>')
         self.assertIn("06:30", html)
+
+    def test_an_unsupported_destination_comes_back_as_the_one_we_cover(self):
+        # The dropdown offers one city; a hand-made post can still name
+        # another, and it must not be echoed back as though we could plan it.
+        with mock.patch.object(self.app_module, "plan_trip"):
+            resp = self.client.post("/plan", data={"prefill": "1",
+                                                   "destination": "Burnaby"})
+        html = resp.get_data(as_text=True)
+        self.assertNotIn("Burnaby", html)
+        self.assertRegex(html, r'<option value="Vancouver"\s*\n?\s*selected>')
 
     def test_the_handoff_shape_round_trips(self):
         # What the widget's hidden form posts: naps as parallel fields rather
         # than the array read_form returns, lists repeated, booleans as "on".
-        posted = {"prefill": "1", "destination": "Burnaby",
+        posted = {"prefill": "1", "destination": "Vancouver",
                   "nap_start": "12:30", "nap_duration": "90",
                   "transit": "transit",
                   "features": "kid_friendly", "strict_schedule": "on",
@@ -562,8 +580,14 @@ class PrefillRouteTest(unittest.TestCase):
             resp = self.client.post("/plan", data=posted)
         planned.assert_not_called()
         html = resp.get_data(as_text=True)
-        for value in ("Burnaby", "12:30", "90", "bus", "stroller"):
+        for value in ("12:30", "90"):
             self.assertIn(value, html)
+        # These two used to assert "bus" and "stroller" were in the page, which
+        # passed on the nap question's wording ("naps well in a stroller, car,
+        # or bus") rather than on anything the post did. Neither has been a
+        # transit value since the mode became one question.
+        self.assertRegex(html, r'value="transit"\s*\n?\s*checked')
+        self.assertRegex(html, r'<option value="Vancouver"\s*\n?\s*selected>')
 
     def test_asking_for_a_day_still_generates_one(self):
         # The regression that matters in the other direction: the hand-off must
@@ -573,7 +597,7 @@ class PrefillRouteTest(unittest.TestCase):
                 "changed": True}
         with mock.patch.object(self.app_module, "plan_trip",
                                return_value=plan) as planned:
-            resp = self.client.post("/plan", data={"destination": "Burnaby",
+            resp = self.client.post("/plan", data={"destination": "Vancouver",
                                                    "generate": "1"})
         planned.assert_called_once()
         self.assertEqual(resp.status_code, 200)

@@ -6,7 +6,7 @@ from datetime import date
 
 from .dates import parse_date, compute_age
 from .geo import as_point
-from .data_loader import VENUE_TYPES
+from .data_loader import SUPPORTED_CITIES, VENUE_TYPES
 from .db import get_children
 
 # Age is capped at this many years, 0 months.
@@ -176,7 +176,13 @@ def read_form(form):
         "transit_nap": form.get("transit_nap") or DEFAULTS["transit_nap"],
         "age_years": age_years,
         "age_months": age_months,
-        "destination": form.get("destination") or DEFAULTS["destination"],
+        # Only a city the app can actually plan. A select does not stop a
+        # hand-made post or a stale page, which is the same gap that was closed
+        # for `interest` and then for `transit`. An unsupported value falls back
+        # to the default rather than raising, since it is a value we offered a
+        # closed list for and there is exactly one sensible answer.
+        "destination": (form.get("destination") if form.get("destination")
+                        in SUPPORTED_CITIES else DEFAULTS["destination"]),
         "trip_date": parse_date(form.get("trip_date")).isoformat(),
         "accommodation": form.get("accommodation", "").strip(),
         # Kept as strings, like every other form value, so the dict round-trips

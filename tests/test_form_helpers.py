@@ -1,6 +1,7 @@
 import unittest
 from unittest import mock
 
+from src.data_loader import CITIES, SUPPORTED_CITIES
 from src.form_helpers import (
     ASSUMED_NAP_DURATION_MIN,
     DEFAULTS,
@@ -118,6 +119,47 @@ class ResolvePlanChildTest(unittest.TestCase):
             form = read_form(_Form(child_ids=["1", "2"], plan_child_id="3"))
             result = resolve_plan_child(form, {"id": 1})
         self.assertEqual(result["plan_child_id"], "2")
+
+class TheDestinationIsAClosedListTest(unittest.TestCase):
+    """The app plans one city, because the venue table holds one city.
+
+    Free text invited a destination nothing could satisfy: the planner never
+    filters on it, so "Seattle" produced a Vancouver day labelled Seattle. The
+    dropdown says so, and read_form enforces it, because a select is not a
+    guard against a stale page or a hand-made post. That gap has been closed
+    once for `interest` and once for `transit` already.
+    """
+
+    def _destination(self, **data):
+        return read_form(_Form(data))["destination"]
+
+    def test_a_supported_city_is_kept(self):
+        self.assertEqual(self._destination(destination="Vancouver"), "Vancouver")
+
+    def test_an_unsupported_city_falls_back_rather_than_being_carried(self):
+        self.assertEqual(self._destination(destination="Seattle"),
+                         DEFAULTS["destination"])
+
+    def test_a_neighbourhood_is_not_a_destination(self):
+        # The extractor's prompt has always said so; nothing enforced it.
+        self.assertEqual(self._destination(destination="Kitsilano"),
+                         DEFAULTS["destination"])
+
+    def test_a_venue_city_is_still_not_a_trip_destination(self):
+        # CITIES holds Burnaby and North Vancouver because venues are there.
+        # SUPPORTED_CITIES is a different question: where a day can be planned.
+        self.assertIn("Burnaby", CITIES)
+        self.assertNotIn("Burnaby", SUPPORTED_CITIES)
+        self.assertEqual(self._destination(destination="Burnaby"),
+                         DEFAULTS["destination"])
+
+    def test_nothing_given_is_the_default(self):
+        self.assertEqual(self._destination(), DEFAULTS["destination"])
+
+    def test_the_default_is_itself_supported(self):
+        # Otherwise every form would fall back to a value it then rejects.
+        self.assertIn(DEFAULTS["destination"], SUPPORTED_CITIES)
+
 
 
 if __name__ == "__main__":

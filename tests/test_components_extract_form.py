@@ -59,12 +59,12 @@ class ExtractFormTest(unittest.TestCase):
 
     def test_populates_what_the_description_supplied(self):
         result, _ = _run(_reply(
-            wake_up="07:30", bedtime="19:00", destination="Kitsilano",
+            wake_up="07:30", bedtime="19:00", destination="Vancouver",
             transit="walk", dining="on_the_go", interest=["park"]))
         form = result["form"]
         self.assertEqual(form["wake_up"], "07:30")
         self.assertEqual(form["bedtime"], "19:00")
-        self.assertEqual(form["destination"], "Kitsilano")
+        self.assertEqual(form["destination"], "Vancouver")
         self.assertEqual(form["transit"], "walk")
         self.assertEqual(form["dining"], "on_the_go")
         self.assertEqual(form["interest"], ["park"])
@@ -333,12 +333,12 @@ class ExtractFormRouteTest(unittest.TestCase):
     def test_run_returns_the_form_and_what_was_found(self):
         with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
              mock.patch("src.components.extract_form.call_openrouter",
-                        return_value=(_reply(destination="Kitsilano"), {}, 1.0)):
+                        return_value=(_reply(destination="Vancouver"), {}, 1.0)):
             resp = self.client.post("/extract-form/run",
-                                    json={"description": "a day in Kitsilano"})
+                                    json={"description": "a day in Vancouver"})
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
-        self.assertEqual(body["form"]["destination"], "Kitsilano")
+        self.assertEqual(body["form"]["destination"], "Vancouver")
         self.assertEqual(body["found"], ["destination"])
 
     def test_missing_api_key_is_a_clean_500(self):

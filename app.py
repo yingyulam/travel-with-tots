@@ -1551,6 +1551,7 @@ def plan():
         hours_report=hours_report,
         adjustment=adjustment,
         trip_context=trip_context,
+        supported_cities=SUPPORTED_CITIES,
         transit_options=TRANSIT_OPTIONS,
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
