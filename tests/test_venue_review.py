@@ -312,20 +312,22 @@ class ReviewPageTest(_ReviewTest):
                                (venue,)).fetchone()
         self.assertEqual(row["name"], "Left Alone")
 
-    def test_sections_fold_and_a_section_with_work_starts_open(self):
+    def test_every_section_starts_collapsed(self):
+        # The page opens as a list of what is waiting and how much of it. Even
+        # a section with work stays shut: 94KB of forms is what the folding is
+        # for, and which one to open is the reviewer's choice, not ours.
         self._awaiting()
         body = self.client.get("/venues/review").get_data(as_text=True)
-        confirm = body[body.index("3. Confirm") - 200:body.index("3. Confirm")]
-        self.assertIn('class="review-section"', confirm)
-        self.assertIn("open", confirm)
+        self.assertEqual(body.count('<details class="review-section">'), 3)
+        self.assertNotIn('<details class="review-section" open>', body)
 
-    def test_a_section_with_nothing_in_it_starts_shut(self):
-        # Nothing has been proposed or submitted in this fixture, so Decide has
-        # no work and should not cost a screen.
+    def test_the_counts_are_visible_while_collapsed(self):
+        # Collapsed headings are the whole overview, so the numbers have to sit
+        # in the summary rather than inside the fold.
+        self._awaiting()
         body = self.client.get("/venues/review").get_data(as_text=True)
-        decide = body[body.index("1. Decide") - 200:body.index("1. Decide")]
-        self.assertIn('class="review-section"', decide)
-        self.assertNotIn("open", decide)
+        summary = body[body.index("3. Confirm"):]
+        self.assertIn('queue-count">1<', summary[:120])
 
     def test_a_non_admin_is_redirected(self):
         with mock.patch.object(

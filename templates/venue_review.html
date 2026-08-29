@@ -67,7 +67,7 @@
 {% block content %}
 
 <section class="card">
-  <details class="review-section" {% if proposals_total + submissions|length %}open{% endif %}>
+  <details class="review-section">
   <summary><h2>1. Decide<span class="queue-count">{{ proposals_total + submissions|length }}</span></h2></summary>
   <p class="meta">Is this a venue at all? Nothing here reaches a plan until you say so.</p>
 
@@ -219,7 +219,7 @@
 </section>
 
 <section class="card">
-  <details class="review-section" {% if missing_hours_total + hours_checks|length %}open{% endif %}>
+  <details class="review-section">
   <summary><h2>2. Finish<span class="queue-count">{{ missing_hours_total + hours_checks|length }}</span></h2></summary>
   <p class="meta">Already in the database, and held back by its hours. Both of
     these are the same job, so they sit together.</p>
@@ -309,7 +309,7 @@
 </section>
 
 <section class="card">
-  <details class="review-section" {% if unverified_total %}open{% endif %}>
+  <details class="review-section">
   <summary><h2>3. Confirm<span class="queue-count">{{ unverified_total }}</span></h2></summary>
   <p class="meta">Hand-typed venues the app already plans around, that no person
     has checked. Confirming records that you did and changes nothing else.</p>
