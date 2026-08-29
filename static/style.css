@@ -1151,12 +1151,14 @@ textarea:focus {
    on the stop the parent is actually standing at. The toggle is a real button
    that is always rendered and always focusable: hover changes how loud it
    looks, never whether it can be reached, so a phone and a keyboard both work. */
-.stop-report {
-  margin: 0.35rem 0 0 0;
-  grid-column: 2;
+/* Wraps, so the panel below can claim a whole row instead of a column. */
+.stop {
+  flex-wrap: wrap;
 }
 
 .stop-report-toggle {
+  align-self: flex-start;
+  white-space: nowrap;
   border: 0;
   background: none;
   padding: 0.2rem 0;
@@ -1172,11 +1174,17 @@ textarea:focus {
   color: var(--blue);
 }
 
+/* A line of its own, under the stop it belongs to and aligned with its text
+   rather than with the time column. Beside the card would need about 320px on
+   top of the body's 288px, and .layout is capped at 760px, so the two only fit
+   by cramping both. */
 .stop-report-body {
-  margin-top: 0.5rem;
-  padding: 0.75rem;
+  flex: 1 1 100%;
+  margin: 0.6rem 0 0 calc(82px + 1rem);
+  padding: 0.85rem 1rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-left: 3px solid var(--blue);
+  border-radius: 0 10px 10px 0;
   background: #fff;
 }
 
@@ -1200,6 +1208,16 @@ textarea:focus {
 
 .stop-report-status {
   margin: 0.5rem 0 0 0;
+}
+
+/* On a phone the time column's indent costs more than the alignment is worth,
+   so the panel takes the full width of the card. */
+@media (max-width: 600px) {
+  .stop-report-body {
+    margin-left: 0;
+    border-left-width: 1px;
+    border-radius: 10px;
+  }
 }
 
 /* Review queue: how much is waiting, beside the group it is waiting in. */

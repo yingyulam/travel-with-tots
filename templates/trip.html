@@ -357,7 +357,6 @@
       // A highchair at a park is not a question.
       ([key]) => !(CONDITIONAL.includes(key) && !v.can_eat));
 
-    const panel = el("div", "stop-report");
     const toggle = el("button", "stop-report-toggle", "＋ Report what you found");
     toggle.type = "button";
     toggle.setAttribute("aria-expanded", "false");
@@ -431,8 +430,11 @@
       }
     });
 
-    panel.append(toggle, body);
-    return panel;
+    // Two elements, not one wrapper: the toggle rides beside the stop's body,
+    // and the panel takes a line of its own underneath. Wrapping them together
+    // made the panel a third column and squeezed the stop text to one word a
+    // line at the 760px the layout is capped to.
+    return [toggle, body];
   }
 
   function renderStop(stop, state) {
@@ -443,7 +445,7 @@
     }
     item.append(time, stopBody(stop));
     const report = reportPanel(stop.venue);
-    if (report) item.appendChild(report);
+    if (report) item.append(...report);
     return item;
   }
 
