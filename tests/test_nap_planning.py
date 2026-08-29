@@ -27,7 +27,7 @@ from src import itinerary
 
 ON = date(2026, 9, 15)
 BASE = {"wake_up": "07:00", "bedtime": "19:30", "transit_nap": "yes",
-        "destination": "Vancouver", "transit": ["car"], "stop_count": "2",
+        "destination": "Vancouver", "transit": "car", "stop_count": "2",
         "dining": "on_the_go", "preferred_lunch_time": "11:30", "features": [],
         "age_months": 18, "age_years": 1, "interest": [],
         "trip_date": ON.isoformat()}

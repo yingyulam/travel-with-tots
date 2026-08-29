@@ -24,7 +24,7 @@ from src.data_loader import VENUE_TYPES
 
 ON = date(2026, 9, 15)
 INPUTS = {"wake_up": "07:00", "bedtime": "19:30", "naps": [],
-          "transit_nap": "no", "destination": "Vancouver", "transit": ["car"],
+          "transit_nap": "no", "destination": "Vancouver", "transit": "car",
           "stop_count": "3", "dining": "on_the_go",
           "preferred_lunch_time": "11:30", "features": [],
           "age_months": 30, "age_years": 2, "interest": [],

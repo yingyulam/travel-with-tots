@@ -1265,7 +1265,7 @@ def _narrow_by_neighbourhood(rows, near_neighbourhood, transit):
         narrowed = [row for row in rows if row["neighbourhood"] == near_neighbourhood]
         return narrowed if len(narrowed) >= MIN_CLUSTER_SIZE else rows
 
-    if "car" not in (transit or []) and rows:
+    if transit != "car" and rows:
         by_neighbourhood = {}
         for row in rows:
             by_neighbourhood.setdefault(row["neighbourhood"], []).append(row)

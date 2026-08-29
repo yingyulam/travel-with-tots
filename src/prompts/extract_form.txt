@@ -13,7 +13,7 @@ Fill in what they actually said:
 - stop_count: how many places they want to visit, not counting lunch. Between {stop_count_min} and {stop_count_max}.
 - preferred_lunch_time: "HH:MM", only if they named a lunch time.
 - strict_schedule: true only if they said their times are strict or non-negotiable. Ordinary times are not strict.
-- transit: how they are getting around, from: {transit_options}. Any mention counts: "he can sleep in the stroller" and "we'll drive" mean stroller and car respectively, even when they were not answering a question about transport.
+- transit: how they get from one stop to the next, one of: {transit_options}. "We'll drive" or "we're getting an Uber" is car; "we'll take the SkyTrain" or "we're on the bus" is transit; "we're walking everywhere" is walk. A stroller is not an answer here: it is what a family uses inside a stop, and every family is assumed to have one. "He can sleep in the stroller" says nothing about how they travel between venues, so leave transit null and let transit_nap carry it.
 - dining: {dining_options}
 - transit_nap: can the child sleep while being moved, in a stroller, car, or bus? One of: {transit_nap_options}. "He can sleep in the stroller" is yes; "only sometimes in the car" is sometimes; "she has to be in a cot" is no.
 - interest: the kinds of place they asked for, using only these words: {interest_options}. Use the word for the place itself, so "a park and a museum" is park and museum, and "somewhere to swim" is pool. Pick every kind they mentioned. Leave it empty when they did not ask for anything in particular, which is the common case: an empty list plans a natural mix, and is a better answer than a guess.
@@ -24,7 +24,7 @@ Then the two free-text fields, which is where the rest of what they said has to 
 
 Two rules about those two fields, and they matter:
 1. Nothing the parent said may be dropped. If a sentence does not fit a structured field above, it belongs in extra_notes (or nap_notes if it is about sleep). Anything you leave out is something the planner will never see, and the parent will not know it was lost.
-2. Do not repeat what a structured field already holds. If you set transit to stroller, do not also write "they have a stroller" in extra_notes, or the planner reads the same thing twice. Free text is for what the structured fields cannot express.
+2. Do not repeat what a structured field already holds. If you set transit to car, do not also write "they are driving" in extra_notes, or the planner reads the same thing twice. Free text is for what the structured fields cannot express.
 
 Use the parent's own wording in nap_notes and extra_notes. You are moving their words into the right box, not summarising or rewriting them.
 

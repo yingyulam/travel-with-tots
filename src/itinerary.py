@@ -9,6 +9,7 @@ notes yet.
 
 from datetime import datetime, timedelta
 
+from .geo import DEFAULT_REACH_KM, haversine_km, reach_km, within_reach
 from .models import Plan
 
 # A buffer after wake-up before the first stop (breakfast, getting out).
@@ -33,7 +34,11 @@ STOP_DURATION_MIN = {"activity": 60, "nap": 45, "meal": LUNCH_DURATION_MIN, "bon
 # known. A real implementation would ask a routing API for the actual travel
 # time between each specific pair of venues instead of this flat per-mode
 # guess, same role as LEAVE_BUFFER above.
-TRANSIT_BUFFER_MIN = {"car": 15, "bus": 25, "stroller": 20, "carrier": 20, "other": 20}
+# Keyed on the three modes the form now offers. Only used to *validate* an AI
+# edit (see agents.py), never to schedule -- the rule-based draft spaces stops
+# hours apart, so travel time disappears into the gaps. Kept because it is the
+# guard that stops the model stacking two stops on top of each other.
+TRANSIT_BUFFER_MIN = {"car": 15, "transit": 25, "walk": 30, "other": 20}
 
 # Fallback lunch target when the parent didn't set a preferred lunch time.
 DEFAULT_LUNCH_TARGET_MIN = 12 * 60  # noon
@@ -42,13 +47,16 @@ DEFAULT_LUNCH_TARGET_MIN = 12 * 60  # noon
 LUNCH_SEARCH_RADIUS_MIN = 180
 
 
-def transit_buffer_min(transit_modes):
-    """Conservative minutes to allow when moving between stops, given the
-    selected transit mode(s) -- the slowest selected mode sets the buffer.
-    Swap this out for a real routing-API lookup later; callers only need a
-    single number back, so nothing else changes."""
-    return max((TRANSIT_BUFFER_MIN.get(m, TRANSIT_BUFFER_MIN["other"])
-                for m in (transit_modes or [])), default=TRANSIT_BUFFER_MIN["other"])
+def transit_buffer_min(mode):
+    """Conservative minutes to allow when moving between stops.
+
+    One mode now, not a list: the form asks a single question about getting
+    between stops. Tolerates the old list shape so a saved trip still works.
+    """
+    if isinstance(mode, (list, tuple, set)):
+        return max((TRANSIT_BUFFER_MIN.get(m, TRANSIT_BUFFER_MIN["other"])
+                    for m in mode), default=TRANSIT_BUFFER_MIN["other"])
+    return TRANSIT_BUFFER_MIN.get(mode, TRANSIT_BUFFER_MIN["other"])
 
 
 def hhmm_to_min(text):
@@ -218,9 +226,24 @@ def _plan_times(wake, bedtime, count):
     return [_round_to(start + span * (i / count)) for i in range(count)]
 
 
-def _pick(pool, used, start_min=None, duration_min=0):
+def _pick(pool, used, start_min=None, duration_min=0, anchor=None, reach=None):
     """Take the next unused venue that's open for the slot (swapping past ones
-    that don't fit). Returns None if nothing fits, so the slot is skipped."""
+    that don't fit). Returns None if nothing fits, so the slot is skipped.
+
+    `anchor` is the previous stop's venue and `reach` how far the family can
+    reasonably travel from it, so a day does not zig-zag across the city. Stops
+    used to be chosen entirely independently, which is how a family on foot got
+    an 8.8km day with a 4.1km leg between two of its stops.
+
+    Proximity **sorts** the pool, it does not filter it: a far venue drops to
+    the back and stays reachable when nothing nearer is open. This project has
+    twice been bitten by a filter whose fallback only fired when *nothing*
+    qualified, and a sort cannot empty a day. Python's sort is stable, so the
+    order already established -- what the parent asked for, then the curator's
+    ranking -- decides within each group.
+    """
+    if anchor is not None and reach is not None:
+        pool = sorted(pool, key=lambda v: 0 if within_reach(v, anchor, reach) else 1)
     for venue in pool:
         if venue["name"] in used:
             continue
@@ -248,6 +271,19 @@ def _reason(venue, kind, wanted):
         return f"A {venue['type']}, which is what you asked for."
     place = venue.get("neighbourhood") or ""
     return f"A {venue['type']} in {place}." if place else f"A {venue['type']}."
+
+
+def _how_far(venue, anchor):
+    """"1.2 km from your last stop", or "" when it cannot be measured.
+
+    The only thing a parent can actually see that proves the transport mode was
+    read. It is also how they judge whether a day is walkable, which no label on
+    a form can tell them.
+    """
+    if anchor is None or venue.get("lat") is None or anchor.get("lat") is None:
+        return ""
+    km = haversine_km(anchor["lat"], anchor["lng"], venue["lat"], venue["lng"])
+    return f" {km:.1f} km from your last stop." if km >= 0.1 else " Right next door."
 
 
 def _lunch_time(stops, naps, preferred_lunch_min=None):
@@ -350,7 +386,8 @@ def _nap_minutes(naps):
 
 
 def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
-                preferred_lunch_min=None, nap_minutes=None):
+                preferred_lunch_min=None, nap_minutes=None,
+                reach=DEFAULT_REACH_KM):
     """Build one day plan: an ordered list of timed stops.
 
     ``wanted`` is the set of venue types the parent asked for, empty when they
@@ -410,6 +447,7 @@ def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
     pools = {"nap": naps_pool, "activity": activities}
     used = set()
     stops = []
+    anchor = None
     for slot in slots:
         start_min = slot["time"].hour * 60 + slot["time"].minute
         # A nap uses the length the parent actually gave, so a venue that
@@ -417,15 +455,19 @@ def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
         # meant a thirty-minute nap and a three-hour one were checked
         # identically, and a museum closing at two could host either.
         venue = _pick(pools[slot["kind"]], used, start_min,
-                      slot.get("minutes") or stop_duration(slot["kind"]))
+                      slot.get("minutes") or stop_duration(slot["kind"]),
+                      anchor=anchor, reach=reach)
         if venue is None:
             continue  # nothing open fits this slot -> skip it
         stops.append({
             "time": _format(slot["time"]),
             "kind": slot["kind"],
             "venue": venue,
-            "reason": _reason(venue, slot["kind"], wanted),
+            "reason": _reason(venue, slot["kind"], wanted) + _how_far(venue, anchor),
         })
+        # Measured from the stop before it, so this is set *after* the reason.
+        # The first stop has no anchor and is chosen exactly as before.
+        anchor = venue
 
     # Dining out adds a lunch to fit in around midday -- a meal, not one of the
     # day's stops, so it never displaces an activity.
@@ -469,8 +511,12 @@ def generate_plans(venues, inputs):
     preferred_lunch_min = hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
     wanted = set(inputs.get("interest") or ())
+    # How far apart consecutive stops may sit, from how the family is getting
+    # between them. Until this, the answer changed nothing at all: every mode
+    # produced a byte-identical plan.
     stops = _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
-                        preferred_lunch_min, nap_minutes)
+                        preferred_lunch_min, nap_minutes,
+                        reach=reach_km(inputs.get("transit")))
     leave = _leave_stop(accommodation, stops)
     if leave:
         stops = [leave] + stops

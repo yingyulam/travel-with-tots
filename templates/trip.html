@@ -3,7 +3,9 @@
 {% block title %}Travel with Tots: Your day{% endblock %}
 
 {% block header %}
-{% set transit_label = trip.transit | map('capitalize') | join(', ') %}
+{# One value now, not a list. map|join over a string spelled it out a
+   letter at a time: "Getting around by W, A, L, K". #}
+{% set transit_label = transit_labels.get(trip.transit, trip.transit) %}
 <header class="masthead">
   {% if saved %}
   <a class="home-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
@@ -11,13 +13,17 @@
   <a class="home-link" href="{{ url_for('plan') }}">← Back to plans</a>
   {% endif %}
   <h1 class="app-name">Your day in {{ trip.destination }}</h1>
-  <p class="tagline">🚕 Getting around by {{ transit_label or 'Not specified' }}</p>
+  {# Reads correctly with all three labels, which "by ..." did not:
+     "by On foot", "by Car, taxi or ride-share". #}
+  <p class="tagline">🚕 Between stops: {{ transit_label or 'not specified' }}</p>
   <p class="meta">Hours can change. Tap a stop's map link to check before you set off.</p>
 </header>
 {% endblock %}
 
 {% block content %}
-{% set transit_label = trip.transit | map('capitalize') | join(', ') %}
+{# One value now, not a list. map|join over a string spelled it out a
+   letter at a time: "Getting around by W, A, L, K". #}
+{% set transit_label = transit_labels.get(trip.transit, trip.transit) %}
 <section class="card">
   <!-- 1. Header: destination/transit (above) + adjustable current time -->
   <div class="trip-header">

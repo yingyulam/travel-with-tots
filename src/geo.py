@@ -16,6 +16,52 @@ EARTH_RADIUS_KM = 6371.0
 METRO_VANCOUVER_BOUNDS = (48.9, 49.6, -123.5, -122.5)
 
 
+# How far apart two consecutive stops may reasonably sit, by how the family gets
+# between them. A judgment about a day out with a small child, not a routing
+# calculation: no schedules, no transfers, no waiting, and no attempt to model
+# that a SkyTrain covers more ground than a bus.
+#
+# 1.5km on foot is about 26 minutes pushing a stroller, which fits even the
+# tightest gap the nap anchoring produces -- so getting the selection right
+# leaves the clock alone. See itinerary._pick.
+REACH_KM = {"walk": 1.5, "transit": 5.0, "car": 8.0}
+
+# An unrecognised mode -- a trip saved before this existed, a hand-made post --
+# takes the tightest reach. A clustered day is fine for a family with a car;
+# a spread-out one is not fine for a family on foot.
+DEFAULT_REACH_KM = REACH_KM["walk"]
+
+
+def reach_km(mode):
+    """How far the next stop may reasonably be, for one transport mode.
+
+    Tolerates the old list shape, taking the widest: `trips.transit` held a JSON
+    array before the form became one question, and generate_plans can be handed
+    a dict directly by a component or a test. Ticking several always meant
+    "take the widest", so that is what a legacy list resolves to.
+    """
+    if isinstance(mode, (list, tuple, set)):
+        return max((reach_km(m) for m in mode), default=DEFAULT_REACH_KM)
+    return REACH_KM.get(mode, DEFAULT_REACH_KM)
+
+
+def within_reach(venue, anchor, reach):
+    """Whether `venue` is close enough to `anchor` to be the next stop.
+
+    True when either coordinate is missing, on purpose. Penalising a venue for
+    incomplete data is the wrong direction: the cost of getting this wrong is a
+    longer walk, not a wrong answer, and four curated venues have no coordinates
+    yet -- including both Granville Island markets.
+    """
+    if anchor is None:
+        return True
+    for point in (venue, anchor):
+        if point.get("lat") is None or point.get("lng") is None:
+            return True
+    return haversine_km(anchor["lat"], anchor["lng"],
+                        venue["lat"], venue["lng"]) <= reach
+
+
 def in_metro_vancouver(lat, lng):
     """Whether a coordinate is plausibly in Metro Vancouver.
 

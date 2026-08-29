@@ -139,13 +139,15 @@
     </label>
 
     <fieldset class="group">
-      <legend>How are you getting around? <em>(pick any)</em></legend>
+      {# "Getting around" was the ambiguity that let a stroller into a list of
+         travel modes. This asks only about the gap between two venues. #}
+      <legend>How are you getting between stops?</legend>
       <div class="chips">
-        {% for option in transit_options %}
+        {% for key, label in transit_options %}
         <label class="chip">
-          <input type="checkbox" name="transit" value="{{ option }}"
-                 {% if option in form.transit %}checked{% endif %}>
-          <span>{{ option|capitalize }}</span>
+          <input type="radio" name="transit" value="{{ key }}"
+                 {% if form.transit == key %}checked{% endif %}>
+          <span>{{ label }}</span>
         </label>
         {% endfor %}
       </div>

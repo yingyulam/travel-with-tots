@@ -90,7 +90,7 @@ def _format_plan_question(ctx: dict) -> str:
     if ctx.get("dining"):
         lines.append(f"Dining: {ctx['dining']}")
     if ctx.get("transit"):
-        lines.append(f"Transit: {', '.join(ctx['transit'])}")
+        lines.append(f"Transit: {ctx['transit']}")
     if ctx.get("features"):
         lines.append(f"Features: {', '.join(ctx['features'])}")
     if ctx.get("bedtime"):

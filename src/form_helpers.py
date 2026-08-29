@@ -1,6 +1,7 @@
 """Trip-planning form parsing and validation -- pure functions operating on
 the raw form dict app.py's routes already parse, no Flask dependency."""
 
+import json
 from datetime import date
 
 from .dates import parse_date, compute_age
@@ -31,7 +32,54 @@ STOP_COUNT_FORM_MAX = 6
 # plan stay in sync. They live here rather than in app.py because they are form
 # vocabulary, and because components need them too: anything importing app.py
 # would be circular, since app.py imports the components.
-TRANSIT_OPTIONS = ["car", "bus", "stroller", "carrier", "other"]
+# How the family gets from one stop to the next -- and only that. The old list
+# was car/bus/stroller/carrier/other, which mixed two questions: how you travel
+# between venues, and what you have with you at one. A stroller is not a way of
+# covering three kilometres; it is what you push around a park once you arrive.
+# Every family is assumed to have one, so it is not asked about here.
+#
+# One answer, not several. Everyone walks, so walking is the floor rather than
+# one option among many, and what actually varies is the furthest you can
+# comfortably get. Ticking several only ever meant "take the widest".
+#
+# `car` covers taxi and ride-share: a visiting family often has no car and will
+# take an Uber, and their reach is a driver's.
+TRANSIT_OPTIONS = [("car", "Car, taxi or ride-share"),
+                   ("transit", "Public transit"),
+                   ("walk", "On foot")]
+TRANSIT_KEYS = [key for key, _ in TRANSIT_OPTIONS]
+DEFAULT_TRANSIT = "walk"
+
+# What the old options meant, for trips saved before this was one question.
+# `bus` was the only transit answer; `stroller` and `carrier` were how a family
+# on foot said so; `other` was never really an answer.
+LEGACY_TRANSIT = {"bus": "transit", "stroller": "walk", "carrier": "walk"}
+
+
+def normalise_transit(stored):
+    """One transport mode from anything a trip or a form might hold.
+
+    Tolerates the shape this used to have. `trips.transit` was a JSON array,
+    because the form was multi-select before it became a single question about
+    getting between stops -- so an old row reads as '["stroller"]' or
+    '["car","bus"]'. Several modes resolve to the **widest**, which is what
+    ticking several always meant. Anything unrecognisable falls back to the
+    default, which is the tightest reach.
+    """
+    from .geo import reach_km          # local: geo imports nothing from here
+    if isinstance(stored, str) and stored in TRANSIT_KEYS:
+        return stored
+    values = stored
+    if isinstance(stored, str):
+        try:
+            values = json.loads(stored)
+        except (TypeError, ValueError):
+            values = [stored]
+    if isinstance(values, str):
+        values = [values]
+    known = [LEGACY_TRANSIT.get(m, m) for m in (values or [])]
+    known = [m for m in known if m in TRANSIT_KEYS]
+    return max(known, key=reach_km) if known else DEFAULT_TRANSIT
 DINING_OPTIONS = [("dine_out", "Dine out"), ("on_the_go", "Eat on the go")]
 TRANSIT_NAP_OPTIONS = [
     ("yes", "Yes -- naps well in a stroller, car, or bus"),
@@ -52,7 +100,9 @@ DEFAULTS = {
     # so it is a planning input rather than a label on a saved trip.
     "trip_date": "",
     "accommodation": "",
-    "transit": ["stroller"],
+    # The tightest reach, deliberately: a clustered day is fine for a family
+    # with a car, and a spread-out one is not fine for a family on foot.
+    "transit": DEFAULT_TRANSIT,
     "stop_count": "3",
     "dining": "dine_out",
     "preferred_lunch_time": "",
@@ -123,7 +173,10 @@ def read_form(form):
         "destination": form.get("destination") or DEFAULTS["destination"],
         "trip_date": parse_date(form.get("trip_date")).isoformat(),
         "accommodation": form.get("accommodation", "").strip(),
-        "transit": form.getlist("transit"),
+        # One value, validated. It used to be an unchecked getlist, so any
+        # string got through -- the same gap that was closed for `interest`.
+        "transit": (form.get("transit") if form.get("transit") in TRANSIT_KEYS
+                    else DEFAULT_TRANSIT),
         "stop_count": str(clamp_int(form.get("stop_count"), STOP_COUNT_FORM_MIN,
                                      STOP_COUNT_FORM_MAX, int(DEFAULTS["stop_count"]))),
         "dining": form.get("dining") or DEFAULTS["dining"],

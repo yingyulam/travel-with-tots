@@ -33,7 +33,7 @@ from ..form_helpers import (
     STOP_COUNT_FORM_MAX,
     STOP_COUNT_FORM_MIN,
     TRANSIT_NAP_OPTIONS,
-    TRANSIT_OPTIONS,
+    TRANSIT_KEYS,
     read_form,
 )
 
@@ -94,7 +94,9 @@ EXTRACTED_FORM_PROPERTIES = {
     **{field: _nullable("string") for field in TEXT_FIELDS},
     **{field: _nullable("integer") for field in COUNT_FIELDS},
     "strict_schedule": _nullable("boolean"),
-    "transit": _enum_array(TRANSIT_OPTIONS),
+    # One value now, not an array: the form asks a single question about how
+    # the family gets between stops.
+    "transit": {"type": ["string", "null"], "enum": [*TRANSIT_KEYS, None]},
     "interest": _enum_array(INTEREST_LABELS),
     "dining": {"type": ["string", "null"], "enum": [*DINING_KEYS, None]},
     "transit_nap": {"type": ["string", "null"], "enum": [*TRANSIT_NAP_KEYS, None]},
@@ -157,7 +159,7 @@ def _build_messages(description: str) -> list[dict]:
         .replace("{max_age_years}", str(MAX_AGE_YEARS))
         .replace("{stop_count_min}", str(STOP_COUNT_FORM_MIN))
         .replace("{stop_count_max}", str(STOP_COUNT_FORM_MAX))
-        .replace("{transit_options}", ", ".join(TRANSIT_OPTIONS))
+        .replace("{transit_options}", ", ".join(TRANSIT_KEYS))
         .replace("{dining_options}", ", ".join(DINING_KEYS))
         .replace("{transit_nap_options}", ", ".join(TRANSIT_NAP_KEYS))
         .replace("{interest_options}", INTEREST_CHOICES)
@@ -171,7 +173,7 @@ def _build_messages(description: str) -> list[dict]:
 # for a nullable enum varies between providers, and because read_form
 # deliberately does not validate these fields either, so nothing else would.
 ALLOWED_VALUES = {
-    "transit": set(TRANSIT_OPTIONS),
+    "transit": set(TRANSIT_KEYS),
     "interest": set(INTEREST_LABELS),
     "dining": set(DINING_KEYS),
     "transit_nap": set(TRANSIT_NAP_KEYS),
@@ -338,7 +340,7 @@ def extract_form(description: str, model: str = EXTRACTOR_MODEL) -> dict:
 
     Two things to know before wiring this into a prefilled form:
 
-    Multi-choice fields (transit, interest) come back empty rather than
+    Multi-choice fields (interest) come back empty rather than
     at their DEFAULTS value when the description didn't mention them, because
     that is exactly what read_form returns for a submitted form with those
     boxes unchecked. Honest, but it means a prefill wanting the form's usual

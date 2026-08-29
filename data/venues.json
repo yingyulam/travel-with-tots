@@ -105,8 +105,8 @@
     "can_eat": false,
     "open": "10:00",
     "close": "17:00",
-    "lat": null,
-    "lng": null,
+    "lat": 49.2764,
+    "lng": -123.145,
     "setting": "indoor"
   },
   {
@@ -127,8 +127,8 @@
     "can_eat": true,
     "open": "10:00",
     "close": "18:00",
-    "lat": null,
-    "lng": null,
+    "lat": 49.2707,
+    "lng": -123.1343,
     "setting": "indoor"
   },
   {
@@ -138,8 +138,8 @@
     "can_eat": true,
     "open": "09:00",
     "close": "19:00",
-    "lat": null,
-    "lng": null,
+    "lat": 49.2707,
+    "lng": -123.1343,
     "setting": "both"
   },
   {
@@ -182,8 +182,8 @@
     "can_eat": true,
     "open": "11:00",
     "close": "18:00",
-    "lat": null,
-    "lng": null,
+    "lat": 49.2827,
+    "lng": -123.0364,
     "setting": "outdoor"
   },
   {

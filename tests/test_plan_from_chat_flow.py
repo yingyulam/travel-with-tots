@@ -555,7 +555,7 @@ class PrefillRouteTest(unittest.TestCase):
         # than the array read_form returns, lists repeated, booleans as "on".
         posted = {"prefill": "1", "destination": "Burnaby",
                   "nap_start": "12:30", "nap_duration": "90",
-                  "transit": ["bus", "stroller"],
+                  "transit": "transit",
                   "features": "kid_friendly", "strict_schedule": "on",
                   "stop_count": "4"}
         with mock.patch.object(self.app_module, "plan_trip") as planned:

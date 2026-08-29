@@ -60,12 +60,12 @@ class ExtractFormTest(unittest.TestCase):
     def test_populates_what_the_description_supplied(self):
         result, _ = _run(_reply(
             wake_up="07:30", bedtime="19:00", destination="Kitsilano",
-            transit=["stroller"], dining="on_the_go", interest=["park"]))
+            transit="walk", dining="on_the_go", interest=["park"]))
         form = result["form"]
         self.assertEqual(form["wake_up"], "07:30")
         self.assertEqual(form["bedtime"], "19:00")
         self.assertEqual(form["destination"], "Kitsilano")
-        self.assertEqual(form["transit"], ["stroller"])
+        self.assertEqual(form["transit"], "walk")
         self.assertEqual(form["dining"], "on_the_go")
         self.assertEqual(form["interest"], ["park"])
 
@@ -225,16 +225,20 @@ class VocabularyGuardTest(unittest.TestCase):
         self.assertNotIn("transit_nap", result["found"])
 
     def test_invented_list_values_are_dropped_but_valid_ones_kept(self):
-        result, _ = _run(_reply(
-            transit=["stroller", "helicopter"],
-            interest=["park", "Extreme Sports"]))
-        self.assertEqual(result["form"]["transit"], ["stroller"])
+        result, _ = _run(_reply(interest=["park", "Extreme Sports"]))
         self.assertEqual(result["form"]["interest"], ["park"])
 
-    def test_a_wholly_invented_list_is_not_reported_as_found(self):
-        result, _ = _run(_reply(transit=["helicopter", "submarine"]))
-        self.assertEqual(result["form"]["transit"], [])
+    def test_an_invented_transit_mode_is_dropped(self):
+        # transit is one value now, not a list: the form asks a single question
+        # about how the family gets between stops.
+        result, _ = _run(_reply(transit="helicopter"))
         self.assertNotIn("transit", result["found"])
+        self.assertEqual(result["form"]["transit"], "walk")   # the default
+
+    def test_a_real_transit_mode_is_kept(self):
+        result, _ = _run(_reply(transit="car"))
+        self.assertEqual(result["form"]["transit"], "car")
+        self.assertIn("transit", result["found"])
 
 
 class FreeTextRoutingTest(unittest.TestCase):
@@ -260,8 +264,8 @@ class FreeTextRoutingTest(unittest.TestCase):
         # text. If it obeys, transit holds the stroller and extra_notes does
         # not mention it, so the planner reads the constraint once.
         result, _ = _run(_reply(
-            transit=["stroller"], extra_notes="no long walks please"))
-        self.assertEqual(result["form"]["transit"], ["stroller"])
+            transit="walk", extra_notes="no long walks please"))
+        self.assertEqual(result["form"]["transit"], "walk")
         self.assertNotIn("stroller", result["form"]["extra_notes"])
 
     def test_free_text_fields_reach_the_planner_contract(self):
@@ -283,7 +287,7 @@ class ExtractedFormDrivesThePlannerTest(unittest.TestCase):
 
         result, _ = _run(_reply(
             destination="Vancouver", wake_up="07:30", bedtime="19:30",
-            stop_count=3, dining="dine_out", transit=["stroller"],
+            stop_count=3, dining="dine_out", transit="walk",
             naps=[{"start": "13:00", "duration_min": 90}],
             nap_notes="light sleeper", extra_notes="no long walks"))
         form = result["form"]
@@ -445,9 +449,9 @@ class GroundingTest(unittest.TestCase):
         # "we'll drive" is legitimately car without sharing a word with it, so
         # there is nothing to compare these against. The prompt is what keeps
         # them honest. Asserted so nobody "fixes" this into dropping them.
-        result, _ = _run(_reply(transit=["car"], transit_nap="yes",
+        result, _ = _run(_reply(transit="car", transit_nap="yes",
                                 interest=["park"]),
                          description="we'll drive and he sleeps in the buggy")
-        self.assertEqual(result["form"]["transit"], ["car"])
+        self.assertEqual(result["form"]["transit"], "car")
         self.assertEqual(result["form"]["transit_nap"], "yes")
         self.assertEqual(result["form"]["interest"], ["park"])

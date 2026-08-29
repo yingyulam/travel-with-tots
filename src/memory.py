@@ -30,7 +30,7 @@ from werkzeug.datastructures import MultiDict
 
 from .dates import compute_age
 from .db import get_children, get_trips_for_parent
-from .form_helpers import MAX_AGE_YEARS, read_form
+from .form_helpers import MAX_AGE_YEARS, normalise_transit, read_form
 
 # How the child sleeps and eats moves every few months at these ages, and it is
 # what the whole plan is shaped around, so past this the clock is asked about
@@ -42,8 +42,10 @@ CLOCK_FIELDS = ("wake_up", "bedtime", "preferred_lunch_time", "naps")
 STABLE_FIELDS = ("destination", "accommodation", "transit",
                  "dining", "stop_count", "transit_nap")
 
-# Stored as JSON arrays, and read_form takes them as repeated form fields.
-_JSON_LIST_FIELDS = ("transit",)
+# Nothing here is a JSON array any more. `transit` was, until the form became a
+# single question about getting between stops; a trip saved before that still
+# holds '["stroller"]', which is why the recall below tolerates both shapes.
+_JSON_LIST_FIELDS = ()
 
 # Deliberately never recalled. Both are posted to /plan and fed into the AI
 # adjuster's prompt, so remembering them would ship a months-old note ("she's on
@@ -159,7 +161,12 @@ def _candidates(trip, child) -> MultiDict:
             value = trip[field]
             if value is None or value == "":
                 continue
-            if field in _JSON_LIST_FIELDS:
+            if field == "transit":
+                # A trip saved before transit became one value holds a JSON
+                # array. Recall the widest of it, which is what ticking several
+                # always meant, so an old trip still prefills something usable.
+                data.add(field, normalise_transit(value))
+            elif field in _JSON_LIST_FIELDS:
                 for item in _json_list(value):
                     data.add(field, item)
             else:

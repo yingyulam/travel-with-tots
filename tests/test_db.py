@@ -98,7 +98,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
             for i in range(db.MIN_CLUSTER_SIZE):
                 _insert_venue(conn, f"Big {i}", neighbourhood="Big")
             _insert_venue(conn, "Small", neighbourhood="Small")
-        rows = db.get_candidate_venues("Vancouver", age_months=12, transit=["stroller"])
+        rows = db.get_candidate_venues("Vancouver", age_months=12, transit="walk")
         self.assertTrue(all(v["neighbourhood"] == "Big" for v in rows))
 
     def test_keeps_all_neighbourhoods_with_a_car(self):
@@ -106,7 +106,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
             for i in range(db.MIN_CLUSTER_SIZE):
                 _insert_venue(conn, f"Big {i}", neighbourhood="Big")
             _insert_venue(conn, "Small", neighbourhood="Small")
-        rows = db.get_candidate_venues("Vancouver", age_months=12, transit=["car"])
+        rows = db.get_candidate_venues("Vancouver", age_months=12, transit="car")
         neighbourhoods = {v["neighbourhood"] for v in rows}
         self.assertEqual(neighbourhoods, {"Big", "Small"})
 

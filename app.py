@@ -91,6 +91,8 @@ from src.db import (
     update_venue,
 )
 from src.form_helpers import (
+    DEFAULT_TRANSIT,
+    normalise_transit,
     DEFAULTS,
     default_form,
     DINING_OPTIONS,
@@ -1441,7 +1443,7 @@ def save_trip():
         return redirect(url_for("plan"))
 
     fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
-    fields["transit"] = json.dumps(trip_form.get("transit", []))
+    fields["transit"] = trip_form.get("transit") or DEFAULT_TRANSIT
     fields["naps"] = json.dumps(trip_form.get("naps", []))
     fields["plan_label"] = plan_data.get("label")
     fields["plan_json"] = json.dumps(plan_data)
@@ -1583,6 +1585,7 @@ def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
         conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
         feature_options=FEATURE_OPTIONS,
         situation_options=SITUATION_OPTIONS,
+        transit_labels=dict(TRANSIT_OPTIONS),
         interest_options=interest_options(),
         need_options=NEED_OPTIONS,
         # The custom-duration inputs' min/max come from the same constants the
@@ -1638,7 +1641,7 @@ def view_trip(trip_id):
         age_months = int(DEFAULTS["age_years"]) * 12 + int(DEFAULTS["age_months"])
     trip = _build_trip(
         destination=row["destination"],
-        transit=json.loads(row["transit"] or "[]"),
+        transit=normalise_transit(row["transit"]),
         trip_date=row["trip_date"] or "",
         bedtime=row["bedtime"] or "",
         age_months=age_months,

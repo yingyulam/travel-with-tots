@@ -156,10 +156,23 @@ class TheRoutineTest(_MemoryTest):
         self.assertEqual(form["naps"], [{"start": "12:30", "duration_min": 45}])
         self.assertIn("naps", result["remembered"])
 
-    def test_json_list_columns_come_back_as_lists(self):
+    def test_a_trip_saved_with_the_old_list_shape_still_recalls(self):
+        # transit was a JSON array until the form became one question about
+        # getting between stops. An old trip must still prefill something
+        # usable, and the widest of several is what ticking several meant.
         self._trip(transit=json.dumps(["bus", "stroller"]))
         form = memory.recall(self.parent_id)["form"]
-        self.assertEqual(form["transit"], ["bus", "stroller"])
+        self.assertEqual(form["transit"], "transit")   # bus, the wider of the two
+
+    def test_a_trip_saved_with_the_new_shape_recalls_as_is(self):
+        self._trip(transit="car")
+        form = memory.recall(self.parent_id)["form"]
+        self.assertEqual(form["transit"], "car")
+
+    def test_an_unrecognised_stored_mode_falls_back(self):
+        self._trip(transit=json.dumps(["stroller"]))
+        form = memory.recall(self.parent_id)["form"]
+        self.assertEqual(form["transit"], "walk")
 
     def test_the_notes_are_never_recalled(self):
         # They reach the AI adjuster's prompt, so recalling them would ship a
