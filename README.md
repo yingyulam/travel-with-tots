@@ -1247,6 +1247,57 @@ nap anchoring produces — so fixing *which venues are chosen* fixed the timing 
 free. A real estimate needs routing, and the honest version of that is the Google
 Maps link already on every stop.
 
+### The accommodation anchors both ends of the day
+
+`accommodation` was free text with a placeholder note promising a map, so the
+planner could not measure from it: the **first** stop was chosen from nowhere,
+and the **last** was chosen as if nobody had to get home. A family staying in
+the West End could be sent to Killarney first thing.
+
+The plan form now carries a **pin**. `accommodation` stays exactly what it was,
+free text in the parent's words and what the AI prompt reads; two nullable
+columns, `accommodation_lat` and `accommodation_lng`, carry where that is. They
+are separate on purpose: a typed address that was never pinned has the first
+without the second, and that is a real state rather than a broken one.
+
+```
+no pin              Seawall -> English Bay -> Museum of Vancouver -> Kitsilano Beach
+pinned West End     Seawall -> English Bay -> Museum of Vancouver -> Alexandra Park
+pinned Killarney    Bobolink -> Fraserview -> Captain Cook -> Champlain Heights
+```
+
+**Two anchors, not one.** The first stop is picked with the accommodation as its
+anchor, so the day starts where the family wakes up. The last stop is picked
+with a **second tier**: still nearest the previous stop first, then nearest home
+among the venues that tie. Previous-stop proximity keeps deciding because that
+leg is the one walked during the day with a tired child; nearness to home only
+separates options that are already equally reachable. That is what makes the two
+ends related rather than independently chosen.
+
+**It sorts, it never filters**, the same rule as every other preference here. A
+pin in the middle of the Strait of Georgia puts every venue out of reach and
+still returns a full day, because a sort cannot empty one. Venues with no
+coordinates are not penalised either.
+
+**Still no travel-time model.** The distance is now knowable, the duration is
+not: that needs routes, schedules and transfers. So the "leave by" note reports
+*"1.0 km away"* and keeps its flat 30-minute buffer, and the last stop's reason
+carries *"1.1 km back to your accommodation."* The parent judges the time.
+
+**The map is Leaflet with OpenStreetMap tiles, not an embedded Google map.**
+Every Google embedding option needs the API key in the browser, and this app
+keeps all three of its keys server-side. Searching by name is still Google
+Places, proxied through the server, so the results are Google's even though the
+tiles are not. This is the same trade `static/log-a-place.js` already made, and
+the picker is deliberately the smaller sibling of that one: it needs coordinates
+only, so it does not reverse-geocode the pin to name it.
+
+One bug fell out of writing this: `components/plan_trip.py` built the planner's
+inputs **without `transit`**, so the transport mode reached the AI prompt but
+never the rule-based draft. Every plan a parent saw had been using the default
+walking reach since the mode was introduced. Verified directly now, by spying on
+what the component hands the planner.
+
 ### Hours, and the day being planned
 
 The plan form carries a **date**, because which hours apply depends on it. A

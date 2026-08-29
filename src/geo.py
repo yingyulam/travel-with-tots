@@ -62,6 +62,29 @@ def within_reach(venue, anchor, reach):
                         venue["lat"], venue["lng"]) <= reach
 
 
+def as_point(lat, lng):
+    """A {"lat", "lng"} point from two untrusted values, or None.
+
+    One place to turn whatever arrived -- a form string, a JSON number, a NULL
+    column, a hand-made post -- into something the planner can measure from.
+    Anything that is not a real coordinate becomes None rather than raising,
+    because an accommodation is optional: a day still plans without one, it just
+    has no start and end anchor.
+
+    Range-checked but not region-checked. A family staying outside Metro
+    Vancouver is a real family, and the anchor only ever sorts, so a distant
+    pin costs the day nothing. METRO_VANCOUVER_BOUNDS guards *proposals*, where
+    a wrong hit gets written to the venues table.
+    """
+    try:
+        lat, lng = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return {"lat": lat, "lng": lng}
+
+
 def in_metro_vancouver(lat, lng):
     """Whether a coordinate is plausibly in Metro Vancouver.
 

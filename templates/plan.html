@@ -5,6 +5,11 @@
 {% block tagline %}Build a nap-friendly day plan for little ones 0-5.{% endblock %}
 {% block main_attrs %} id="plan-main"{% endblock %}
 
+{% block stylesheets %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
+{% endblock %}
+
 {% block content %}
 <!-- Trip details form -->
 <section class="card form-card">
@@ -125,18 +130,38 @@
       </label>
     </div>
 
-    <!-- Accommodation: plain text for now. Placeholder for a Google Maps
-         Places Autocomplete / geocoding integration later -- a real build
-         would attach Autocomplete to #accommodation and feed the resolved
-         address (and lat/lng) into travel-time routing. -->
-    <label class="field field-full">
-      <span>Accommodation <em>(optional)</em></span>
-      <input type="text" id="accommodation" name="accommodation"
-             value="{{ form.accommodation }}" autocomplete="off"
-             data-maps-autocomplete="pending"
-             placeholder="Home address or hotel -- we'll plan your first stop and when to leave">
-      <small class="field-hint">📍 Address search (Google Maps) coming soon -- free text works for now.</small>
-    </label>
+    {# Accommodation. The text is what a parent typed and what the AI prompt
+       reads; the pin is what the planner measures from. Searching fills both,
+       clicking the map fills only the pin, and typing fills only the text --
+       all three are valid, and a day plans without any of them. #}
+    <div class="action-panel" id="accommodation-panel">
+      <p class="panel-title">Where are you staying? <em>(optional)</em></p>
+      <p class="field-hint">Pin it and we plan the day around it: the first stop
+        is chosen from where you wake up, and the last from where you have to get
+        back to.</p>
+      <label class="field field-full">
+        <span>Hotel or address</span>
+        <div class="need-other-row">
+          <input type="text" id="accommodation" name="accommodation"
+                 value="{{ form.accommodation }}" autocomplete="off"
+                 placeholder="e.g. Sylvia Hotel, or an address">
+          <button type="button" class="tap-btn" id="accommodation-search-go">Search</button>
+        </div>
+      </label>
+      <p class="field-hint" id="accommodation-search-hint"></p>
+      <div id="accommodation-results"></div>
+      <div id="accommodation-map" class="place-map"></div>
+      <div class="chips">
+        <button type="button" class="tap-btn" id="accommodation-clear">Clear pin</button>
+      </div>
+      <p id="accommodation-status" class="meta">Search for it, or click the map to drop a pin.</p>
+      {# Both or neither: read_form drops half a coordinate rather than store a
+         trip that looks pinned and is not. #}
+      <input type="hidden" name="accommodation_lat" id="accommodation-lat"
+             value="{{ form.accommodation_lat }}">
+      <input type="hidden" name="accommodation_lng" id="accommodation-lng"
+             value="{{ form.accommodation_lng }}">
+    </div>
 
     <fieldset class="group">
       {# "Getting around" was the ambiguity that let a stroller into a list of
@@ -293,6 +318,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='plan-accommodation.js') }}"></script>
 <script>
   // Development visibility only. A parent is not told whether the AI touched
   // the plan: there is nothing for them to do with it. The per-stop detail is

@@ -102,7 +102,8 @@ SAME_AS_LAST_TIME = ("Welcome back. I still have your last day out, so we can "
                      "reuse it as it is.")
 
 # Fields the parent never talks about, so listing them as defaults is noise.
-INTERNAL = ("child_ids", "plan_child_id", "revise_feedback")
+INTERNAL = ("child_ids", "plan_child_id", "revise_feedback",
+            "accommodation_lat", "accommodation_lng")
 
 STAGE_OFFERED = "offered"
 STAGE_COLLECTING = "collecting"

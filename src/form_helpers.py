@@ -5,6 +5,7 @@ import json
 from datetime import date
 
 from .dates import parse_date, compute_age
+from .geo import as_point
 from .data_loader import VENUE_TYPES
 from .db import get_children
 
@@ -100,6 +101,11 @@ DEFAULTS = {
     # so it is a planning input rather than a label on a saved trip.
     "trip_date": "",
     "accommodation": "",
+    # Set only by picking the accommodation on the map. Empty means the parent
+    # typed an address without pinning it, or gave none: the day still plans,
+    # it just has no start and end anchor.
+    "accommodation_lat": "",
+    "accommodation_lng": "",
     # The tightest reach, deliberately: a clustered day is fine for a family
     # with a car, and a spread-out one is not fine for a family on foot.
     "transit": DEFAULT_TRANSIT,
@@ -173,6 +179,11 @@ def read_form(form):
         "destination": form.get("destination") or DEFAULTS["destination"],
         "trip_date": parse_date(form.get("trip_date")).isoformat(),
         "accommodation": form.get("accommodation", "").strip(),
+        # Kept as strings, like every other form value, so the dict round-trips
+        # through a hidden field unchanged. as_point() is what turns them into
+        # something to measure from, and drops anything that is not a real
+        # coordinate rather than carrying it into the planner.
+        **_accommodation_point(form),
         # One value, validated. It used to be an unchecked getlist, so any
         # string got through -- the same gap that was closed for `interest`.
         "transit": (form.get("transit") if form.get("transit") in TRANSIT_KEYS
@@ -194,6 +205,19 @@ def read_form(form):
         "plan_child_id": form.get("plan_child_id", ""),
     }
     return values
+
+
+def _accommodation_point(form):
+    """The map pin's coordinates, or empty strings when there is no pin.
+
+    Both or neither: half a coordinate cannot be measured from, and storing one
+    would leave a trip that looks pinned and is not.
+    """
+    point = as_point(form.get("accommodation_lat"), form.get("accommodation_lng"))
+    if point is None:
+        return {"accommodation_lat": "", "accommodation_lng": ""}
+    return {"accommodation_lat": str(point["lat"]),
+            "accommodation_lng": str(point["lng"])}
 
 
 def resolve_plan_child(form, parent):

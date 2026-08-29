@@ -17,7 +17,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultList = document.getElementById("plan-from-chat-result-list");
 
   // Fields a parent never describes, so showing them as "default" is noise.
-  const INTERNAL_FIELDS = ["child_ids", "plan_child_id", "revise_feedback"];
+  const INTERNAL_FIELDS = ["child_ids", "plan_child_id", "revise_feedback",
+    // Carried and posted, but a parent reads the accommodation's name,
+    // not the two decimals behind it.
+    "accommodation_lat", "accommodation_lng"];
 
 
   function formatValue(value) {

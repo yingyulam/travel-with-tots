@@ -184,7 +184,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Google Map handoff</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>src/components/geocode.py: turns a typed address into coordinates via the Google Geocoding API. It has no page of its own, since it only ever supports another component: it is the "set a location by hand" path on <a href="{{ url_for('find_nearby_page') }}">Find Nearby</a>. Sharing a location needs no key, because venues carry their own coordinates. Travel-time routing and the accommodation field are still to come.</p>
+      <p>src/components/geocode.py: turns a typed address into coordinates via the Google Geocoding API. It has no page of its own, since it only ever supports another component: it is the "set a location by hand" path on <a href="{{ url_for('find_nearby_page') }}">Find Nearby</a>. Sharing a location needs no key, because venues carry their own coordinates. The accommodation picker on the planning form needs none either: it is Leaflet with OpenStreetMap tiles, because every Google embed puts the key in the browser. Travel-time routing is still to come, and deliberately so.</p>
     </div>
   </div>
 </section>

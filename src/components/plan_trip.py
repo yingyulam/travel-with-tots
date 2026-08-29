@@ -19,7 +19,8 @@ from ..itinerary import generate_plans
 def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedtime="20:00",
                stop_count=3, dining="dine_out", features=None, naps=None,
                preferred_lunch_time="", nap_notes="", extra_notes="",
-               transit=None, accommodation="", strict_schedule=False,
+               transit=None, accommodation="", accommodation_lat=None,
+               accommodation_lng=None, strict_schedule=False,
                interest=None, transit_nap="", model=DEFAULT_MODEL) -> dict:
     """Build a full day plan: a rule-based draft, then AI-smoothed. Always
     returns a usable plan -- if the AI step fails, falls back to the
@@ -41,6 +42,14 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
         "features": features or [], "interest": interest or [], "dining": dining,
         "accommodation": accommodation, "preferred_lunch_time": preferred_lunch_time,
         "transit_nap": transit_nap,
+        # How far apart consecutive stops may sit. This was reaching the AI
+        # prompt but not the draft, so the mode a parent picked was inert on
+        # the one plan they actually see.
+        "transit": transit,
+        # Where they are staying, when they pinned it on the map: the first
+        # stop is chosen from here and the last is chosen to get back to it.
+        "accommodation_lat": accommodation_lat,
+        "accommodation_lng": accommodation_lng,
     }
     # The day being planned decides which of each venue's hours apply, so it is
     # resolved once here rather than threaded through the planner.

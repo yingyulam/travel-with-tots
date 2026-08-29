@@ -39,7 +39,12 @@ from .form_helpers import MAX_AGE_YEARS, normalise_transit, read_form
 STALE_AFTER_DAYS = 90
 
 CLOCK_FIELDS = ("wake_up", "bedtime", "preferred_lunch_time", "naps")
-STABLE_FIELDS = ("destination", "accommodation", "transit",
+STABLE_FIELDS = ("destination", "accommodation",
+                 # The pin travels with the text it names. Recalling one
+                 # without the other would prefill "Sylvia Hotel" and plan a
+                 # day with no start or end anchor, which reads as the feature
+                 # having quietly stopped working.
+                 "accommodation_lat", "accommodation_lng", "transit",
                  "dining", "stop_count", "transit_nap")
 
 # Nothing here is a JSON array any more. `transit` was, until the form became a

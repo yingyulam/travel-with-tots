@@ -52,7 +52,13 @@ CREATE TABLE IF NOT EXISTS trips (
     naps          TEXT,                   -- JSON array of {"start", "duration_min"}
     transit_nap   TEXT,                   -- "yes"/"sometimes"/"no": can the child nap in transit
     destination   TEXT,
-    accommodation TEXT,
+    accommodation TEXT,                   -- where they are staying, in their words
+    -- Where that is, when they picked it on the map. Nullable and separate from
+    -- the text on purpose: the text is what a parent typed and what the AI
+    -- prompt reads, these are what the planner can measure from, and a typed
+    -- address that was never pinned has the first without the second.
+    accommodation_lat REAL,
+    accommodation_lng REAL,
     transit       TEXT,                   -- JSON array of transit modes
     stop_count    TEXT,                   -- how many places the parent asked to visit
     dining        TEXT,
@@ -203,7 +209,8 @@ MIN_CLUSTER_SIZE = 6
 
 TRIP_FIELDS = (
     "trip_date", "wake_up", "bedtime", "naps", "transit_nap",
-    "destination", "accommodation", "transit",
+    "destination", "accommodation", "accommodation_lat", "accommodation_lng",
+    "transit",
     "stop_count", "dining", "preferred_lunch_time", "nap_notes",
     "extra_notes", "plan_label", "plan_json",
 )
@@ -263,6 +270,10 @@ def _ensure_columns(conn):
     if "naps" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN naps TEXT")
+    if "accommodation_lat" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips ADD COLUMN accommodation_lat REAL")
+            conn.execute("ALTER TABLE trips ADD COLUMN accommodation_lng REAL")
     if "pace" in existing and "stop_count" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips RENAME COLUMN pace TO stop_count")

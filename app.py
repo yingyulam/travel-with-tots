@@ -1329,32 +1329,14 @@ def place_search_page():
     return render_template("place_search.html")
 
 
-@app.route("/place-search/run", methods=["POST"])
-@login_required
-@admin_required
-def place_search_run_route():
-    """Run the Place Search component, as JSON."""
-    data = request.get_json(silent=True) or {}
-    query = (data.get("query") or "").strip()
-    if not query:
-        return jsonify({"error": "query is required"}), 400
-    try:
-        places = search_places(query, lat=data.get("lat"), lng=data.get("lng"))
-    except KeyError:
-        return jsonify({"error": "Set GOOGLE_MAPS_API_KEY, with the Places API enabled."}), 503
-    except PlaceSearchError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"query": query, "places": places})
+def _place_search_response():
+    """Find a place by name, as JSON, for whichever map is asking.
 
-
-@app.route("/log-place/search", methods=["POST"])
-@login_required
-def log_place_search_route():
-    """Find a place by name, so the pin can be dropped on the right one.
-
-    Biased toward wherever the map is currently looking, so "the library"
+    Biased toward wherever that map is currently looking, so "the library"
     resolves to a nearby one rather than a famous namesake. Server-side, so the
-    Google key stays out of the browser even though the map itself needs none.
+    Google key stays out of the browser even though the maps themselves need
+    none. Two pages and a component test page share this; they differ only in
+    who is allowed to call them, which is what stays on the routes.
     """
     data = request.get_json(silent=True) or {}
     query = (data.get("query") or "").strip()
@@ -1368,6 +1350,32 @@ def log_place_search_route():
         print(f"Place search failed: {e}")
         return jsonify({"error": "Couldn't search for that right now."}), 502
     return jsonify({"query": query, "places": places})
+
+
+@app.route("/place-search/run", methods=["POST"])
+@login_required
+@admin_required
+def place_search_run_route():
+    """Run the Place Search component, as JSON."""
+    return _place_search_response()
+
+
+@app.route("/log-place/search", methods=["POST"])
+@login_required
+def log_place_search_route():
+    """Name lookup for the Log a Place pin."""
+    return _place_search_response()
+
+
+@app.route("/plan/accommodation-search", methods=["POST"])
+def accommodation_search_route():
+    """Name lookup for the accommodation pin on the planning form.
+
+    Open to anyone, because /plan is: a parent plans a day before they have an
+    account. That is the same exposure /plan already carries, which spends an
+    AI call per generate against no login.
+    """
+    return _place_search_response()
 
 
 def _logged_place(parent_id, place_id):
@@ -1500,6 +1508,8 @@ def plan():
             naps=form["naps"], preferred_lunch_time=form["preferred_lunch_time"],
             nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
             transit=form["transit"], accommodation=form["accommodation"],
+            accommodation_lat=form["accommodation_lat"],
+            accommodation_lng=form["accommodation_lng"],
             features=form["features"], strict_schedule=form["strict_schedule"],
             interest=form["interest"], transit_nap=form["transit_nap"],
             model=_chosen_model(request.form.get("model")),
