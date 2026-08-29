@@ -77,8 +77,11 @@ body {
 }
 
 /* Layout */
+/* A max, so it never binds on a phone: at 390px the layout is 390px whatever
+   this says. It only decides how much of a desktop window the app uses, and
+   760px left most of a wide screen empty while cards inside it were cramped. */
 .layout {
-  max-width: 760px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 1.5rem;
   display: flex;
@@ -1215,6 +1218,27 @@ textarea:focus {
 @media (max-width: 600px) {
   .stop-report-body {
     margin-left: 0;
+    border-left-width: 1px;
+    border-radius: 10px;
+  }
+}
+
+/* Wide enough for the panel to sit beside the stop rather than under it.
+   Only the trip page widens: it is a timeline, and a long line of prose is
+   harder to read, which is what the 760px cap elsewhere is protecting. A phone
+   is unaffected either way, since max-width only binds above it. */
+@media (min-width: 1100px) {
+  /* Both take the same right-hand column, so the toggle sits at the top of it
+     and the panel opens directly underneath: to the right of the stop, not
+     wedged between it and the toggle. */
+  #trip-main .stop-report-toggle {
+    flex: 0 0 21rem;
+    text-align: left;
+  }
+
+  #trip-main .stop-report-body {
+    flex: 0 0 21rem;
+    margin: 0.35rem 0 0 auto;
     border-left-width: 1px;
     border-radius: 10px;
   }
