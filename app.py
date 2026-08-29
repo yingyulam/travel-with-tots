@@ -1584,10 +1584,26 @@ def _build_trip(destination, transit, bedtime, age_months, dining, plan_data,
     )
 
 
+def _trip_venue_reports(trip):
+    """{venue_id: {field: bool}} for every venue in the day.
+
+    So the report panel can open already showing what we hold. Without it a
+    parent cannot tell "nobody has said" from "we think there is one", and
+    unticking could not mean "that has gone".
+    """
+    ids = {stop["venue"]["id"]
+           for plan in trip.get("plans", [])
+           for stop in plan.get("stops", [])
+           if stop.get("venue") and stop["venue"].get("id")}
+    return db.reported_flags(sorted(ids)) if ids else {}
+
+
 def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
+    as_dict = trip.to_dict()
     return render_template(
         "trip.html",
-        trip=trip.to_dict(),
+        trip=as_dict,
+        venue_reports=_trip_venue_reports(as_dict),
         saved=saved,
         trip_form=trip_form,
         trip_id=trip_id,
@@ -1664,41 +1680,59 @@ def view_trip(trip_id):
     return _render_trip(trip, saved=True, trip_id=trip_id)
 
 
-@app.route("/trip/<int:trip_id>/report/<int:venue_id>", methods=["POST"])
+# What a parent tells us when they tick "the opening hours look wrong". It goes
+# to the same queue scripts/verify_hours.py fills, so an admin settles a parent
+# and OpenStreetMap in one place rather than two.
+PARENT_HOURS_SOURCE = "parent"
+PARENT_HOURS_FINDING = "A parent at the venue said our hours look wrong."
+
+
+@app.route("/venues/<int:venue_id>/report", methods=["POST"])
 @login_required
-def report_amenities(trip_id, venue_id):
-    """Record what a parent saw at one stop on their own saved trip.
+def report_amenities(venue_id):
+    """Record what a parent saw at one stop, as JSON.
 
     Here rather than behind a review queue, and here rather than on an admin
     page, because the person standing in the building is the best source there
     is for whether it has a change table. A queue in front of this would mean
     these fields never fill.
 
-    Only changed answers are written. Re-saving an unchanged form should not
-    manufacture reports, because recency is what decides a conflict.
+    Keyed on the venue rather than the trip, because that is what the report is
+    about and because a day being run has not necessarily been saved. A
+    `trip_id` in the body is still checked when it is there, so a link to
+    somebody else's trip is refused rather than quietly ignored.
+
+    The body is {"found": [field...], "shown": [field...], "hours_wrong": bool,
+    "trip_id": int|null}. `shown` matters: a field the panel never offered must
+    not be read as "the parent says no". A highchair is not offered at a park,
+    and answering for it would invent a claim nobody made.
     """
     parent = _current_parent()
-    if get_trip_for_parent(parent["id"], trip_id) is None:
-        flash("That trip isn't yours.")
-        return redirect(url_for("dashboard"))
+    data = request.get_json(silent=True) or {}
+    trip_id = data.get("trip_id")
+    if trip_id is not None and get_trip_for_parent(parent["id"], trip_id) is None:
+        return jsonify({"error": "That trip isn't yours."}), 403
 
-    note = (request.form.get("note") or "").strip() or None
+    found = set(data.get("found") or ())
+    shown = [f for f in db.REPORTABLE_FIELDS if f in set(data.get("shown") or ())]
     known = db.reported_flags([venue_id]).get(venue_id, {})
-    written = 0
-    for field in db.REPORTABLE_FIELDS:
-        answer = request.form.get(field)
-        if answer not in ("yes", "no"):
-            continue                      # "not sure" writes nothing
-        value = answer == "yes"
-        if field in known and known[field] == value and not note:
-            continue                      # unchanged, so recency is left alone
-        db.add_report(venue_id, field, value,
-                      reported_by=parent["id"], note=note)
+
+    # An unticked box is not the same as "I looked and there was none": it is
+    # also what a parent leaves alone. So an unticked field is only written when
+    # somebody had already claimed it was there, which makes it a correction.
+    values = {f: (f in found) for f in shown if f in found or f in known}
+    written = db.record_amenities(values=values, venue_id=venue_id,
+                                  reported_by=parent["id"])
+
+    if data.get("hours_wrong"):
+        db.record_hours_check(venue_id, PARENT_HOURS_SOURCE,
+                              source_says=f"Reported from a trip on {date.today()}",
+                              finding=PARENT_HOURS_FINDING)
         written += 1
 
-    flash(f"Thanks, noted {written} thing{'s' if written != 1 else ''}."
-          if written else "Nothing to add.")
-    return redirect(url_for("view_trip", trip_id=trip_id))
+    return jsonify({"saved": written, "message": (
+        f"Thanks, noted {written} thing{'s' if written != 1 else ''}."
+        if written else "Nothing new to add.")})
 
 
 @app.route("/replan", methods=["POST"])

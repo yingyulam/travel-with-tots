@@ -112,9 +112,12 @@ class ReportRouteTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         return patcher
 
-    def _post(self, **fields):
-        return self.client.post(
-            f"/trip/{self.trip}/report/{self.venue}", data=fields)
+    def _post(self, found=(), shown=None, **extra):
+        """Tick `found`; `shown` defaults to everything the panel offered."""
+        body = {"trip_id": self.trip, "found": list(found),
+                "shown": list(db.REPORTABLE_FIELDS if shown is None else shown),
+                **extra}
+        return self.client.post(f"/venues/{self.venue}/report", json=body)
 
     def _flags(self):
         return db.reported_flags([self.venue]).get(self.venue, {})
@@ -123,36 +126,77 @@ class ReportRouteTest(unittest.TestCase):
         with closing(db.connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM venue_reports").fetchone()[0]
 
-    def test_a_yes_is_recorded_against_the_parent(self):
-        self._post(has_washroom="yes")
+    def test_a_tick_is_recorded_against_the_parent(self):
+        self._post(found=["has_washroom"])
         self.assertIs(self._flags()["has_washroom"], True)
         with closing(db.connect()) as conn:
             row = conn.execute("SELECT reported_by FROM venue_reports").fetchone()
         self.assertEqual(row["reported_by"], self.parent)
 
-    def test_not_sure_writes_nothing(self):
-        self._post(has_washroom="", has_family_room="")
+    def test_ticking_nothing_writes_nothing(self):
+        # An untouched panel is the common case: a parent ticks the one thing
+        # they noticed and sends. The rest must not become claims.
+        self._post()
         self.assertEqual(self._count(), 0)
         self.assertNotIn("has_washroom", self._flags())
 
+    def test_an_unticked_unknown_is_not_a_claim_that_it_is_missing(self):
+        # "I did not tick it" is not "I looked and there was none". Only a field
+        # somebody had already claimed can be corrected by unticking.
+        self._post(found=["has_washroom"])
+        self.assertNotIn("has_family_room", self._flags())
+
     def test_an_unchanged_answer_is_not_written_again(self):
-        # Recency decides a conflict, so re-saving an unchanged form must not
+        # Recency decides a conflict, so sending the same panel twice must not
         # manufacture a report and push the timestamp forward.
-        self._post(has_washroom="yes")
+        self._post(found=["has_washroom"])
         before = self._count()
-        self._post(has_washroom="yes")
+        self._post(found=["has_washroom"])
         self.assertEqual(self._count(), before)
 
-    def test_a_changed_answer_is_written(self):
-        self._post(has_washroom="yes")
-        self._post(has_washroom="no")
+    def test_unticking_something_we_hold_reports_it_gone(self):
+        # The "something is different" case, with no extra control for it.
+        self._post(found=["has_washroom"])
+        self._post(found=[])
         self.assertIs(self._flags()["has_washroom"], False)
 
-    def test_a_note_is_kept_with_the_report(self):
-        self._post(has_nursing_room="no", note="Closed for refurbishment.")
-        with closing(db.connect()) as conn:
-            row = conn.execute("SELECT note FROM venue_reports").fetchone()
-        self.assertEqual(row["note"], "Closed for refurbishment.")
+    def test_a_field_the_panel_never_offered_is_left_alone(self):
+        # A highchair is not offered at a park, so it must not be answered for.
+        self._post(found=["has_washroom"],
+                   shown=["has_washroom", "has_family_room"])
+        self.assertNotIn("has_highchair", self._flags())
+
+    def test_the_reply_confirms_what_was_saved(self):
+        body = self._post(found=["has_washroom"]).get_json()
+        self.assertEqual(body["saved"], 1)
+        self.assertIn("noted 1 thing", body["message"])
+
+    def test_hours_look_wrong_files_a_check_for_an_admin(self):
+        self._post(hours_wrong=True)
+        checks = db.get_pending_hours_checks()
+        self.assertEqual([c["source"] for c in checks],
+                         [self.app_module.PARENT_HOURS_SOURCE])
+
+    def test_reporting_works_without_a_saved_trip(self):
+        # The day being run has not necessarily been saved, and that is exactly
+        # when a parent is standing at the stop.
+        self.client.post(f"/venues/{self.venue}/report",
+                         json={"found": ["has_washroom"],
+                               "shown": ["has_washroom"]})
+        self.assertIs(self._flags()["has_washroom"], True)
+
+    def test_the_review_page_does_not_label_a_parent_report_as_osm(self):
+        # Two sources reach that queue now and they say different kinds of
+        # thing, so the label cannot be hardcoded.
+        self._post(hours_wrong=True)
+        admin = db.add_parent("a@example.com", "h", name="A")
+        with mock.patch.object(
+                self.app_module, "_current_parent",
+                return_value={"id": admin, "is_admin": True,
+                              "name": "A", "email": "a@example.com"}):
+            html = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn("A parent at the venue said our hours look wrong", html)
+        self.assertNotIn("OSM: Reported from a trip", html)
 
     def test_a_parent_cannot_report_against_another_parents_trip(self):
         other = db.add_parent("z@example.com", "h", name="Z")
@@ -160,8 +204,8 @@ class ReportRouteTest(unittest.TestCase):
                 self.app_module, "_current_parent",
                 return_value={"id": other, "is_admin": False,
                               "name": "Z", "email": "z@example.com"}):
-            response = self._post(has_washroom="yes")
-        self.assertEqual(response.status_code, 302)
+            response = self._post(found=["has_washroom"])
+        self.assertEqual(response.status_code, 403)
         self.assertEqual(self._count(), 0)
 
 

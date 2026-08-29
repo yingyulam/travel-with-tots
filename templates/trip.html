@@ -162,6 +162,9 @@
   const TRIP_ID = {{ trip_id|tojson }};
   const REPORTABLE = {{ reportable_flags|tojson }};
   const CONDITIONAL = {{ conditional_flags|tojson }};
+  // What we already hold about each venue, so the panel opens showing it and
+  // unticking can mean "that has gone" rather than "I did not look".
+  const VENUE_REPORTS = {{ venue_reports|tojson }};
   const PLANS = tripData.plans.slice();   // versions; index 0 is the original
   let active = 0;
 
@@ -342,47 +345,94 @@
     return body;
   }
 
-  function reportForm(v) {
-    // Only on a saved trip, and only where the venue has an id: a plan_json
-    // saved before venues carried one cannot be reported against.
-    if (!TRIP_ID || !v || !v.id) return null;
-    const form = el("form", "stop-report");
-    form.method = "post";
-    form.action = `/trip/${TRIP_ID}/report/${v.id}`;
-
-    const summary = el("summary", null, "Was this right? Tell us what you saw");
-    const details = el("details", "stop-report-details");
-    details.appendChild(summary);
-
-    REPORTABLE.forEach(([key, label]) => {
+  // Tick what you found. Ticking is the whole interaction: no radios to set for
+  // things you did not check, and nothing to type.
+  function reportPanel(v) {
+    // Needs a venue with an id: a plan_json saved before venues carried one
+    // cannot be reported against. A saved trip is *not* required, because the
+    // moment worth reporting in is the day you are currently running.
+    if (!v || !v.id) return null;
+    const known = VENUE_REPORTS[v.id] || {};
+    const offered = REPORTABLE.filter(
       // A highchair at a park is not a question.
-      if (CONDITIONAL.includes(key) && !v.can_eat) return;
-      const row = el("div", "report-row");
-      row.appendChild(el("span", "report-label", label));
-      [["yes", "Yes"], ["no", "No"], ["", "Not sure"]].forEach(([value, text]) => {
-        const opt = el("label", "report-option");
-        const input = document.createElement("input");
-        input.type = "radio";
-        input.name = key;
-        input.value = value;
-        // "Not sure" is the default and writes nothing, so a parent can answer
-        // one question and ignore the rest.
-        if (value === "") input.checked = true;
-        opt.append(input, el("span", null, text));
-        row.appendChild(opt);
-      });
-      details.appendChild(row);
+      ([key]) => !(CONDITIONAL.includes(key) && !v.can_eat));
+
+    const panel = el("div", "stop-report");
+    const toggle = el("button", "stop-report-toggle", "＋ Report what you found");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+
+    const body = el("div", "stop-report-body");
+    body.hidden = true;
+    body.append(el("p", "stop-report-title", `What did you find at ${v.name}?`),
+                el("p", "field-hint", "Tick what is there. Untick anything that has gone."));
+
+    const chips = el("div", "chips");
+    const boxes = new Map();
+    offered.forEach(([key, label]) => {
+      const chip = el("label", "chip");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = known[key] === true;
+      chip.append(input, el("span", null, label));
+      chips.appendChild(chip);
+      boxes.set(key, input);
     });
 
-    const note = document.createElement("textarea");
-    note.name = "note";
-    note.rows = 2;
-    note.placeholder = "Anything worth adding (optional)";
+    // The "something is different" case that is not an amenity. A tick, not a
+    // text box: it files against the same queue verify_hours.py fills, where a
+    // person already settles this kind of disagreement.
+    const hours = el("label", "chip");
+    const hoursBox = document.createElement("input");
+    hoursBox.type = "checkbox";
+    hours.append(hoursBox, el("span", null, "Opening hours look wrong"));
+    chips.appendChild(hours);
+
     const send = el("button", "cta-secondary", "Send");
-    send.type = "submit";
-    details.append(note, send);
-    form.appendChild(details);
-    return form;
+    send.type = "button";
+    const status = el("p", "meta stop-report-status", "");
+    status.setAttribute("aria-live", "polite");
+    body.append(chips, send, status);
+
+    // Present and focusable at all times, so it works by tap and by keyboard.
+    // Hover only changes how loud it looks.
+    toggle.addEventListener("click", () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+
+    send.addEventListener("click", async () => {
+      send.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        const res = await fetch(`/venues/${v.id}/report`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            trip_id: TRIP_ID,
+            shown: [...boxes.keys()],
+            found: [...boxes].filter(([, box]) => box.checked).map(([key]) => key),
+            hours_wrong: hoursBox.checked,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Couldn't save that.");
+        // Keep the panel in step with what the server now holds, so a second
+        // send does not re-report what it already recorded.
+        VENUE_REPORTS[v.id] = Object.fromEntries(
+          [...boxes].map(([key, box]) => [key, box.checked]));
+        hoursBox.checked = false;
+        status.textContent = data.message;
+      } catch (e) {
+        status.textContent = e.message;
+      } finally {
+        send.disabled = false;
+      }
+    });
+
+    panel.append(toggle, body);
+    return panel;
   }
 
   function renderStop(stop, state) {
@@ -392,7 +442,7 @@
       time.appendChild(el("span", `state-tag ${state}`, state === "now" ? "Now" : "Done"));
     }
     item.append(time, stopBody(stop));
-    const report = reportForm(stop.venue);
+    const report = reportPanel(stop.venue);
     if (report) item.appendChild(report);
     return item;
   }

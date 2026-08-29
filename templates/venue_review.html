@@ -228,7 +228,13 @@
       <p><strong>{{ c.name }}</strong>
         <span class="meta">{{ c.type or 'no type' }}{% if c.neighbourhood %}, {{ c.neighbourhood }}{% endif %}</span></p>
       <p class="meta">Ours: {{ c.current_open or '?' }}&ndash;{{ c.current_close or '?' }}</p>
-      <p class="meta">OSM: {{ c.source_says }}</p>
+      {# Two sources reach this queue now, and they say different kinds of
+         thing: OpenStreetMap quotes hours, a parent says ours look wrong. #}
+      {% if c.source == 'parent' %}
+        <p class="meta">A parent at the venue said our hours look wrong. {{ c.source_says }}</p>
+      {% else %}
+        <p class="meta">{{ c.source|upper }}: {{ c.source_says }}</p>
+      {% endif %}
       {% if c.finding == 'more_detail' %}
         <p class="meta">More than one pair holds. Set a season or day slot for the rest.</p>
       {% endif %}

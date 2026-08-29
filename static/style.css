@@ -1146,3 +1146,58 @@ textarea:focus {
   .app-name { font-size: 1.9rem; }
   .stop-time { flex-basis: 64px; }
 }
+
+/* Report what you found, on a stop card. Muted until it is wanted, and loudest
+   on the stop the parent is actually standing at. The toggle is a real button
+   that is always rendered and always focusable: hover changes how loud it
+   looks, never whether it can be reached, so a phone and a keyboard both work. */
+.stop-report {
+  margin: 0.35rem 0 0 0;
+  grid-column: 2;
+}
+
+.stop-report-toggle {
+  border: 0;
+  background: none;
+  padding: 0.2rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #8a97a6;
+  cursor: pointer;
+}
+
+.stop-report-toggle:hover,
+.stop-report-toggle:focus-visible,
+.stop.now .stop-report-toggle {
+  color: var(--blue);
+}
+
+.stop-report-body {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.stop-report-title {
+  margin: 0 0 0.2rem 0;
+  font-weight: 600;
+}
+
+.stop-report-body .chips {
+  margin: 0.6rem 0;
+}
+
+.stop-report-body .chip span {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.stop-report-status:empty {
+  display: none;
+}
+
+.stop-report-status {
+  margin: 0.5rem 0 0 0;
+}
