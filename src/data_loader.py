@@ -36,14 +36,12 @@ SUPPORTED_CITIES = ("Vancouver",)
 # is not a stable identity. The rest stay out, so a new column cannot silently
 # end up in a saved trip's plan_json or in the JSON sent to the browser.
 VENUE_KEYS = ("id", "name", "type", "setting", "neighbourhood", "hours_note",
-              "has_washroom", "has_family_room", "has_nursing_room",
-              "stroller_accessible", "has_highchair", "can_eat", "lat", "lng")
+              "can_eat", "lat", "lng")
 
 # The venue keys that are yes/no. SQLite has no boolean type and hands these
 # back as 0/1, so they are coerced: every venue dict the app has ever built has
 # carried real booleans, including the ones already saved into trips.plan_json.
-BOOL_KEYS = ("has_washroom", "has_family_room", "has_nursing_room",
-             "stroller_accessible", "has_highchair", "can_eat")
+BOOL_KEYS = ("can_eat",)
 
 # The kinds of place this app plans days around. A closed list rather than free
 # text because `type` is not a label: is_nap_friendly reads it, so a typo
@@ -195,9 +193,13 @@ def _as_venue(row, reported=None, day_type="weekday"):
     venue = {key: row[key] for key in VENUE_KEYS}
     for key in BOOL_KEYS:
         venue[key] = bool(venue[key])
-    # An amenity is whatever the newest report says, not what the column says.
-    # The columns are still written (by the review queue, by an import seed) but
-    # nothing reads them for this: a claim needs an author and a date.
+    # Amenities come only from venue_reports, so a field nobody has reported on
+    # is **absent** from this dict rather than False. That is the distinction
+    # the whole reports table exists for, and it was not true until the venues
+    # columns went: they were the base layer here, and being NOT NULL DEFAULT 0
+    # they made every venue assert the absence of every unexamined amenity.
+    #
+    # Read them with .get(). An absent key is not the same as "no".
     venue.update(reported or {})
     venue["nap_friendly"] = is_nap_friendly(venue)
     venue.update(_hours_for(row, day_type))

@@ -134,13 +134,15 @@ class CandidateStoreTest(unittest.TestCase):
         candidates.CANDIDATES_PATH.write_text(f"{header}\n{','.join(row)}\n")
         self.assertEqual(candidates.load()[0]["status"], candidates.PENDING)
 
-    def test_the_reviewed_columns_match_what_the_planner_filters_on(self):
-        # If these drift, the review form offers flags the planner ignores, or
-        # misses ones it needs.
-        from src.db import CANDIDATE_FEATURE_COLUMNS
+    def test_the_reviewed_columns_match_what_the_form_asks(self):
+        # If these drift, the review form offers a flag the CSV cannot hold, or
+        # the CSV holds one nobody is asked about. Five of the six become
+        # venue_reports on approval and only can_eat stays a column, but the CSV
+        # is the reviewer's working copy and needs all six.
+        from src.db import CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS
         self.assertEqual(set(candidates.REVIEWED_COLUMNS)
                          - set(candidates.PREFILLED_COLUMNS),
-                         set(CANDIDATE_FEATURE_COLUMNS))
+                         set(CANDIDATE_FEATURE_COLUMNS) | set(REPORTABLE_FIELDS))
 
     def test_hours_are_one_pair_and_nothing_else(self):
         # There were 12 more columns here, hours by season and day type, and

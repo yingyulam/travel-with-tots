@@ -14,19 +14,27 @@ from src.components.geocode import GeocodeError, geocode, reverse_geocode
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
                    venue_type="park", source="curated",
                    lat=None, lng=None, **flags):
-    columns = {"has_family_room": 0, "has_nursing_room": 0,
-               "stroller_accessible": 0, "can_eat": 0}
-    # nap_friendly is derived from type now, so it is not a column to set.
-    columns.update({k: int(v) for k, v in flags.items()
-                    if k not in ("kid_friendly", "nap_friendly")})
-    conn.execute(
+    """A venue, with any amenities recorded as reports rather than columns.
+
+    Amenities are not columns any more: they live in venue_reports, so a claim
+    carries an author and a date and an unexamined field reads as absent rather
+    than as "no". `can_eat` is still a column -- it follows the kind of place
+    and nobody reports it.
+    """
+    can_eat = int(bool(flags.pop("can_eat", 0)))
+    cur = conn.execute(
         "INSERT INTO venues (name, city, neighbourhood, type, source, "
-        "can_eat, has_family_room, has_nursing_room, "
-        "stroller_accessible, lat, lng) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (name, city, neighbourhood, venue_type, source,
-         columns["can_eat"], columns["has_family_room"],
-         columns["has_nursing_room"], columns["stroller_accessible"], lat, lng))
+        "can_eat, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, city, neighbourhood, venue_type, source, can_eat, lat, lng))
+    venue_id = cur.lastrowid
+    for field, value in flags.items():
+        # nap_friendly is derived from type, and kid_friendly is an admission
+        # rule; neither was ever a thing to set here.
+        if field in db.REPORTABLE_FIELDS:
+            conn.execute(
+                "INSERT INTO venue_reports (venue_id, field, value, reported_by) "
+                "VALUES (?, ?, ?, NULL)", (venue_id, field, int(bool(value))))
+    return venue_id
 
 
 class _FakeResponse:

@@ -421,8 +421,13 @@ PROPOSAL_PAGE_SIZE = 10
 # cannot come to offer different sets.
 # In FEATURE_LABELS' order, which is presentation order, rather than sorted:
 # alphabetical put "Food on site" first and "Stroller" last for no reason.
-FLAG_LABELS = tuple((key, label) for key, label in FEATURE_LABELS.items()
-                    if key in db.CANDIDATE_FEATURE_COLUMNS)
+# What the review form asks about: the five reportable amenities plus can_eat.
+# Built from both, because only can_eat is a column now -- the other five become
+# reports authored by the reviewer on approval, and a form that stopped asking
+# would quietly end amenity review altogether.
+FLAG_LABELS = tuple(
+    (key, label) for key, label in FEATURE_LABELS.items()
+    if key in db.CANDIDATE_FEATURE_COLUMNS or key in db.REPORTABLE_FIELDS)
 
 
 def _safe_url(url):
@@ -564,10 +569,11 @@ def _candidate_edits(candidate_id, form):
     Flags come back as present-or-absent checkboxes, so every one is written
     every time: unticking has to clear a flag, not leave the old answer standing.
     """
+    checkboxes = set(db.CANDIDATE_FEATURE_COLUMNS) | set(db.REPORTABLE_FIELDS)
     edits = {}
     for field in candidates.EDITABLE:
         key = f"{candidate_id}-{field}"
-        if field in db.CANDIDATE_FEATURE_COLUMNS:
+        if field in checkboxes:
             edits[field] = "1" if form.get(key) else ""
         elif key in form:
             edits[field] = (form.get(key) or "").strip()
@@ -644,8 +650,17 @@ def _approve_candidate(row, admin_id):
         source_url=row.get("official_url") or row.get("source_url") or None,
         verified_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         verified_by=admin_id,
-        **{flag: row.get(flag) in ("1", 1, True)
-           for flag in db.CANDIDATE_FEATURE_COLUMNS})
+        # can_eat stays a column: it follows the kind of place, nobody reports
+        # it, and the lunch rule reads it directly.
+        can_eat=row.get("can_eat") in ("1", 1, True))
+    # The amenities the reviewer ticked, as reports authored by them. These used
+    # to go into the venues columns, which is the weakest layer -- so a
+    # deliberate check was overridden by the next parent report with no record
+    # that anyone had ever looked.
+    db.record_amenities(
+        venue_id, {f: row.get(f) in ("1", 1, True) for f in db.REPORTABLE_FIELDS
+                   if row.get(f) not in (None, "")},
+        reported_by=admin_id, note="Checked at review.")
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
 
 
@@ -1387,8 +1402,13 @@ def edit_place_route(place_id):
         name=name,
         type=request.form.get("venue_type", "").strip() or None,
         neighbourhood=request.form.get("neighbourhood", "").strip() or None,
-        notes=request.form.get("notes", "").strip() or None,
-        **{key: int(bool(request.form.get(key))) for key, _ in AMENITY_OPTIONS})
+        notes=request.form.get("notes", "").strip() or None)
+    # Correcting their own place is another observation by the same parent, so
+    # it lands as a dated report rather than overwriting a column.
+    db.record_amenities(
+        place_id,
+        {key: bool(request.form.get(key)) for key, _ in AMENITY_OPTIONS},
+        reported_by=parent["id"], note="Corrected by the parent who logged it.")
     return redirect(url_for("dashboard"))
 
 

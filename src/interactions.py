@@ -50,10 +50,15 @@ NEED_OPTIONS = [
 # hours and current reviews. No "quiet_spot" either: nobody can reliably report
 # quiet, and it changes with the hour and the weather, so a soft guess in answer
 # to a specific request is worse than not offering it.
+# Read with .get(), because an amenity nobody has reported on is **absent**
+# rather than False. That distinction is the whole point of venue_reports, and
+# a need filter is where it matters most: a parent asking for a nursing room
+# right now wants the ones somebody has actually seen.
 NEED_FILTERS = {
-    "family_room": lambda v: v["has_family_room"],
-    "changing_table": lambda v: v["has_family_room"] or v["has_nursing_room"],
-    "nursing_room": lambda v: v["has_nursing_room"],
+    "family_room": lambda v: bool(v.get("has_family_room")),
+    "changing_table": lambda v: bool(v.get("has_family_room")
+                                     or v.get("has_nursing_room")),
+    "nursing_room": lambda v: bool(v.get("has_nursing_room")),
 }
 
 # Minutes past a delayed stop when the parent is "running behind".

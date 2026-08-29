@@ -72,17 +72,12 @@ CREATE TABLE IF NOT EXISTS venues (
     setting             TEXT,                -- 'indoor'/'outdoor'/'both': where a
                                              -- visit is spent. See data_loader.SETTINGS
     neighbourhood       TEXT,
-    has_family_room     INTEGER NOT NULL DEFAULT 0,
-    has_nursing_room    INTEGER NOT NULL DEFAULT 0,
-    stroller_accessible INTEGER NOT NULL DEFAULT 0,
     source              TEXT NOT NULL CHECK (
                             source IN ('municipal_open_data', 'user_submitted', 'curated')),
     parent_id           INTEGER REFERENCES parents(id) ON DELETE CASCADE,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     city                TEXT,
     can_eat             INTEGER NOT NULL DEFAULT 0,
-    has_washroom        INTEGER NOT NULL DEFAULT 0,
-    has_highchair       INTEGER NOT NULL DEFAULT 0,
     open_time           TEXT,
     close_time          TEXT,
     lat                 REAL,                   -- NULL until a source supplies it
@@ -169,10 +164,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_check_open
 
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
 # candidates by -- never string-interpolate a column name that isn't in here.
-CANDIDATE_FEATURE_COLUMNS = {
-    "has_washroom", "has_family_room", "has_nursing_room",
-    "stroller_accessible", "has_highchair", "can_eat",
-}
+# The only venue flag left as a column. It is not reportable: it follows the
+# kind of place, is set at import and review, and the lunch rule reads it
+# directly. The five amenities that used to sit beside it are REPORTABLE_FIELDS
+# now, stored in venue_reports where a claim has an author and a date.
+CANDIDATE_FEATURE_COLUMNS = {"can_eat"}
 
 # The amenities a visitor is in a position to report, and therefore the only
 # ones read from venue_reports rather than off the venue row. can_eat is not
@@ -187,9 +183,7 @@ CONDITIONAL_ON_CAN_EAT = ("has_highchair",)
 # The venue columns data/venues.json owns, in the order _seed_venues supplies
 # them. Deliberately excludes source, parent_id and the provenance columns: a
 # re-seed must never demote a row or discard a citation a human added.
-SEED_FIELDS = ("type", "setting", "neighbourhood",
-               "has_family_room", "has_nursing_room",
-               "stroller_accessible", "can_eat",
+SEED_FIELDS = ("type", "setting", "neighbourhood", "can_eat",
                "open_time", "close_time", "seed_rank")
 
 # Venue sources trustworthy enough to plan a family's day around: everything
@@ -379,6 +373,17 @@ def _drop_dead_columns(conn):
             ("venues", "nap_friendly"),
             ("venues", "min_age_months"),
             ("venues", "max_age_months"),
+            # Amenities live in venue_reports, which is the only place a claim
+            # can carry an author and a date. These columns were the base layer
+            # underneath the reports, and being INTEGER NOT NULL DEFAULT 0 they
+            # could not express "nobody has said" -- so every venue asserted the
+            # absence of every amenity nobody had looked at. Every value they
+            # held was already duplicated as a report before this ran.
+            ("venues", "has_washroom"),
+            ("venues", "has_family_room"),
+            ("venues", "has_nursing_room"),
+            ("venues", "stroller_accessible"),
+            ("venues", "has_highchair"),
             ("children", "gender"),
             ("trips", "nap_1"), ("trips", "nap_2"),
             ("trips", "feeding_1"), ("trips", "feeding_2"),
@@ -484,9 +489,7 @@ def _seed_venues(conn):
     with conn:  # single transaction for the whole batch
         for rank, v in enumerate(venues):
             values = (v["type"], v["setting"], v["neighbourhood"],
-                      int(v["has_family_room"]), int(v["has_nursing_room"]),
-                      int(v["stroller_accessible"]), int(v["can_eat"]),
-                      v["open"], v["close"], rank)
+                      int(v["can_eat"]), v["open"], v["close"], rank)
             coords = (v.get("lat"), v.get("lng"))
             existing = conn.execute(
                 "SELECT id FROM venues WHERE name = ? AND source = 'curated'",
@@ -666,9 +669,8 @@ def add_venue(name, *, source, venue_type=None, **fields):
 # own edit form, where "correct my typo" must not move a venue, while
 # re-submitting the whole form may well mean the parent moved the map pin.
 # Still excludes source and parent_id, which are never a caller's to rewrite.
-SUBMISSION_FIELDS = ("type", "setting", "neighbourhood", "city", "lat", "lng", "notes",
-                     "address", "has_family_room", "has_nursing_room",
-                     "stroller_accessible")
+SUBMISSION_FIELDS = ("type", "setting", "neighbourhood", "city", "lat", "lng",
+                     "notes", "address")
 
 
 def add_or_update_submission(name, *, parent_id, **fields):
@@ -710,9 +712,7 @@ def add_or_update_submission(name, *, parent_id, **fields):
 # The fields a parent may change on their own submission. Deliberately excludes
 # source, parent_id and the coordinates: source is the verification gate, and
 # letting an edit rewrite it would turn "correct my typo" into "publish this".
-EDITABLE_VENUE_FIELDS = ("name", "type", "setting", "neighbourhood", "notes",
-                         "has_family_room", "has_nursing_room",
-                         "stroller_accessible")
+EDITABLE_VENUE_FIELDS = ("name", "type", "setting", "neighbourhood", "notes")
 
 
 def update_venue(venue_id, parent_id, **fields):
@@ -1042,6 +1042,40 @@ def add_report(venue_id, field, value, reported_by=None, note=None):
         (venue_id, field, int(bool(value)), reported_by, note))
 
 
+def record_amenities(venue_id, values, reported_by, note=None):
+    """Write reports for the amenities in `values`, from one author.
+
+    The one way an amenity claim enters the database. `values` is
+    {field: truthy} over REPORTABLE_FIELDS; anything else is ignored, so a
+    caller can hand over a whole form dict. Returns how many were written.
+
+    Only changed answers are written, following report_amenities: re-saving an
+    unchanged form must not manufacture reports, because recency is what
+    decides a conflict and a fresh duplicate would move a claim's date without
+    anybody having looked.
+
+    Why every writer goes through here rather than setting a column. A claim
+    needs an author and a date. Review, Log a Place and the replay script all
+    used to write the venues columns, which are the *weakest* layer: a
+    reviewer's deliberate check was overridden by the next parent report with
+    no record that anyone had checked, and a parent's own ticks about a place
+    they had just visited were stored as a claim by nobody. One real row said
+    `reported_by=None` with the note "Hand-typed into the seed file; never
+    verified" about an amenity a logged-in parent had ticked themselves.
+    """
+    known = reported_flags([venue_id]).get(venue_id, {})
+    written = 0
+    for field in REPORTABLE_FIELDS:
+        if field not in values:
+            continue
+        value = bool(values[field])
+        if field in known and known[field] == value and not note:
+            continue
+        add_report(venue_id, field, value, reported_by=reported_by, note=note)
+        written += 1
+    return written
+
+
 def reported_flags(venue_ids=None):
     """{venue_id: {field: bool}} from the reports. Newest report per field wins.
 
@@ -1149,7 +1183,14 @@ def get_candidate_venues(city, age_months=None, features=None, transit=None,
         rows = _narrow_by_neighbourhood(rows, near_neighbourhood, transit)
         rows = rows[:limit]
         rows = _ensure_dining_option(conn, rows, where, params, dining, limit)
-        return rows
+    # Plain dicts with the reports overlaid, for the same reason
+    # data_loader.get_venues does it: an amenity is whatever somebody last
+    # observed, not what the column claims. These rows are both described to
+    # the AI planner and swapped into plans as venues, so telling it a nursing
+    # room is there when a parent has since said otherwise put the stale answer
+    # in front of a family twice over.
+    reported = reported_flags([row["id"] for row in rows])
+    return [{**dict(row), **reported.get(row["id"], {})} for row in rows]
 
 
 def _verified_source_clause():

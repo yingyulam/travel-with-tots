@@ -13,21 +13,24 @@ def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
                    open_time="06:00", close_time="22:00", **flags):
     """A venue with hours, because a venue without them is not schedulable and
     get_candidate_venues therefore will not offer it. Pass open_time=None to
-    build one deliberately."""
-    columns = {"has_family_room": 0, "has_nursing_room": 0,
-               "stroller_accessible": 0}
-    # kid_friendly, nap_friendly and the age range are no longer columns:
-    # accepted and ignored so callers written against the old shape still read.
-    columns.update({k: int(v) for k, v in flags.items() if k in columns})
-    conn.execute(
+    build one deliberately.
+
+    Amenity kwargs become venue_reports rows, not columns: kid_friendly,
+    nap_friendly and the age range are long gone, and the five amenities left
+    that layer too, so a claim carries an author and a date.
+    """
+    cur = conn.execute(
         "INSERT INTO venues (name, city, neighbourhood, type, can_eat, source, "
-        "open_time, close_time, "
-        "has_family_room, has_nursing_room, stroller_accessible) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "open_time, close_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (name, city, neighbourhood, venue_type, int(can_eat), source,
-         open_time, close_time,
-         columns["has_family_room"], columns["has_nursing_room"],
-         columns["stroller_accessible"]))
+         open_time, close_time))
+    from src.db import REPORTABLE_FIELDS
+    for field, value in flags.items():
+        if field in REPORTABLE_FIELDS:
+            conn.execute(
+                "INSERT INTO venue_reports (venue_id, field, value, reported_by) "
+                "VALUES (?, ?, ?, NULL)",
+                (cur.lastrowid, field, int(bool(value))))
 
 
 class GetCandidateVenuesTest(unittest.TestCase):

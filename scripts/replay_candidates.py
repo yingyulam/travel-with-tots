@@ -71,11 +71,11 @@ def main():
         return 0
 
     for row in to_insert:
-        db.add_venue(
+        venue_id = db.add_venue(
             row["name"],
             source="curated",
             venue_type=row.get("type") or None,
-            category=row["category"],
+            setting=row.get("setting") or None,
             neighbourhood=row.get("neighbourhood") or None,
             city=row.get("city") or None,
             address=row.get("address") or None,
@@ -86,8 +86,15 @@ def main():
             source_url=row.get("source_url") or None,
             verified_at=row.get("decided_at") or None,
             verified_by=int(row["decided_by"]) if (row.get("decided_by") or "").isdigit() else None,
-            **{flag: row.get(flag) in ("1", 1, True)
-               for flag in db.CANDIDATE_FEATURE_COLUMNS})
+            can_eat=row.get("can_eat") in ("1", 1, True))
+        # The amenities the reviewer had ticked, restored as reports rather than
+        # columns, so a rebuild does not silently drop every amenity claim.
+        db.record_amenities(
+            venue_id,
+            {f: row.get(f) in ("1", 1, True) for f in db.REPORTABLE_FIELDS
+             if row.get(f) not in (None, "")},
+            reported_by=int(row["decided_by"]) if (row.get("decided_by") or "").isdigit() else None,
+            note="Restored from venue_candidates.csv after a rebuild.")
         print(f"  inserted {row['name']}")
     print(f"\ninserted {len(to_insert)}")
     return 0

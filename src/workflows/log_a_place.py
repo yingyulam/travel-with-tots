@@ -118,8 +118,18 @@ def store(parent_id, values, place=None):
         lat=record["lat"],
         lng=record["lng"],
         notes=record["notes"],
-        address=record["address"],
-        **{key: bool(values.get(key)) for key, _ in AMENITY_OPTIONS})
+        address=record["address"])
+    # The amenities go in as reports by this parent, not as columns on the row.
+    # They were standing in the building; that is exactly the author a claim
+    # wants, and storing it as a column recorded it as a claim by nobody. One
+    # real submission ended up with reported_by=None and the note "Hand-typed
+    # into the seed file; never verified" about boxes a parent had ticked.
+    #
+    # Every option is passed, not only the ticked ones, so unticking is a real
+    # report of absence rather than silence.
+    db.record_amenities(
+        record["id"], {key: bool(values.get(key)) for key, _ in AMENITY_OPTIONS},
+        reported_by=parent_id, note="Reported when logging the place.")
     return record
 
 

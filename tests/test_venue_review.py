@@ -288,8 +288,32 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["verified_by"], self.admin_id)
         self.assertTrue(venue["verified_at"])
         self.assertEqual(venue["open_time"], "10:00")
-        self.assertEqual(venue["has_family_room"], 1)
         self.assertEqual(candidates.load()[0]["status"], candidates.APPROVED)
+
+    def test_a_reviewers_tick_becomes_a_report_they_authored(self):
+        # It used to write the venues column, which is the weakest layer: the
+        # next parent report overrode it with no record anyone had checked.
+        row = self._propose()
+        self._post("approve", [row["id"]], **self._required(row, has_family_room="on"))
+        venue_id = self._venue("Bloedel Conservatory")["id"]
+        self.assertIs(db.reported_flags([venue_id])[venue_id]["has_family_room"],
+                      True)
+        with closing(db.connect()) as conn:
+            author = conn.execute(
+                "SELECT reported_by FROM venue_reports WHERE venue_id = ? "
+                "AND field = 'has_family_room'", (venue_id,)).fetchone()
+        self.assertEqual(author["reported_by"], self.admin_id)
+
+    def test_a_later_parent_report_still_wins(self):
+        # Recency is deliberate: a nursing room that has been removed is removed
+        # whoever last looked. An admin check buys existence, not permanence.
+        row = self._propose()
+        self._post("approve", [row["id"]], **self._required(row, has_family_room="on"))
+        venue_id = self._venue("Bloedel Conservatory")["id"]
+        db.add_report(venue_id, "has_family_room", False,
+                      reported_by=self.parent_id, note="Gone as of today.")
+        self.assertIs(db.reported_flags([venue_id])[venue_id]["has_family_room"],
+                      False)
 
     def test_an_unticked_candidate_stays_pending(self):
         keep = self._propose("Keep Pending")

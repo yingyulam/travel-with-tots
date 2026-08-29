@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .db import CANDIDATE_FEATURE_COLUMNS
+from .db import CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS
 
 CANDIDATES_PATH = Path(__file__).resolve().parent.parent / "data" / "venue_candidates.csv"
 _lock = threading.Lock()
@@ -58,8 +58,14 @@ PREFILLED_COLUMNS = ("open_time", "close_time")
 # There were 12 more columns here, hours by season and day type, and not one
 # was ever filled. They are gone with the venue_hours table: the model could
 # not express a museum closed on Mondays anyway, and hours_note can.
+# The amenity ticks a reviewer makes, plus can_eat. All six live here even
+# though five of them are no longer columns on `venues`: this file is the
+# reviewer's working copy, held between "save edits" and "approve", and on
+# approval the five become venue_reports authored by the reviewer while can_eat
+# goes to its column. See app._approve_candidate.
 REVIEWED_COLUMNS = (PREFILLED_COLUMNS
-                    + tuple(sorted(CANDIDATE_FEATURE_COLUMNS)))
+                    + tuple(sorted(set(REPORTABLE_FIELDS)
+                                   | CANDIDATE_FEATURE_COLUMNS)))
 
 COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
            + ("proposed_at", "decided_at", "decided_by"))

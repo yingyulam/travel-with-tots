@@ -31,14 +31,24 @@ class GetVenuesTest(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _add(self, name, **fields):
+        """A venue. Amenity kwargs become venue_reports rows, since they are no
+        longer columns -- a claim needs an author and a date, and an unexamined
+        amenity has to read as absent rather than as "no"."""
+        reports = {f: fields.pop(f) for f in list(fields)
+                   if f in db.REPORTABLE_FIELDS}
         fields.setdefault("city", "Vancouver")
         fields.setdefault("source", "curated")
         columns = ", ".join(fields)
         placeholders = ", ".join("?" for _ in fields)
         with closing(db.connect()) as conn, conn:
-            conn.execute(f"INSERT INTO venues (name, {columns}) "
-                         f"VALUES (?, {placeholders})",
-                         (name, *fields.values()))
+            cur = conn.execute(f"INSERT INTO venues (name, {columns}) "
+                               f"VALUES (?, {placeholders})",
+                               (name, *fields.values()))
+            for field, value in reports.items():
+                conn.execute(
+                    "INSERT INTO venue_reports (venue_id, field, value, "
+                    "reported_by) VALUES (?, ?, ?, NULL)",
+                    (cur.lastrowid, field, int(bool(value))))
 
     def test_returns_plain_dicts_not_database_rows(self):
         # filters.py, itinerary.py and interactions.py all call .get() on these,

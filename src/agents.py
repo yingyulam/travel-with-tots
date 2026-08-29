@@ -233,13 +233,16 @@ def _format_venue_candidates(venues: list) -> str:
         return "No venues matched this trip's destination, age, and features."
     blocks = []
     for v in venues:
+        # .get(): a candidate carries only the amenities somebody has reported,
+        # so an unreported one is absent rather than False. Listing it as a
+        # feature the venue lacks would be a claim nobody made.
         tags = [key for key in ("has_family_room", "has_nursing_room",
-                                 "stroller_accessible") if v[key]]
+                                 "stroller_accessible") if v.get(key)]
         blocks.append(
             f"[venue_id {v['id']}] {v['name']} -- {v['type']}, {v['neighbourhood']}\n"
             f"Hours: {v['open_time'] or '?'}-{v['close_time'] or '?'}\n"
             f"Nap-friendly: {'yes' if is_nap_friendly(v) else 'no'} | "
-            f"Can eat here: {'yes' if v['can_eat'] else 'no'}\n"
+            f"Can eat here: {'yes' if v.get('can_eat') else 'no'}\n"
             f"Features: {', '.join(tags) or 'none'}")
     return "\n\n".join(blocks)
 

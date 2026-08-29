@@ -42,14 +42,22 @@ class AddVenueStorageTest(_VenueDbTest):
     place could never be distance-ranked or matched by a city query."""
 
     def test_everything_a_verifier_needs_round_trips(self):
-        db.add_venue("Nourish Kitchen", source="user_submitted",
-                     city="Vancouver", lat=49.2634, lng=-123.1005,
-                     neighbourhood="Mount Pleasant", has_nursing_room=True,
-                     notes="room is behind the lifts", address="8 Main St")
+        venue_id = db.add_venue(
+            "Nourish Kitchen", source="user_submitted",
+            city="Vancouver", lat=49.2634, lng=-123.1005,
+            neighbourhood="Mount Pleasant",
+            notes="room is behind the lifts", address="8 Main St")
+        # Amenities are not venue fields any more: add_venue refuses them, and
+        # a claim goes to venue_reports with an author.
+        with self.assertRaises(ValueError):
+            db.add_venue("Refused", source="user_submitted", has_nursing_room=True)
+        db.record_amenities(venue_id, {"has_nursing_room": True},
+                            reported_by=None, note="seed")
         row = self._row("Nourish Kitchen")
         self.assertEqual(row["city"], "Vancouver")
         self.assertAlmostEqual(row["lat"], 49.2634)
-        self.assertEqual(row["has_nursing_room"], 1)
+        self.assertIs(db.reported_flags([venue_id])[venue_id]["has_nursing_room"],
+                      True)
         self.assertEqual(row["notes"], "room is behind the lifts")
         self.assertEqual(row["address"], "8 Main St")
 
@@ -198,9 +206,26 @@ class RunTest(_VenueDbTest):
                 "name": "Mall", "has_nursing_room": "on", "notes": "level 2",
             })
         row = self._row("Mall")
-        self.assertEqual(row["has_nursing_room"], 1)
-        self.assertEqual(row["has_family_room"], 0)
         self.assertEqual(row["notes"], "level 2")
+        # The amenities are reports by this parent, not columns. They were
+        # standing in the building, which is exactly the author a claim wants;
+        # as a column it was stored as a claim by nobody.
+        flags = db.reported_flags([row["id"]])[row["id"]]
+        self.assertIs(flags["has_nursing_room"], True)
+        self.assertIs(flags["has_family_room"], False)
+
+    def test_the_parent_is_recorded_as_the_author(self):
+        with mock.patch.object(log_a_place, "geocode",
+                               return_value=dict(log_a_place.UNRESOLVED_PLACE)):
+            log_a_place.store(self.parent_id, {
+                "name": "Mall", "has_nursing_room": "on",
+            })
+        row = self._row("Mall")
+        with closing(db.connect()) as conn:
+            authors = {r["reported_by"] for r in conn.execute(
+                "SELECT reported_by FROM venue_reports WHERE venue_id = ?",
+                (row["id"],))}
+        self.assertEqual(authors, {self.parent_id})
 
     def test_a_nameless_submission_is_refused(self):
         with self.assertRaises(ValueError):
@@ -423,9 +448,14 @@ class ResubmittingAPlaceTest(_VenueDbTest):
         # The update passes every amenity every time, so unticking one has to
         # actually remove it rather than leaving the first answer standing.
         self._store(has_family_room=True)
-        self.assertEqual(self._rows()[0]["has_family_room"], 1)
+        venue_id = self._rows()[0]["id"]
+        self.assertIs(db.reported_flags([venue_id])[venue_id]["has_family_room"],
+                      True)
         self._store()
-        self.assertEqual(self._rows()[0]["has_family_room"], 0)
+        # Not silence: unticking is a real report of absence, which is the whole
+        # difference between "nobody has said" and "somebody looked".
+        self.assertIs(db.reported_flags([venue_id])[venue_id]["has_family_room"],
+                      False)
 
     def test_a_moved_map_pin_updates_the_location(self):
         self._store()

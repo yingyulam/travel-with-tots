@@ -63,8 +63,17 @@ def _curated_places(need, city, neighbourhood, limit, lat=None, lng=None):
     table has no maps_url column (data_loader only attaches it to the JSON
     copy), so it's built here from the same helper. Each place gets a
     `distance_km` when it can be computed, and None when it can't."""
+    rows = db.get_venues_in_city(city)
+    # Overlay what somebody actually observed. Without this the need filters
+    # matched on the venues columns, which no longer carry current answers: a
+    # parent who reported "the nursing room is gone" changed nothing, and the
+    # next parent asking for one was still sent to the same mall. Reports are
+    # what every other read of an amenity has used since venue_reports landed;
+    # this path was simply missed.
+    reported = db.reported_flags([row["id"] for row in rows])
     venues = _rank_by_proximity(
-        [dict(row) for row in db.get_venues_in_city(city)], neighbourhood, lat, lng)
+        [{**dict(row), **reported.get(row["id"], {})} for row in rows],
+        neighbourhood, lat, lng)
     places = interactions.find_nearby(need, venues, limit)
     for venue in places:
         venue["maps_url"] = maps_url(venue["name"], venue["city"] or city)
