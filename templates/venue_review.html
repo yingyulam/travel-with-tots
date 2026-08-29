@@ -35,9 +35,12 @@
 {% block content %}
 
 <section class="card">
-  <h2>Proposed venues</h2>
+  <h2>1. Decide<span class="queue-count">{{ proposals_total + submissions|length }}</span></h2>
+  <p class="meta">Is this a venue at all? Nothing here reaches a plan until you say so.</p>
+
+  <h3>Proposed by the agent</h3>
   <p class="meta">
-    Found by the agent, unchecked. Fix what is wrong, then approve.
+    Fix what is wrong, then approve.
     <a href="{{ url_for('propose_venues_page') }}">Find more</a>
   </p>
 
@@ -66,7 +69,15 @@
           Pick one below.</p>
       {% endif %}
       {% if not c.open_time or not c.close_time %}
-        <p class="meta"><strong>Hours needed to approve.</strong></p>
+        <p class="meta"><strong>Hours needed to approve.</strong>
+          {# hours_note carries the raw OSM string whenever OSM knew the venue
+             at all, so its absence is the difference between "OSM had nothing"
+             and "OSM had something we could not reduce to one pair". #}
+          {%- if c.hours_note %} OpenStreetMap had hours but not a single plain
+            pair, so they are below for you to read.
+          {%- else %} OpenStreetMap has no entry for this name, so there was
+            nothing to prefill. Try the official site.
+          {%- endif %}</p>
       {% endif %}
       {% if not c.lat %}<p class="meta">No coordinates.</p>{% endif %}
 
@@ -122,10 +133,7 @@
     <button type="submit" name="action" value="reject" class="cta-secondary">Reject checked</button>
   </form>
   {% endif %}
-</section>
-
-<section class="card">
-  <h2>Parent submissions</h2>
+  <h3>Logged by a parent</h3>
   <p class="meta">Out of every plan and search until verified.</p>
 
   {% if not submissions %}
@@ -148,6 +156,23 @@
       {% if v.address %}<p class="meta">{{ v.address }}</p>{% endif %}
       {% if v.lat is none %}<p class="meta">No coordinates.</p>{% endif %}
       {% if v.notes %}<p class="meta">&ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
+      {# What they ticked when they logged it. These are reports rather than
+         columns, so they are not on the row and this card showed none of them. #}
+      {% set reported = submission_reports.get(v.id, {}) %}
+      {% if reported %}
+      <div class="badges">
+        {% for key, label in flag_labels %}
+          {% if key in reported %}
+          {# "Nursing room" for a yes, "No nursing room" for a looked-and-found-
+             none. Both are reports; a field nobody mentioned is simply absent. #}
+          <span class="badge{{ ' badge-pending' if not reported[key] }}">{{
+            label if reported[key] else 'No ' ~ label|lower }}</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="meta">No amenities reported.</p>
+      {% endif %}
       <p class="meta">{{ v.submitted_by or 'deleted account' }} &middot; {{ v.created_at }}</p>
 
       <form method="post" action="{{ url_for('venue_review_decide', venue_id=v.id) }}" class="section-form">
@@ -160,31 +185,11 @@
 </section>
 
 <section class="card">
-  <h2>Unverified venues</h2>
-  <p class="meta">Already used for planning, never checked. Confirming records that you did.</p>
+  <h2>2. Finish<span class="queue-count">{{ missing_hours_total + hours_checks|length }}</span></h2>
+  <p class="meta">Already in the database, and held back by its hours. Both of
+    these are the same job, so they sit together.</p>
 
-  {% if not unverified %}
-    <p class="meta">All confirmed.</p>
-  {% else %}
-  <form method="post" action="{{ url_for('venue_confirm_batch') }}" class="section-form">
-    <p class="meta">
-      {{ unverified|length }} of {{ unverified_total }}.
-    </p>
-    {% for v in unverified %}
-    <label class="review-pick">
-      <input type="checkbox" name="picked" value="{{ v.id }}">
-      <span><strong>{{ v.name }}</strong> &middot; {{ v.type or 'no type' }}
-        {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
-        {%- if not v.open_time %} &middot; no hours{% endif %}</span>
-    </label>
-    {% endfor %}
-    <button type="submit" class="cta">Confirm checked</button>
-  </form>
-  {% endif %}
-</section>
-
-<section class="card">
-  <h2>Needs hours</h2>
+  <h3>No hours at all</h3>
   <p class="meta">No hours means no plans. These stay out until you set them.</p>
 
   {% if not missing_hours %}
@@ -215,10 +220,7 @@
     </div>
     {% endfor %}
   {% endif %}
-</section>
-
-<section class="card">
-  <h2>Hours to check</h2>
+  <h3>Hours somebody disputes</h3>
   <p class="meta">
     OpenStreetMap says something different. You decide.
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Source</a>
@@ -261,8 +263,37 @@
 </section>
 
 <section class="card">
+  <h2>3. Confirm<span class="queue-count">{{ unverified_total }}</span></h2>
+  <p class="meta">Hand-typed venues the app already plans around, that no person
+    has checked. Confirming records that you did and changes nothing else.</p>
+
+  {% if not unverified %}
+    <p class="meta">All confirmed.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('venue_confirm_batch') }}" class="section-form">
+    <p class="meta">
+      {{ unverified|length }} of {{ unverified_total }}.
+    </p>
+    {% for v in unverified %}
+    <label class="review-pick">
+      <input type="checkbox" name="picked" value="{{ v.id }}">
+      <span><strong>{{ v.name }}</strong> &middot; {{ v.type or 'no type' }}
+        {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
+        {%- if not v.open_time %} &middot; no hours{% endif %}</span>
+    </label>
+    {% endfor %}
+    <button type="submit" class="cta">Confirm checked</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
   <h2>Set aside</h2>
-  <p class="meta">Rejected, not deleted. Anything here can go back.</p>
+  <p class="meta">An archive, not a queue. Nothing rejected is deleted, and
+    anything here can go back.</p>
+
+  <details class="set-aside">
+    <summary>{{ rejected_candidates|length + rejected_submissions|length }} set aside</summary>
 
   {% if not rejected_candidates and not rejected_submissions %}
     <p class="meta">Nothing set aside.</p>
@@ -295,5 +326,6 @@
     </div>
     {% endfor %}
   {% endif %}
+  </details>
 </section>
 {% endblock %}

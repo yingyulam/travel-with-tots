@@ -1201,3 +1201,23 @@ textarea:focus {
 .stop-report-status {
   margin: 0.5rem 0 0 0;
 }
+
+/* Review queue: how much is waiting, beside the group it is waiting in. */
+.queue-count {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* An archive rather than a queue, so it stays shut until asked for. */
+.set-aside > summary {
+  cursor: pointer;
+  color: var(--blue);
+  margin-bottom: 0.5rem;
+}

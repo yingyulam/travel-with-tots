@@ -191,6 +191,11 @@ Nominatim, and writes it to a candidate file. It never adds a venue itself. A
 human approves them ten or so at a time at `/venues/review`, and anything turned
 down is remembered so it is never suggested again.
 
+That review page is grouped by the decision it is asking for: **Decide** (is
+this a venue at all?), **Finish** (it is in the database but its hours are
+missing or disputed), **Confirm** (the hand-typed seed, in use but unchecked),
+and **Set aside**, an archive of everything turned down.
+
 **No restaurants.** The database holds attractions. Lunch is either a stop that
 happens to serve food, or a free block with a "find somewhere nearby" handoff,
 because Google has live hours and reviews and this app cannot.

@@ -163,8 +163,34 @@ class ReviewPageTest(_ReviewTest):
         self._submit("Pending Place")
         body = self.client.get("/venues/review").get_data(as_text=True)
         self.assertIn("Pending Place", body)
-        self.assertIn("Proposed venues", body)
-        self.assertIn("Unverified venues", body)
+
+    def test_it_is_grouped_by_the_decision_being_asked(self):
+        # Four groups, not six sections ordered by where a row came from. The
+        # two hours queues are one job and belong together.
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        for group in ("1. Decide", "2. Finish", "3. Confirm", "Set aside"):
+            with self.subTest(group=group):
+                self.assertIn(group, body)
+        for sub in ("Proposed by the agent", "Logged by a parent",
+                    "No hours at all", "Hours somebody disputes"):
+            with self.subTest(sub=sub):
+                self.assertIn(sub, body)
+
+    def test_a_submission_shows_what_the_parent_reported(self):
+        # Amenities are reports, not columns, so the row carries none of them
+        # and this card used to show nothing at all.
+        venue_id = self._submit("Ticked Place")
+        db.record_amenities(venue_id, {"has_nursing_room": True,
+                                       "has_family_room": False},
+                            reported_by=self.parent_id)
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn("Nursing room", body)
+        self.assertIn("No family room", body)
+
+    def test_a_submission_with_no_reports_says_so(self):
+        self._submit("Bare Place")
+        self.assertIn("No amenities reported.",
+                      self.client.get("/venues/review").get_data(as_text=True))
 
     def test_a_non_admin_is_redirected(self):
         with mock.patch.object(

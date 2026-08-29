@@ -341,20 +341,24 @@ def dashboard():
 @login_required
 @admin_required
 def venue_review():
-    """Everything no person has checked yet, in one place.
+    """Everything a person still has to settle, grouped by the decision asked.
 
-    Three sections because they need three different actions: agent proposals
-    need correcting before they are usable, parent submissions need publishing,
-    and the seeded curated venues are already being planned around and only need
-    confirming.
+    Three questions, in the order they cost the database:
 
-    What they share is that a person is the only thing that can finish them.
-    Municipal imports are absent for exactly that reason: the City is
-    authoritative about its own parks, so those rows are trusted by provenance
-    and never queue here. See db.VERIFIED_SOURCES for the two routes to trust.
+      Decide   is this a venue at all?      proposals + parent submissions
+      Finish   it is in, but unusable       missing hours + disputed hours
+      Confirm  it is in use, unchecked      the curated seed
+
+    plus Set aside, which is an archive rather than a queue. Grouping by
+    mechanism instead put two unrelated hours sections in different places and
+    left the page reading as six things to do.
+
+    Municipal imports never appear: the City is authoritative about its own
+    parks, so those rows are trusted by provenance. See db.VERIFIED_SOURCES.
     """
     unverified = get_unverified_venues()
     missing_hours = get_venues_missing_hours()
+    submissions = get_pending_submissions()
     pending = candidates.counts()[candidates.PENDING]
     return render_template(
         "venue_review.html",
@@ -369,7 +373,11 @@ def venue_review():
         missing_hours=[dict(row, source_link=_safe_url(row["source_url"]))
                        for row in missing_hours[:MISSING_HOURS_PAGE_SIZE]],
         missing_hours_total=len(missing_hours),
-        submissions=get_pending_submissions(),
+        submissions=submissions,
+        # Amenities stopped being venue columns, so a submission row carries
+        # none. The parent ticked them when they logged the place and they are
+        # sitting in venue_reports; without this the card shows nothing.
+        submission_reports=db.reported_flags([v["id"] for v in submissions]),
         unverified=unverified[:UNVERIFIED_PAGE_SIZE],
         unverified_total=len(unverified),
         flag_labels=FLAG_LABELS,
