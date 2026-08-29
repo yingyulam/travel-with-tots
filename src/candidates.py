@@ -43,13 +43,22 @@ PROPOSED_COLUMNS = ("name", "type", "setting", "neighbourhood", "city",
                     "address", "lat", "lng", "source_url", "evidence",
                     "official_url", "hours_note", "external_id")
 
-# Fields the proposer fills even though review owns them. Hours do not come
-# from the search results -- the prompt forbids the model from reporting them,
-# because a listicle does not establish when a museum opens -- they come from
-# OpenStreetMap, which is an outside source with a citation, so a reviewer
-# confirms a pair instead of typing one. Fully editable, and blank whenever OSM
-# said nothing or said something one pair cannot hold.
-PREFILLED_COLUMNS = ("open_time", "close_time")
+# Fields the proposer fills even though review owns them. Hours still never
+# come from a search snippet -- the proposal prompt forbids that, because a
+# listicle does not establish when a museum opens. They come from two outside
+# sources a person can check: OpenStreetMap, and failing that the venue's own
+# page, read by a model and grounded against the times actually printed on it.
+#
+# `hours_week` holds a whole week in the notation osm.per_day_hours reads, e.g.
+# "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00". One column rather than fourteen, in
+# the same syntax OSM would have given, so one parser serves both sources and a
+# reviewer reads one notation. Blank when the week is uniform, since the plain
+# pair says it, or when neither source produced a usable timetable.
+#
+# `hours_source` is where the times came from, in words, so the review page can
+# say "read from maplewoodfarm.bc.ca" rather than presenting them as fact. It
+# is evidence, not a judgment, which is why it is outside EDITABLE.
+PREFILLED_COLUMNS = ("open_time", "close_time", "hours_week")
 
 # What only review writes. An amenity nobody checked is a claim rather than a
 # fact, so the agent leaves every one of these blank. Built from
@@ -68,7 +77,7 @@ REVIEWED_COLUMNS = (PREFILLED_COLUMNS
                                    | CANDIDATE_FEATURE_COLUMNS)))
 
 COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
-           + ("proposed_at", "decided_at", "decided_by"))
+           + ("hours_source", "proposed_at", "decided_at", "decided_by"))
 
 # Fields review may change. Everything the agent proposed is correctable, since
 # a wrong neighbourhood is exactly what a human is there to fix, except the
@@ -77,7 +86,7 @@ COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
 # distance, a missing one falls back to neighbourhood matching), and rewriting
 # a citation would break the one thing making the row checkable.
 #
-# official_url and hours_note are evidence too, not judgments. The reviewer
+# official_url, hours_note and hours_source are evidence too, not judgments. The reviewer
 # reads them to decide, and the hours they decide on go in open_time/close_time
 # where the whole app already looks. A reviewer who thinks the official site is
 # wrong should reject the row rather than quietly repoint its citation.

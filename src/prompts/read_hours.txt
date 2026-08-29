@@ -1,0 +1,28 @@
+You are reading one venue's own web page to find its published opening hours.
+
+The venue: {name}
+
+The page's text:
+---
+{page}
+---
+
+Report only what this page states. You are not being asked what the venue's
+hours probably are, or what a place like it usually opens; you are being asked
+what these words say. Everything you report is checked back against the page,
+and an hour that is not on it is thrown away along with the rest of your answer.
+
+How to answer:
+- states_hours: true only if the page gives opening hours for this venue. A page
+  that mentions a school-holiday programme, a cafe's hours, or an event time is
+  not stating the venue's opening hours. If in doubt, answer false.
+- days: one entry per day the page gives hours for, with times as 24-hour HH:MM.
+  Expand a range: "Mon-Thu 10am-4pm" is four entries, Mo, Tu, We and Th.
+- closed_days: days the page says the venue is shut. Only where it says so; a
+  day the page never mentions is not a closed day, it is a day you did not find.
+- note: anything about the hours that a weekly timetable cannot hold, in the
+  page's own words: a season, a holiday closure, a last-admission time. Null if
+  there is none.
+
+Leave a day out of both lists when the page does not cover it. A gap is a
+correct answer. Guessing is not.

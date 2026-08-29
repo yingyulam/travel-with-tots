@@ -513,6 +513,10 @@ def _reviewable_candidates(limit=None):
         row["official_link"] = _safe_url(row.get("official_url"))
         row["official_domain"] = propose_venues.domain(row.get("official_url"))
         row["unknown_values"] = _unknown_values(row)
+        # The prefilled week, as the per-day form wants it. Parsed here rather
+        # than in the template so a string that no longer reads as a week shows
+        # as no week, instead of half a timetable.
+        row["week"] = osm.per_day_hours(row.get("hours_week") or "")
         rows.append(row)
     return rows if limit is None else rows[:limit]
 
@@ -620,6 +624,12 @@ def _candidate_edits(candidate_id, form):
             edits[field] = "1" if form.get(key) else ""
         elif key in form:
             edits[field] = (form.get(key) or "").strip()
+    # The week comes back as fourteen time inputs, not as the string it is
+    # stored in, so it is reassembled here. Written on every save, blank
+    # included, or clearing the per-day fields would leave the old week behind
+    # and a reviewer could not undo a timetable they disagreed with.
+    week = _per_day_from_form(form, prefix=f"{candidate_id}-")
+    edits["hours_week"] = osm.to_week_string(week) if week else ""
     return edits
 
 
@@ -704,6 +714,13 @@ def _approve_candidate(row, admin_id):
         venue_id, {f: row.get(f) in ("1", 1, True) for f in db.REPORTABLE_FIELDS
                    if row.get(f) not in (None, "")},
         reported_by=admin_id, note="Checked at review.")
+    # A whole week, when the reviewer left one on the row. Parsed rather than
+    # trusted: the same notation OSM uses, through the same parser, so a
+    # hand-edited string that no longer reads as a week is dropped instead of
+    # becoming a broken timetable. The venue keeps its single pair either way.
+    week = _week_worth_storing(osm.per_day_hours(row.get("hours_week") or "") or {})
+    if week:
+        db.set_venue_hours(venue_id, week)
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
 
 
@@ -757,6 +774,24 @@ def _per_day_from_form(form, prefix=""):
     return table
 
 
+def _week_worth_storing(week):
+    """`week`, or {} when the venue's single pair already says it.
+
+    Every day present *and* identical means the pair carries the whole answer,
+    and seven identical rows would make "this venue has rows" stop meaning
+    "this venue is unusual". A six-day week is never uniform however alike its
+    days are: the seventh is a closure, and dropping it would reopen the venue
+    on the day it shuts.
+
+    Shared by approval and the review forms, because the rule was written twice
+    and approval got it wrong: a reviewer filling in a uniform week on a
+    candidate had seven identical rows written for it.
+    """
+    if len(week) == 7 and len(set(week.values())) == 1:
+        return {}
+    return week
+
+
 def _store_week(venue_id, week, hours_note=None):
     """Write a venue's whole week, collapsing it when every day agrees.
 
@@ -771,13 +806,9 @@ def _store_week(venue_id, week, hours_note=None):
     """
     if not week:
         return 0
-    # Every day present *and* identical. A six-day week is not uniform however
-    # alike its days are: the seventh day is a closure, and collapsing it would
-    # quietly reopen the venue on the day it shuts.
-    uniform = len(week) == 7 and len(set(week.values())) == 1
     usual = max(set(week.values()), key=list(week.values()).count)
     set_venue_default_hours(venue_id, usual[0], usual[1], hours_note)
-    return db.set_venue_hours(venue_id, {} if uniform else week)
+    return db.set_venue_hours(venue_id, _week_worth_storing(week))
 
 
 @app.route("/venues/hours/<int:check_id>", methods=["POST"])

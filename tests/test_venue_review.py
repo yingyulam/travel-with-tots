@@ -453,6 +453,39 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["open_time"], "10:00")
         self.assertEqual(candidates.load()[0]["status"], candidates.APPROVED)
 
+    def test_a_read_week_becomes_venue_hours_rows_on_approval(self):
+        # The last link: a timetable read off the venue's own page has to reach
+        # venue_hours, or the per-day hours stop at the candidate file.
+        row = self._propose()
+        week = {f"{row['id']}-day{d}_open": "10:00" for d in range(4)}
+        week.update({f"{row['id']}-day{d}_close": "16:00" for d in range(4)})
+        week.update({f"{row['id']}-day{d}_open": "08:30" for d in (4, 5, 6)})
+        week.update({f"{row['id']}-day{d}_close": "16:00" for d in (4, 5, 6)})
+        self._post("approve", [row["id"]], **{**self._required(row), **week})
+        venue = self._venue("Bloedel Conservatory")
+        stored = db.get_venue_hours([venue["id"]])[venue["id"]]
+        self.assertEqual(stored[0], ("10:00", "16:00"))     # Monday
+        self.assertEqual(stored[4], ("08:30", "16:00"))     # Friday
+
+    def test_a_uniform_week_leaves_no_per_day_rows(self):
+        # Seven identical rows say nothing the single pair does not, and would
+        # make "has rows" stop meaning "is unusual".
+        row = self._propose()
+        week = {f"{row['id']}-day{d}_open": "10:00" for d in range(7)}
+        week.update({f"{row['id']}-day{d}_close": "17:00" for d in range(7)})
+        self._post("approve", [row["id"]], **{**self._required(row), **week})
+        venue = self._venue("Bloedel Conservatory")
+        self.assertEqual(db.get_venue_hours([venue["id"]]), {})
+        self.assertEqual(venue["open_time"], "10:00")
+
+    def test_clearing_the_per_day_fields_clears_a_stored_week(self):
+        # A reviewer who disagrees with a read timetable must be able to undo
+        # it, so a blank week is written rather than skipped.
+        row = self._propose()
+        candidates.update(row["id"], hours_week="Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+        self._post("save", **self._required(row))
+        self.assertEqual(candidates.load()[0]["hours_week"], "")
+
     def test_a_reviewers_tick_becomes_a_report_they_authored(self):
         # It used to write the venues column, which is the weakest layer: the
         # next parent report overrode it with no record anyone had checked.

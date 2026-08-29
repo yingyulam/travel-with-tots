@@ -17,10 +17,12 @@ it, which is also why "scheduled" here means "repeatable", not "automatic".
 
 import re
 import time
+
+import requests
 from itertools import zip_longest
 from pathlib import Path
 
-from .. import candidates, db, nominatim, osm
+from .. import candidates, db, nominatim, osm, webpage
 from ..agents import call_openrouter, parse_json_reply
 from ..data_loader import (CITIES, NEIGHBOURHOODS, SETTINGS, SHELTERED,
                            VENUE_TYPES)
@@ -30,6 +32,10 @@ from ..components.search_web import WebSearchError, search_web
 
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "propose_venues.txt"
 _TEMPLATE = None
+
+READ_HOURS_PROMPT_PATH = (Path(__file__).resolve().parent.parent
+                          / "prompts" / "read_hours.txt")
+_READ_HOURS_TEMPLATE = None
 
 # A realistic sitting for one reviewer. The first run is invoked with more.
 DEFAULT_BATCH_SIZE = 10
@@ -287,6 +293,45 @@ def _grounded(venue, said) -> dict:
     return kept
 
 
+# A clock time on a page: "10:00am", "8.30 a.m.", "4pm", "16:00". Either a
+# minute separator or an am/pm suffix is required, and that is the whole
+# discriminator: a bare number matches "3 year old" and "2 hours", so accepting
+# one would let almost any digit ground almost any hour.
+_PAGE_TIME = re.compile(
+    r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?",
+    re.IGNORECASE)
+
+
+def page_times(text) -> set:
+    """Every clock time the page states, normalised to 24-hour "HH:MM".
+
+    This is what makes reading hours off a website safe: the model's answer is
+    accepted only if every time in it is in this set. So a model that hallucinates
+    "opens at 09:00" from a page that says 10:00 is refused by arithmetic rather
+    than trusted, the same way `_grounded` refuses a venue name the results never
+    mentioned.
+
+    Over-inclusive on purpose. A time the page states but never as opening
+    hours only means a wrong answer *could* pass this check, and the reviewer
+    still confirms; a time missed here would refuse a correct answer.
+    """
+    found = set()
+    for hour, minute, suffix in _PAGE_TIME.findall(text or ""):
+        if not minute and not suffix:
+            continue                       # a bare number is not a time
+        value = int(hour)
+        if value > 23 or (suffix and value > 12) or int(minute or 0) > 59:
+            continue
+        if suffix:
+            meridiem = suffix[0].lower()
+            if meridiem == "p" and value != 12:
+                value += 12
+            elif meridiem == "a" and value == 12:
+                value = 0                  # 12am is midnight
+        found.add(f"{value:02d}:{int(minute or 0):02d}")
+    return found
+
+
 def domain(url) -> str:
     """The host of a URL, without "www.". "" if it is not a web address.
 
@@ -350,6 +395,117 @@ def official_site(name, from_osm=None) -> str:
 def _root(url) -> str:
     host = domain(url)
     return f"https://{host}/" if host else ""
+
+
+# The days the model may name, in the order venue_hours indexes them.
+_DAY_ENUM = list(osm.WEEKDAYS)
+
+# One entry per day it found, the days it says are shut, and what a weekly
+# timetable cannot hold. Strict mode requires every key, so "the page did not
+# say" is an explicit null rather than an omitted field, as in extract_form.
+READ_HOURS_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "published_hours",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "states_hours": {"type": "boolean"},
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "day": {"type": "string", "enum": _DAY_ENUM},
+                            "open": {"type": "string"},
+                            "close": {"type": "string"},
+                        },
+                        "required": ["day", "open", "close"],
+                        "additionalProperties": False,
+                    },
+                },
+                "closed_days": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": _DAY_ENUM},
+                },
+                "note": {"type": ["string", "null"]},
+            },
+            "required": ["states_hours", "days", "closed_days", "note"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def reload_read_hours_prompt() -> None:
+    """Force the next call to re-read the prompt from disk."""
+    global _READ_HOURS_TEMPLATE
+    _READ_HOURS_TEMPLATE = None
+
+
+def _read_hours_prompt(name, page) -> str:
+    global _READ_HOURS_TEMPLATE
+    if _READ_HOURS_TEMPLATE is None:
+        _READ_HOURS_TEMPLATE = READ_HOURS_PROMPT_PATH.read_text(encoding="utf-8")
+    return (_READ_HOURS_TEMPLATE
+            .replace("{name}", name)
+            .replace("{page}", page))
+
+
+def hours_from_page(name, page, model=CURATOR_MODEL):
+    """({weekday: (open, close)}, note) read off a venue's own page, or ({}, note).
+
+    Three things must hold, and each rejects the whole week rather than part of
+    it: half a timetable is worse than none, because a reviewer can finish a
+    blank one and cannot see which half was invented.
+
+    1. The page has to state hours for this venue at all.
+    2. Every time has to appear on the page (`page_times`). This is the
+       anti-invention guard, and it is arithmetic rather than trust: the same
+       primitive `_grounded` uses on a venue name.
+    3. All seven days must be accounted for, opened or explicitly shut. A page
+       giving Monday to Friday and nothing about the weekend is a gap, and
+       filling it would claim hours nobody published.
+
+    The note survives a refused week. "Closed in January" is worth showing a
+    reviewer even when the timetable itself is unusable.
+    """
+    try:
+        reply, _usage, _elapsed = call_openrouter(
+            [{"role": "system", "content": _read_hours_prompt(name, page)}],
+            model, READ_HOURS_RESPONSE_FORMAT)
+        answer = parse_json_reply(reply)
+    except (ValueError, requests.exceptions.RequestException, KeyError) as e:
+        print(f"Hours reading skipped for {name}: {type(e).__name__}: {e}")
+        return {}, None
+
+    if not isinstance(answer, dict) or not answer.get("states_hours"):
+        return {}, None
+    note = (answer.get("note") or "").strip() or None
+
+    on_page = page_times(page)
+    table, accounted = {}, set()
+    for entry in answer.get("days") or []:
+        if not isinstance(entry, dict) or entry.get("day") not in _DAY_ENUM:
+            return {}, note
+        opens, closes = entry.get("open"), entry.get("close")
+        if opens not in on_page or closes not in on_page:
+            # The whole answer goes, not just this day: a model inventing one
+            # time is not one to trust about the rest.
+            print(f"Refusing hours for {name}: {opens}-{closes} is not on the page")
+            return {}, note
+        index = _DAY_ENUM.index(entry["day"])
+        table[index] = (opens, closes)
+        accounted.add(index)
+    for day in answer.get("closed_days") or []:
+        if day in _DAY_ENUM:
+            accounted.add(_DAY_ENUM.index(day))
+
+    if len(accounted) != 7:
+        print(f"Read {len(accounted)} of 7 days for {name}, leaving hours open")
+        return {}, note
+    return table, note
 
 
 def _hours_from_osm(names) -> dict:
@@ -551,6 +707,57 @@ def enrich(proposals) -> None:
                 proposal[field] = found[field]
         proposal["official_url"] = official_site(
             proposal["name"], found.get("website"))
+        # The venue's own page, read only where OSM left the hours blank. OSM
+        # is preferred because it is already fetched and openly licensed; this
+        # is for the long tail it does not cover, which is most small venues.
+        if not proposal.get("open_time"):
+            _read_published_hours(proposal)
+
+
+def _read_published_hours(proposal) -> None:
+    """Fill a proposal's hours from its own website, in place.
+
+    Separate from `enrich` because it is the one step that fetches a page a
+    person owns, and because it is the only place a model reads hours: the
+    proposal prompt still forbids reporting them from search snippets, which a
+    snippet genuinely cannot establish.
+
+    A whole week is stored as `hours_week` in the notation `osm.per_day_hours`
+    reads, so one parser serves both sources and a reviewer sees one notation.
+    A week where every day agrees collapses to the plain pair, matching
+    `app._store_week`: seven identical rows say nothing the pair does not.
+
+    Nothing here is trusted. `hours_source` records where the times came from
+    so the review page can say so, and approval still requires a person.
+    """
+    url = proposal.get("official_url")
+    if not url:
+        return
+    try:
+        page = webpage.fetch_text(url)
+    except webpage.PageError as e:
+        print(f"Could not read {url}: {e}")
+        return
+
+    week, note = hours_from_page(proposal["name"], page)
+    if note and not proposal.get("hours_note"):
+        # Kept even when the week was refused: "closed in January" is worth a
+        # reviewer's attention whether or not the timetable was usable.
+        proposal["hours_note"] = f"{note} (from {domain(url)}, unconfirmed)"
+    if not week:
+        return
+
+    pairs = set(week.values())
+    if len(week) == 7 and len(pairs) == 1:
+        proposal["open_time"], proposal["close_time"] = pairs.pop()
+    else:
+        proposal["hours_week"] = osm.to_week_string(week)
+        # The representative pair as well, so the venue does not land under
+        # "no hours at all" while carrying a full timetable. Nothing plans from
+        # it once the week exists; get_venues_missing_hours reads it.
+        usual = max(pairs, key=list(week.values()).count)
+        proposal["open_time"], proposal["close_time"] = usual
+    proposal["hours_source"] = f"read from {domain(url)}"
 
 
 WORKFLOW = {

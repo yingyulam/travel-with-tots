@@ -182,10 +182,17 @@ _WEEKDAY_INDEX = {day.lower(): i for i, day in enumerate(WEEKDAYS)}
 
 # A whole clause: some days, then one range. "Mo-Th 09:00-21:00",
 # "Sa,Su 09:00-18:00", "Fr 10:00-20:00".
+_DAYS = r"(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:\s*[-,]\s*(?:Mo|Tu|We|Th|Fr|Sa|Su))*"
 _CLAUSE = re.compile(
-    r"^(?P<days>(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:\s*[-,]\s*(?:Mo|Tu|We|Th|Fr|Sa|Su))*)"
+    rf"^(?P<days>{_DAYS})"
     r"\s+(?P<open>\d{1,2}:\d{2})\s*-\s*(?P<close>\d{1,2}:\d{2})$",
     re.IGNORECASE)
+
+# "Mo off", the way OSM says shut. It accounts for a day without opening it,
+# which is exactly the venue_hours convention: a weekday with no row is closed.
+# Without this a museum shut on Mondays read as a partial week and was refused,
+# so the commonest real closure could not be prefilled from either source.
+_CLOSED_CLAUSE = re.compile(rf"^(?P<days>{_DAYS})\s+(?:off|closed)$", re.IGNORECASE)
 
 # A month name anywhere means the string is seasonal, which no weekday table can
 # hold. Capilano's eight bands and Grouse's Christmas Eve both land here, and
@@ -229,9 +236,15 @@ def per_day_hours(osm_hours):
         return None
     if osm_hours.strip() == "24/7":
         return {day: ("00:00", "23:59") for day in range(7)}
-    table = {}
+    table, accounted = {}, set()
     for clause in (c.strip() for c in osm_hours.split(";")):
         if not clause:
+            continue
+        shut = _CLOSED_CLAUSE.match(clause)
+        if shut:
+            # Accounted for but not opened: the day is deliberately absent from
+            # the table, which is how venue_hours says closed.
+            accounted.update(_days_in(shut.group("days")))
             continue
         found = _CLAUSE.match(clause)
         if not found:
@@ -239,10 +252,12 @@ def per_day_hours(osm_hours):
         pair = (_pad(found.group("open")), _pad(found.group("close")))
         for day in _days_in(found.group("days")):
             table[day] = pair
-    # A partial week is refused rather than read as "closed the rest". OSM
-    # omitting Sunday usually means nobody tagged it, and guessing shut would
-    # remove a venue from every Sunday plan on the strength of a gap.
-    return table if len(table) == 7 else None
+            accounted.add(day)
+    # A partial week is refused rather than read as "closed the rest". A source
+    # omitting Sunday usually means nobody wrote it down, and guessing shut
+    # would remove a venue from every Sunday plan on the strength of a gap. An
+    # explicit "off" is different: somebody did write it down.
+    return table if len(accounted) == 7 else None
 
 
 # A bare "HH:MM-HH:MM". Enough to tell whether our single pair appears in what
@@ -254,6 +269,30 @@ _RANGE = re.compile(r"\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})")
 # telling a reviewer: it means a season or day slot is waiting to be filled in.
 _DAY_SPECIFIC = re.compile(
     r"\b(Mo|Tu|We|Th|Fr|Sa|Su|PH|SH)\b|\boff\b|\bclosed\b", re.IGNORECASE)
+
+
+def to_week_string(table) -> str:
+    """{weekday: (open, close)} back into the syntax per_day_hours reads.
+
+    The round trip is the point: a week read off a venue's own website is
+    stored in the same form OSM would have given it, so one parser serves both
+    sources and a reviewer sees one notation. Consecutive days that agree are
+    grouped, and a day absent from the table is written "off", since that is
+    the difference between a closure and a gap.
+    """
+    if not table:
+        return ""
+    runs, start = [], 0
+    for day in range(1, 8):
+        if day == 7 or table.get(day) != table.get(day - 1):
+            runs.append((start, day - 1, table.get(start)))
+            start = day
+    parts = []
+    for first, last, pair in runs:
+        days = (WEEKDAYS[first] if first == last
+                else f"{WEEKDAYS[first]}-{WEEKDAYS[last]}")
+        parts.append(f"{days} {pair[0]}-{pair[1]}" if pair else f"{days} off")
+    return "; ".join(parts)
 
 
 def compare(our_open, our_close, osm_hours, our_per_day=None):

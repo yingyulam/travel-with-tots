@@ -187,7 +187,10 @@ source there is.
 
 There is also **an agent that goes looking.** It searches the web for places a
 parent might take a toddler, grounds each one against OpenStreetMap and
-Nominatim, and writes it to a candidate file. It never adds a venue itself. A
+Nominatim, reads the opening hours off the venue's own page where OSM has none,
+and writes it to a candidate file. Hours read that way are checked back against
+the times actually printed on the page, kept as a whole week so a late Friday
+survives, and labelled unconfirmed for a person to check. It never adds a venue itself. A
 human approves them ten or so at a time at `/venues/review`, and anything turned
 down is remembered so it is never suggested again.
 
