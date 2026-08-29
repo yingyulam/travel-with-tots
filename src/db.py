@@ -309,7 +309,7 @@ def _ensure_columns(conn):
             # Provenance, so a venue can cite where it came from and who checked
             # it. Nothing writes these yet: the admin review page and the
             # importers that will are still to come. Every one is nullable
-            # because the 38 seeded rows have no answer for any of them, and
+            # because the seeded rows have no answer for any of them, and
             # verified_by additionally has to be, since SQLite only allows
             # ADD COLUMN with a REFERENCES clause when the default is NULL.
             conn.execute("ALTER TABLE venues ADD COLUMN source_url TEXT")
@@ -951,7 +951,7 @@ def get_unverified_venues(limit=None):
 
     One criterion rather than a list of sources, because that is what the trust
     gate is eventually going to be. Today `source` decides what the planner may
-    use, which means the 38 seeded venues are trusted purely because of how they
+    use, which means the 28 seeded venues are trusted purely because of how they
     were typed in: they are labelled 'curated' but nobody ever checked them.
     Stamping verified_at as they are confirmed is what makes flipping the gate
     to `verified_at IS NOT NULL` a one-line change later instead of a redesign.
