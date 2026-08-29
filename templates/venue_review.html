@@ -91,21 +91,6 @@
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Source</a></p>
       {% endif %}
 
-      <details class="review-hours">
-        <summary>Different in winter, or at weekends?</summary>
-        <p class="field-hint">Leave blank to use the hours above.</p>
-        {% for season in seasons %}{% for day_type in day_types %}
-        <div class="review-fields">
-          <span class="field-hint">{{ season }} {{ day_type }}</span>
-          <label class="field"><span>Opens</span>
-            <input type="time" name="{{ c.id }}-open_{{ season }}_{{ day_type }}"
-                   value="{{ c['open_' ~ season ~ '_' ~ day_type] }}"></label>
-          <label class="field"><span>Closes</span>
-            <input type="time" name="{{ c.id }}-close_{{ season }}_{{ day_type }}"
-                   value="{{ c['close_' ~ season ~ '_' ~ day_type] }}"></label>
-        </div>
-        {% endfor %}{% endfor %}
-      </details>
 
       {{ flags(c.id, c, conditional_flags) }}
 

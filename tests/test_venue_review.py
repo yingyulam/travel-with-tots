@@ -361,35 +361,28 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["open_time"], "08:30")
         self.assertEqual(venue["close_time"], "16:45")
 
-    def test_seasonal_hours_reach_the_venue(self):
-        row = self._propose()
-        fields = self._required(row)
-        fields.update({
-            f"{row['id']}-open_winter_weekday": "10:00",
-            f"{row['id']}-close_winter_weekday": "16:00",
-            f"{row['id']}-open_summer_weekend": "09:00",
-            f"{row['id']}-close_summer_weekend": "20:00",
-        })
-        self._post("approve", [row["id"]], **fields)
-        venue_id = self._venue(row["name"])["id"]
-        slots = db.venue_hours_by_slot([venue_id])[venue_id]
-        self.assertEqual(slots[("winter", "weekday")], ("10:00", "16:00"))
-        self.assertEqual(slots[("summer", "weekend")], ("09:00", "20:00"))
-        self.assertNotIn(("summer", "weekday"), slots)
+    def test_the_hours_note_reaches_the_venue(self):
+        # The proposer has been filling this with the raw OpenStreetMap string
+        # and the entry it matched; approval used to drop it for want of a
+        # column, so the one thing that could tell a parent about a Monday
+        # closure went in the bin.
+        row = self._propose(hours_note="OpenStreetMap: Sep-May: Mo off")
+        self._post("approve", [row["id"]], **self._required(row))
+        venue = self._venue(row["name"])
+        self.assertEqual(venue["hours_note"], "OpenStreetMap: Sep-May: Mo off")
 
-    def test_a_half_filled_hour_slot_is_skipped_not_guessed(self):
-        row = self._propose()
-        fields = self._required(row)
-        fields[f"{row['id']}-open_winter_weekday"] = "10:00"   # no closing time
-        self._post("approve", [row["id"]], **fields)
-        venue_id = self._venue(row["name"])["id"]
-        self.assertEqual(db.venue_hours_by_slot([venue_id]), {})
-
-    def test_no_seasonal_hours_means_the_default_pair_applies(self):
+    def test_a_candidate_without_a_note_leaves_the_column_null(self):
         row = self._propose()
         self._post("approve", [row["id"]], **self._required(row))
-        venue_id = self._venue(row["name"])["id"]
-        self.assertEqual(db.venue_hours_by_slot([venue_id]), {})
+        self.assertIsNone(self._venue(row["name"])["hours_note"])
+
+    def test_the_review_form_asks_for_one_pair_not_seven(self):
+        # Six season/day-type pairs per candidate, 12 time inputs, none ever
+        # filled. With ten candidates a page that was 140 time inputs.
+        self._propose()
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertNotIn("Different in winter", body)
+        self.assertNotIn("open_winter_weekday", body)
 
     def test_a_candidate_already_in_the_database_is_flagged(self):
         db.add_venue("Bloedel Conservatory", source="curated", city="Vancouver")

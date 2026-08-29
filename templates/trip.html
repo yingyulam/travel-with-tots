@@ -247,8 +247,12 @@
     detail.hidden = true;
     detail.append(
       el("div", "twt-citation-detail-meta", `${v.neighbourhood}${age}`),
-      el("p", null, hours),
-      badges(v));
+      el("p", null, hours));
+    // What one open/close pair cannot hold -- "Closed Mondays September to
+    // May" -- in the venue's own words. The planner does not model it, so the
+    // parent needs to see it.
+    if (v.hours_note) detail.append(el("p", "field-hint", v.hours_note));
+    detail.append(badges(v));
     return detail;
   }
 
@@ -470,6 +474,9 @@
           situation: situation,
           current_time: timeField.value,
           destination: tripData.destination,
+          // The day being replanned, so hours resolve for it rather than for
+          // whenever this button happened to be pressed.
+          trip_date: tripData.trip_date || null,
           age_months: tripData.age_months,
           features: tripData.features,
           transit: tripData.transit,

@@ -10,13 +10,14 @@ import requests
 
 from ..agents import DEFAULT_MODEL, ReplanningAgent, ReplanningAgentError
 from ..data_loader import get_venues
+from ..dates import parse_date
 from ..interactions import replan
 
 
 def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
                  features=None, transit=None, dining=None, bedtime=None,
                  minutes=None, interest=None, nap_notes="", extra_notes="",
-                 model=DEFAULT_MODEL) -> dict:
+                 trip_date=None, model=DEFAULT_MODEL) -> dict:
     """Re-plan the rest of the day: a rule-based draft (stops at/before
     current_time kept as-is, remaining stops re-decided for the situation),
     then AI-smoothed. Always returns a usable plan -- if the AI step fails,
@@ -27,7 +28,13 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
 
     `model` is the one the parent picked in the chat widget's dropdown, the
     same as planning, so one choice governs every AI call the app makes."""
-    draft = replan(plan, situation, current_time, get_venues(), features or [],
+    # Resolved for the day being replanned, not for today. Without the date a
+    # trip planned in advance had its hours resolved for whenever the parent
+    # happened to press the button, so a replan onto a statutory holiday, or
+    # across a season boundary, could swap in a venue whose hours were read off
+    # the wrong day. The /replan route already passed a date; this path did not.
+    draft = replan(plan, situation, current_time,
+                    get_venues(on_date=parse_date(trip_date)), features or [],
                     bedtime=bedtime, minutes=minutes, interest=interest)
     adjusted = True
     try:

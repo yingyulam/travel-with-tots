@@ -18,7 +18,7 @@ which venue needs which day's hours filled in, which is what the review queue
 is for.
 """
 
-from ..dates import day_type_for, parse_date, season_for
+from ..dates import day_type_for, parse_date
 from ..interactions import open_alternative
 from ..itinerary import display_to_min, stop_duration, venue_open_for
 
@@ -29,9 +29,10 @@ UNVERIFIED = "unverified"
 # Each phrase is a clause that has to read correctly after "because", since
 # that is how it reaches a parent on the trip page.
 _REASONS = {
+    # Only fires for a venue with a door now: a park, beach or seawall falls
+    # back to its ordinary pair on a holiday, because there is nothing to lock.
     "holiday_unknown": (UNVERIFIED, "we do not know its holiday hours"),
     "missing": (UNVERIFIED, "we do not have its opening hours"),
-    "slot": (CLOSED, "it is closed then on a {day}"),
     "default": (CLOSED, "it is closed then"),
 }
 
@@ -47,20 +48,20 @@ def _problem(stop, venue, day_label):
         "time": stop["time"],
         "venue": venue["name"],
         "kind": kind,
-        "why": template.format(day=day_label),
+        "why": template,
     }
 
 
 def check_plan(plan, on_date=None, day_label=None):
     """Every stop whose venue cannot be visited at its scheduled time.
 
-    Returns {"ok", "problems", "season", "day_type"}. `on_date` is only used to
+    Returns {"ok", "problems", "day_type"}. `on_date` is only used to
     label the report: the venues in `plan` already carry the hours resolved for
     that day by data_loader.get_venues(on_date=...), so this cannot disagree
     with what the planner saw.
     """
     on_date = parse_date(on_date) if not hasattr(on_date, "year") else on_date
-    season, day_type = season_for(on_date), day_type_for(on_date)
+    day_type = day_type_for(on_date)
     label = day_label or day_type
     problems = []
     for stop in plan.get("stops", []):
@@ -71,7 +72,7 @@ def check_plan(plan, on_date=None, day_label=None):
         if found:
             problems.append(found)
     return {"ok": not problems, "problems": problems,
-            "season": season, "day_type": day_type,
+            "day_type": day_type,
             "venues_total": 0, "venues_without_hours": 0, "note": ""}
 
 

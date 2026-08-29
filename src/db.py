@@ -17,7 +17,6 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from .dates import DAY_TYPES, SEASONS
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = _DATA_DIR / "app.db"
@@ -118,19 +117,6 @@ CREATE TABLE IF NOT EXISTS venue_hours_checks (
     decided_by  INTEGER REFERENCES parents(id) ON DELETE SET NULL
 );
 
--- Hours that differ from the venue's default pair, by season and day type.
--- A venue with the same hours all year needs no row here: venues.open_time and
--- venues.close_time are the fallback, and these are refinements on top. That
--- way "we only know the summer weekend hours" is expressible, and so is
--- "always 9 to 5".
-CREATE TABLE IF NOT EXISTS venue_hours (
-    id         INTEGER PRIMARY KEY,
-    venue_id   INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
-    season     TEXT NOT NULL,      -- one of dates.SEASONS
-    day_type   TEXT NOT NULL,      -- one of dates.DAY_TYPES
-    open_time  TEXT NOT NULL,
-    close_time TEXT NOT NULL
-);
 
 -- What somebody actually observed at a venue, and when. The venues table has
 -- columns for these too, but they are no longer what anything reads: a claim
@@ -174,9 +160,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_external_id
 CREATE INDEX IF NOT EXISTS idx_venues_source_city ON venues(source, city);
 
 CREATE INDEX IF NOT EXISTS idx_venue_reports_venue ON venue_reports(venue_id, field);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_slot
-    ON venue_hours(venue_id, season, day_type);
 
 -- One open check per venue per source: a re-run updates the finding rather
 -- than stacking another row to dismiss.
@@ -330,6 +313,16 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN verified_by INTEGER "
                          "REFERENCES parents(id) ON DELETE SET NULL")
             conn.execute("ALTER TABLE venues ADD COLUMN seed_rank INTEGER")
+    if "hours_note" not in existing:
+        with conn:
+            # What a single open/close pair cannot hold, in words a parent
+            # reads: "Closed Mondays September to May". This replaced a
+            # venue_hours table keyed on (season, day_type) that never held a
+            # row and could not express a closed weekday anyway. The candidate
+            # store has carried the same field for a while, filled with the raw
+            # OpenStreetMap string and the entry it matched; approval used to
+            # throw it away for want of anywhere to put it.
+            conn.execute("ALTER TABLE venues ADD COLUMN hours_note TEXT")
     if "setting" not in existing:
         with conn:
             # Where a visit is spent. The one fact `type` provably cannot
@@ -464,11 +457,28 @@ def _seed_venues(conn):
     A null coordinate in the seed never overwrites one already in the table, so
     a geocoding pass (scripts/geocode_venues.py) is not undone by the next boot.
 
+    **Hours are filled, never overwritten,** for the same reason and a sharper
+    one. They have a second writer now: set_venue_default_hours, driven by
+    scripts/verify_hours.py comparing us against OpenStreetMap and a person
+    deciding. This function used to write them unconditionally on every startup,
+    so it silently reverted those decisions -- and it really happened. The
+    Vancouver Aquarium was corrected from 09:30 to 10:00 through the review
+    page, after OSM showed the app was sending families half an hour before it
+    opens, and the next boot put 09:30 back. Nobody was told.
+
+    Between a static file and a decision somebody made against outside
+    evidence, the decision wins. A curator who wants to change hours has the
+    review page, which is the path that exists and carries a citation.
+
     Matching is scoped to curated rows. Comparing against every row instead let
     a parent's submission of an existing name block the seed entry entirely.
     """
     venues = json.loads(VENUES_SEED.read_text(encoding="utf-8"))
-    assignments = ", ".join(f"{field} = ?" for field in SEED_FIELDS)
+    # Hours join lat/lng in the fill-only group, so they are dropped from the
+    # unconditional assignments and handled with COALESCE below.
+    overwritten = tuple(f for f in SEED_FIELDS
+                        if f not in ("open_time", "close_time"))
+    assignments = ", ".join(f"{field} = ?" for field in overwritten)
     columns = ", ".join(("name", "source", "city") + SEED_FIELDS + ("lat", "lng"))
     placeholders = ", ".join("?" for _ in range(len(SEED_FIELDS) + 5))
     with conn:  # single transaction for the whole batch
@@ -482,10 +492,14 @@ def _seed_venues(conn):
                 "SELECT id FROM venues WHERE name = ? AND source = 'curated'",
                 (v["name"],)).fetchone()
             if existing:
+                keep = tuple(values[i] for i, f in enumerate(SEED_FIELDS)
+                             if f not in ("open_time", "close_time"))
                 conn.execute(
                     f"UPDATE venues SET {assignments}, "
+                    "open_time = COALESCE(open_time, ?), "
+                    "close_time = COALESCE(close_time, ?), "
                     "lat = COALESCE(?, lat), lng = COALESCE(?, lng) WHERE id = ?",
-                    values + coords + (existing["id"],))
+                    keep + (v["open"], v["close"]) + coords + (existing["id"],))
             else:
                 conn.execute(
                     f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
@@ -608,6 +622,7 @@ def delete_trip(trip_id, parent_id):
 # so an unknown keyword fails loudly rather than being dropped, the same
 # discipline update_venue uses.
 ADD_VENUE_FIELDS = ("type", "setting", "neighbourhood", "city", "notes",
+                    "hours_note",
                     "address", "open_time", "close_time", "min_age_months",
                     "max_age_months", "lat", "lng", "parent_id", "source_url",
                     "external_id", "verified_at", "verified_by")
@@ -1007,49 +1022,6 @@ def resolve_hours_check(check_id, admin_id=None):
     _write("UPDATE venue_hours_checks SET status = 'resolved', "
            "decided_at = datetime('now'), decided_by = ? WHERE id = ?",
            (admin_id, check_id))
-
-
-def set_venue_hours(venue_id, season, day_type, open_time, close_time):
-    """Record hours for one season and day type, replacing any already there.
-
-    Refinements on the venue's default pair, not a replacement for it: a venue
-    with the same hours all year needs none of these.
-    """
-    if season not in SEASONS or day_type not in DAY_TYPES:
-        raise ValueError(f"unknown slot: {season}/{day_type}")
-    _write("INSERT INTO venue_hours (venue_id, season, day_type, open_time, "
-           "close_time) VALUES (?, ?, ?, ?, ?) "
-           "ON CONFLICT(venue_id, season, day_type) DO UPDATE SET "
-           "open_time = excluded.open_time, close_time = excluded.close_time",
-           (venue_id, season, day_type, open_time, close_time))
-
-
-def clear_venue_hours(venue_id, season, day_type):
-    """Drop one slot, so a venue can go back to its default pair."""
-    _write("DELETE FROM venue_hours WHERE venue_id = ? AND season = ? "
-           "AND day_type = ?", (venue_id, season, day_type))
-
-
-def venue_hours_by_slot(venue_ids=None):
-    """{venue_id: {(season, day_type): (open_time, close_time)}}.
-
-    One query for the whole set, like reported_flags: a venue's hours are looked
-    up once per plan, not once per venue.
-    """
-    sql = "SELECT venue_id, season, day_type, open_time, close_time FROM venue_hours"
-    params = []
-    if venue_ids is not None:
-        ids = list(venue_ids)
-        if not ids:
-            return {}
-        sql += f" WHERE venue_id IN ({', '.join('?' for _ in ids)})"
-        params = ids
-    hours = {}
-    with closing(connect()) as conn:
-        for row in conn.execute(sql, params):
-            hours.setdefault(row["venue_id"], {})[(row["season"], row["day_type"])] = (
-                row["open_time"], row["close_time"])
-    return hours
 
 
 def add_report(venue_id, field, value, reported_by=None, note=None):

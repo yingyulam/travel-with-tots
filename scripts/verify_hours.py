@@ -27,13 +27,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import db, osm
+from src.data_loader import HOURS_ARE_A_CONVENTION
 
 SOURCE = "osm"
 
-# Parks keep dawn-to-dusk hours that OSM rarely states and nobody disputes, and
-# they are about to be most of the table. Checking them would bury the findings
-# that matter in noise.
-SKIP_TYPES = ("park", "beach", "seawall", "garden")
+# Venues whose hours are a convention rather than a posted fact keep
+# dawn-to-dusk hours that OSM rarely states and nobody disputes, and they are
+# most of the table. Checking them would bury the findings that matter in noise.
+#
+# Shared with data_loader rather than listed again here. The private copy also
+# included `garden`, which meant a ticketed botanical garden's hours were never
+# checked -- and VanDusen's 10:00-16:00 survived only by luck.
+SKIP_TYPES = HOURS_ARE_A_CONVENTION
 
 
 def _venues():

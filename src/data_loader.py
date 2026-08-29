@@ -10,7 +10,7 @@ from datetime import date
 from urllib.parse import quote_plus
 
 from . import db
-from .dates import day_type_for, season_for
+from .dates import day_type_for
 
 # Feature keys we know about, with display labels, in presentation order.
 FEATURE_LABELS = {
@@ -35,7 +35,7 @@ SUPPORTED_CITIES = ("Vancouver",)
 # parent reporting a change table has to be able to name which venue, and a name
 # is not a stable identity. The rest stay out, so a new column cannot silently
 # end up in a saved trip's plan_json or in the JSON sent to the browser.
-VENUE_KEYS = ("id", "name", "type", "setting", "neighbourhood",
+VENUE_KEYS = ("id", "name", "type", "setting", "neighbourhood", "hours_note",
               "has_washroom", "has_family_room", "has_nursing_room",
               "stroller_accessible", "has_highchair", "can_eat", "lat", "lng")
 
@@ -67,6 +67,29 @@ VENUE_TYPES = ("park", "garden", "beach", "seawall", "playground",
 # the venue has a roof. Capilano has a gift shop and a cafe and is still
 # plainly outdoor: nobody goes there in the rain to stand in the shop.
 SETTINGS = ("indoor", "outdoor", "both")
+
+# Venues with no door for anyone to lock, so their hours are a convention
+# rather than a posted fact. importers.PARK_HOURS already assumes exactly this
+# when it writes 06:00-22:00 for all 218 City parks; this names the assumption
+# once so the rest of the app can share it instead of re-deciding it.
+#
+# What it is for: a statutory holiday. A default pair is a statement about
+# ordinary days, so for a venue with a door it says nothing about Christmas --
+# but a seawall is open on Christmas in exactly the sense it is open on a
+# Tuesday. Without this the whole database was unschedulable on all 11 BC
+# statutory holidays, which produced an empty plan on Canada Day.
+#
+# `garden` is deliberately absent. All four of ours -- VanDusen, UBC Botanical,
+# Sun Yat-Sen, Bloedel -- are gated and ticketed with real posted hours, and a
+# botanical garden shuts on Christmas Day like any other paid attraction. So is
+# Playland, which is `attraction` and therefore already excluded.
+#
+# This is `type` driving a hard behaviour, which the model otherwise avoids.
+# Accepted because it is the same concept scripts/verify_hours.py already
+# encoded privately as SKIP_TYPES (so this is a consolidation, not a new
+# dependency), and because it fails in the safe direction: the worst case is
+# telling a parent a park is open, which it is.
+HOURS_ARE_A_CONVENTION = ("park", "beach", "seawall")
 
 # The settings acceptable when a slot wants shelter, and when it wants open
 # air. Two tiers rather than three, deliberately: ranking "both" below an exact
@@ -162,7 +185,7 @@ def maps_url(name, city=SUPPORTED_CITIES[0]):
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 
 
-def _as_venue(row, reported=None, hours=None, slot=None):
+def _as_venue(row, reported=None, day_type="weekday"):
     """One database row as the venue dict the planners expect.
 
     `open`/`close` rather than the columns' own open_time/close_time: the
@@ -177,33 +200,45 @@ def _as_venue(row, reported=None, hours=None, slot=None):
     # nothing reads them for this: a claim needs an author and a date.
     venue.update(reported or {})
     venue["nap_friendly"] = is_nap_friendly(venue)
-    venue.update(_hours_for_slot(row, hours, slot))
+    venue.update(_hours_for(row, day_type))
     venue["maps_url"] = maps_url(row["name"])
     return venue
 
 
-def _hours_for_slot(row, hours, slot):
-    """A venue's open/close for one (season, day_type), and where they came from.
+UNKNOWN_HOURS = {"open": None, "close": None}
 
-    Three outcomes, and the third is the point:
 
-    - a row for this exact slot: use it, it was entered for this kind of day.
-    - no slot, an ordinary day: use the venue's default pair. That pair is what
-      the venue says its hours are, and an ordinary day is what it means.
-    - no slot, a **holiday**: unknown. A default pair is a statement about
-      ordinary days, and most attractions keep different hours on a holiday or
-      shut altogether, so carrying the weekday pair over would be inventing an
-      answer. Unknown hours mean the venue cannot be scheduled, not that it is
-      open all day.
+def _hours_for(row, day_type):
+    """A venue's open/close for a kind of day, and where they came from.
+
+    Three outcomes:
+
+    - **no pair at all**: unknown. Not knowing is a reason to leave a place
+      out, never to include it.
+    - **an ordinary day**: the default pair. That pair is what the venue says
+      its hours are, and an ordinary day is what it means.
+    - **a holiday**: it depends on whether there is a door. For a venue with
+      one, a default pair says nothing about Christmas -- most attractions keep
+      different hours or shut altogether, so carrying the pair over would be
+      inventing an answer. For a park, a beach or a seawall there is nothing to
+      lock, and it is open on Christmas in the same sense it is open on a
+      Tuesday. See HOURS_ARE_A_CONVENTION.
+
+    That distinction is the whole fix. Refusing every venue on a holiday made
+    the app useless on 11 days a year: Canada Day produced a plan with zero
+    stops, while 222 imported parks sat there open.
+
+    There is deliberately no season or weekday dimension. A `venue_hours` table
+    keyed on (season, day_type) existed for exactly that and never held a single
+    row, and it could not express what the real data turned out to contain --
+    a museum closed on Mondays from September, a mountain with its own Christmas
+    Eve hours. What a single pair cannot hold now goes in `hours_note`, in words
+    a parent reads.
     """
-    if hours and slot in hours:
-        opens, closes = hours[slot]
-        return {"open": opens, "close": closes, "hours_source": "slot"}
-    season, day_type = slot
-    if day_type == "holiday":
-        return {"open": None, "close": None, "hours_source": "holiday_unknown"}
     if not row["open_time"] or not row["close_time"]:
-        return {"open": None, "close": None, "hours_source": "missing"}
+        return {**UNKNOWN_HOURS, "hours_source": "missing"}
+    if day_type == "holiday" and (row["type"] or "") not in HOURS_ARE_A_CONVENTION:
+        return {**UNKNOWN_HOURS, "hours_source": "holiday_unknown"}
     return {"open": row["open_time"], "close": row["close_time"],
             "hours_source": "default"}
 
@@ -233,10 +268,7 @@ def get_venues(city="", on_date=None):
     rows.sort(key=lambda row: UNRANKED if row["seed_rank"] is None
               else row["seed_rank"])
     ids = [row["id"] for row in rows]
-    # One query each for the whole set, not one per venue.
+    # One query for the whole set, not one per venue.
     reported = db.reported_flags(ids)
-    hours = db.venue_hours_by_slot(ids)
-    on_date = on_date or date.today()
-    slot = (season_for(on_date), day_type_for(on_date))
-    return [_as_venue(row, reported.get(row["id"]), hours.get(row["id"]), slot)
-            for row in rows]
+    day_type = day_type_for(on_date or date.today())
+    return [_as_venue(row, reported.get(row["id"]), day_type) for row in rows]

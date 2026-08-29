@@ -138,19 +138,21 @@ class CandidateStoreTest(unittest.TestCase):
         # If these drift, the review form offers flags the planner ignores, or
         # misses ones it needs.
         from src.db import CANDIDATE_FEATURE_COLUMNS
-        hours = {"open_time", "close_time", *candidates.HOUR_SLOT_COLUMNS}
-        self.assertEqual(set(candidates.REVIEWED_COLUMNS) - hours,
+        self.assertEqual(set(candidates.REVIEWED_COLUMNS)
+                         - set(candidates.PREFILLED_COLUMNS),
                          set(CANDIDATE_FEATURE_COLUMNS))
 
-    def test_there_is_a_column_for_every_season_and_day_type(self):
-        from src.dates import DAY_TYPES, SEASONS
-        self.assertEqual(len(candidates.HOUR_SLOT_COLUMNS),
-                         len(SEASONS) * len(DAY_TYPES) * 2)
-        for season in SEASONS:
-            for day_type in DAY_TYPES:
-                for bound in ("open", "close"):
-                    self.assertIn(f"{bound}_{season}_{day_type}",
-                                  candidates.HOUR_SLOT_COLUMNS)
+    def test_hours_are_one_pair_and_nothing_else(self):
+        # There were 12 more columns here, hours by season and day type, and
+        # not one was ever filled. They went with the venue_hours table: the
+        # model could not express a museum closed on Mondays anyway.
+        hours = [c for c in candidates.COLUMNS
+                 if c.startswith(("open_", "close_")) or c == "hours_note"]
+        self.assertEqual(sorted(hours), ["close_time", "hours_note", "open_time"])
+
+    def test_the_note_is_evidence_not_a_reviewer_judgment(self):
+        self.assertIn("hours_note", candidates.PROPOSED_COLUMNS)
+        self.assertNotIn("hours_note", candidates.EDITABLE)
 
 
 if __name__ == "__main__":

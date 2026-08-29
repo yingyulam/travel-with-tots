@@ -73,7 +73,11 @@ class CheckPlanTest(unittest.TestCase):
     def test_the_report_names_the_day_it_checked(self):
         report = check_plan(_plan(), HOLIDAY)
         self.assertEqual(report["day_type"], "holiday")
-        self.assertEqual(report["season"], "winter")
+
+    def test_the_report_no_longer_claims_a_season(self):
+        # Nothing read it, and the app no longer resolves hours by season, so
+        # reporting one implied a dimension that does not exist.
+        self.assertNotIn("season", check_plan(_plan(), HOLIDAY))
 
 
 class VenueHoursShapeTest(unittest.TestCase):

@@ -9,5 +9,10 @@
     {% else %}{{ stop.kind|capitalize }}{% endif %}
     {% if stop.adjusted %}<span class="badge">✨ adjusted</span>{% endif %}
   </span>
+  {# What one open/close pair cannot hold -- "Closed Mondays September to May".
+     The planner does not model it, so the parent has to see it. #}
+  {% if stop.venue and stop.venue.hours_note %}
+  <span class="field-hint">{{ stop.venue.hours_note }}</span>
+  {% endif %}
 </li>
 {% endmacro %}

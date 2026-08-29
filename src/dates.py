@@ -6,9 +6,7 @@ from datetime import date, timedelta
 # park washroom data splits the year this way, and attraction hours follow the
 # same shape: longer in the light months, shorter once it is dark by five.
 # A constant rather than a literal so the boundary is arguable in one place.
-SUMMER_MONTHS = (5, 6, 7, 8, 9)
 
-SEASONS = ("summer", "winter")
 
 # A holiday is its own day type, not a weekday that happens to be quiet. Most
 # attractions keep different hours or shut entirely, and guessing weekday hours
@@ -78,11 +76,6 @@ def _victoria_day(year):
     """The Monday before 25 May."""
     may25 = date(year, 5, 25)
     return may25 - timedelta(days=(may25.weekday() - 0) % 7 or 7)
-
-
-def season_for(on):
-    """"summer" or "winter" for a date, for picking a venue's hours."""
-    return "summer" if on.month in SUMMER_MONTHS else "winter"
 
 
 def day_type_for(on):

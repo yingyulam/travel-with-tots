@@ -58,7 +58,7 @@ from src.data_loader import (
     get_venues,
     interest_options,
 )
-from src.dates import DAY_TYPES, SEASONS, compute_age, parse_date
+from src.dates import compute_age, parse_date
 from src.db import (
     PromotionError,
     TRIP_FIELDS,
@@ -369,8 +369,6 @@ def venue_review():
         unverified_total=len(unverified),
         flag_labels=FLAG_LABELS,
         conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
-        seasons=SEASONS,
-        day_types=DAY_TYPES,
         venue_types=VENUE_TYPES,
         settings=SETTINGS,
         neighbourhoods=NEIGHBOURHOODS,
@@ -631,6 +629,10 @@ def _approve_candidate(row, admin_id):
         lat=_as_float(row.get("lat")),
         lng=_as_float(row.get("lng")),
         setting=row.get("setting") or None,
+        # What a single pair cannot hold, in words a parent reads. The proposer
+        # has been filling this with the raw OSM string and the entry it
+        # matched; approval used to drop it for want of a column.
+        hours_note=row.get("hours_note") or None,
         # Whatever identity the geocoder gave us, so a re-proposal of the same
         # place is recognised rather than inserted twice. Null when the locator
         # found nothing, which idx_venues_external_id allows.
@@ -644,7 +646,6 @@ def _approve_candidate(row, admin_id):
         verified_by=admin_id,
         **{flag: row.get(flag) in ("1", 1, True)
            for flag in db.CANDIDATE_FEATURE_COLUMNS})
-    _save_hour_slots(venue_id, row)
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
 
 
@@ -671,21 +672,6 @@ def _hour_pair(form, open_field="open_time", close_field="close_time"):
         except ValueError:
             return None, None
     return opens, closes
-
-
-def _save_hour_slots(venue_id, row):
-    """Store whichever season/day-type hours the reviewer filled in.
-
-    A slot needs both ends to mean anything, so a half-filled pair is skipped
-    rather than guessed at. An empty slot is not an omission: it means the
-    venue's default pair applies, which is the common case.
-    """
-    for season in SEASONS:
-        for day_type in DAY_TYPES:
-            opens, closes = _hour_pair(row, f"open_{season}_{day_type}",
-                                       f"close_{season}_{day_type}")
-            if opens and closes:
-                db.set_venue_hours(venue_id, season, day_type, opens, closes)
 
 
 def _as_float(value):
@@ -1724,6 +1710,7 @@ def replan_adjust_route():
         dining=data.get("dining"), bedtime=data.get("bedtime"),
         minutes=data.get("minutes"), interest=data.get("interest"),
         nap_notes=data.get("nap_notes", ""), extra_notes=extra_notes,
+        trip_date=data.get("trip_date"),
         model=_chosen_model(data.get("model")),
     )
     return jsonify(result)

@@ -201,12 +201,19 @@ def compare(our_open, our_close, osm_hours):
     """
     if not osm_hours:
         return "unverifiable"
-    if osm_hours.strip() == "24/7":
+    text = osm_hours.strip()
+    if text == "24/7":
         return "agrees" if (our_open, our_close) == ("00:00", "23:59") else "differs"
-    ranges = [(_pad(a), _pad(b)) for a, b in _RANGE.findall(osm_hours)]
+    # "Mo-Su" names every day and excludes none, so it holds no more than one
+    # pair does. Stripped first, exactly as single_pair does -- without this a
+    # venue open the same hours all week was reported as "more detail" rather
+    # than compared, which was four of seven real findings and two outright
+    # wrong: Science World agreed with us exactly and was flagged anyway.
+    text = _ALL_WEEK.sub(" ", text)
+    ranges = [(_pad(a), _pad(b)) for a, b in _RANGE.findall(text)]
     if not ranges:
         return "unverifiable"
-    if _DAY_SPECIFIC.search(osm_hours):
+    if _DAY_SPECIFIC.search(text):
         return "more_detail"
     return "agrees" if (our_open, our_close) in ranges else "differs"
 
