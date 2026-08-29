@@ -244,6 +244,34 @@ textarea {
   font-family: inherit;
 }
 
+/* A dropdown inside a form field, matching the inputs beside it. Left alone a
+   select sizes to its widest option and keeps the platform's own height and
+   grey fill, so the one-option Destination sat narrow and short next to the
+   Date input. Scoped to .field so the chat widget's own small select, which
+   sets its own padding, is not given an arrow it has no room for.
+
+   appearance:none is what makes the box match; it also removes the native
+   arrow, so one is drawn back as a background image. Inline SVG rather than a
+   file: no request, and nothing to vendor. */
+.field select {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%236b7785' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+  background-size: 0.7rem;
+  /* Room for the arrow, so a long option name cannot run underneath it. */
+  padding-right: 2.2rem;
+  color: inherit;
+}
+
+.field select:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
 .age-input {
   display: flex;
   gap: 0.75rem;
