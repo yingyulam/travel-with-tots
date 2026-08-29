@@ -165,6 +165,17 @@
   const PLANS = tripData.plans.slice();   // versions; index 0 is the original
   let active = 0;
 
+  // Development visibility only. Whether the AI touched a plan is not shown to
+  // a parent: there is no action for them to take on it.
+  function logAdjustment(plan, label) {
+    if (!plan) return;
+    console.debug("[plan]", label, {
+      source: plan.source,
+      changed: plan.changed,
+      adjustedStops: (plan.stops || []).filter((s) => s.adjusted).map((s) => s.time),
+    });
+  }
+
   const picker = document.getElementById("plan-picker");
   const host = document.getElementById("timeline-host");
   const timeField = document.getElementById("current-time");
@@ -313,9 +324,6 @@
     if (v) {
       const body = el("div", "stop-body");
       const heading = el("h3", null, v.name);
-      if (stop.adjusted) {
-        heading.append(" ", el("span", "badge", "✨ adjusted"));
-      }
       body.append(
         heading,
         el("p", "meta", `${v.type[0].toUpperCase() + v.type.slice(1)} · ${v.neighbourhood}`),
@@ -508,14 +516,8 @@
       renderTabs();
       renderTimeline();
       const time = newPlan.from_time || nowDisplay();
-      // Three outcomes: the AI improved the replan, it read it and left it
-      // alone, or it failed. The middle one is the AI agreeing, and saying
-      // "couldn't fine-tune" there made a good answer sound broken.
-      status.textContent = !newPlan.adjusted
-        ? `Updated using the rule-based plan. The AI fine-tuning step didn't finish this time.`
-        : newPlan.changed
-          ? `Updated ready from ${time}. Use the tabs above to compare with the original.`
-          : `Updated ready from ${time}. The AI reviewed it and had nothing to change.`;
+      logAdjustment(newPlan, "replan");
+      status.textContent = `Updated ready from ${time}. Use the tabs above to compare with the original.`;
     } catch (e) {
       status.textContent = e.message || "Couldn't re-plan right now.";
     }
@@ -766,6 +768,7 @@
   });
   document.getElementById("need-other-go").addEventListener("click", () => runNeed("other"));
 
+  logAdjustment(PLANS[0], "original");
   renderTabs();
   renderTimeline();
 

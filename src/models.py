@@ -54,7 +54,7 @@ class Trip:
     """
 
     destination: str
-    transit: list
+    transit: str
     original: Plan
     current_time: str = ""
     features: list = field(default_factory=list)

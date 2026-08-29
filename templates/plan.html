@@ -209,7 +209,8 @@
   </form>
 </section>
 
-<!-- The generated plan, already AI-adjusted for flow if that step succeeded -->
+<!-- The generated plan. The AI smoothing step, if it ran, is not surfaced:
+     it is not something a parent can act on. Logged to the console instead. -->
 {% if plans is not none %}
 <section class="card" id="plan-results">
   <h2>Your plan</h2>
@@ -293,6 +294,23 @@
 
 {% block scripts %}
 <script>
+  // Development visibility only. A parent is not told whether the AI touched
+  // the plan: there is nothing for them to do with it. The per-stop detail is
+  // read from each card's hidden field, which already holds the plan JSON.
+  const ADJUSTMENT = {{ adjustment | tojson }};
+  if (ADJUSTMENT) {
+    document.querySelectorAll(".plan-option").forEach((card) => {
+      const field = card.querySelector("textarea[name='plan']");
+      if (!field) return;
+      const plan = JSON.parse(field.value);
+      console.debug("[plan]", plan.label, {
+        ...ADJUSTMENT,
+        source: plan.source,
+        adjustedStops: plan.stops.filter((s) => s.adjusted).map((s) => s.time),
+      });
+    });
+  }
+
   // Preserve the generated plans (rule-based + any AI cards) across a trip
   // -> back-to-plans round trip, without regenerating anything. A fresh
   // "Plan my day"/"Plan/ai" result always overwrites this snapshot; a plain

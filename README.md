@@ -81,14 +81,20 @@ chunk index, which can take a few seconds.
 - Submitting shows **"Building your day…"**, because the page stays on screen
   for the whole AI call and silence there reads as a button that did nothing.
 - The AI adjuster has **three** outcomes, not two: it improves the day, it reads
-  the day and leaves it alone, or the call fails. The middle one used to be
-  reported as *"couldn't fine-tune it right now"*, which made an adjuster that
-  agreed with the plan sound broken. It now says **"This is already the best
-  plan for your day. No changes needed."** A real failure still says so, because
-  what is shown then is the rule-based plan and claiming the AI approved it
-  would be a lie. `plan_trip` and `replan_trip` report both `adjusted` (did the
-  step run) and `changed` (did it move anything); `changed` comes free from the
-  per-stop `adjusted` marks the agent already sets.
+  the day and leaves it alone, or the call fails. `plan_trip` and `replan_trip`
+  report both `adjusted` (did the step run) and `changed` (did it move
+  anything); `changed` comes free from the per-stop `adjusted` marks the agent
+  already sets. **None of it is shown to a parent.** All three outcomes hand
+  them a real plan, so which one happened is a fact about our pipeline, not
+  something they can act on: the "✨ adjusted" stop badges and the three status
+  messages are gone, and the plan and trip pages `console.debug` the same
+  detail instead, so it stays visible in development.
+- **Revising is the exception.** There the parent asked for one specific
+  change, so silence would read as the button doing nothing, and all three
+  outcomes still get a message: *"Your plan has been updated."*, *"This is
+  already the best plan for your day. No changes needed."*, or *"We couldn't
+  update your plan this time."* Each describes what happened to their plan
+  rather than which step of ours produced it.
 
 **One model choice, everywhere.** The chat widget's dropdown is the only place
 a model is picked, and planning and replanning now read that choice instead of

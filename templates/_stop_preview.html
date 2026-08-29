@@ -1,5 +1,5 @@
 {% macro stop_line(stop, extra=False) %}
-<li{% if extra %} class="preview-extra" hidden{% endif %}{% if stop.adjusted %} title="{{ stop.reason }}"{% endif %}>
+<li{% if extra %} class="preview-extra" hidden{% endif %}{% if stop.reason %} title="{{ stop.reason }}"{% endif %}>
   <span class="preview-time">{{ stop.time }}</span>
   <span class="preview-name">
     {% if stop.kind == 'meal' %}🍽 Lunch break{% if stop.venue %} - {{ stop.venue.name }}{% endif %}
@@ -7,7 +7,6 @@
     {% elif stop.kind == 'leave' %}🚗 Leave your accommodation
     {% elif stop.kind == 'bonus' %}Free time
     {% else %}{{ stop.kind|capitalize }}{% endif %}
-    {% if stop.adjusted %}<span class="badge">✨ adjusted</span>{% endif %}
   </span>
   {# What one open/close pair cannot hold -- "Closed Mondays September to May".
      The planner does not model it, so the parent has to see it. #}

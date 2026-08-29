@@ -1,9 +1,15 @@
-"""What the page says about the AI adjuster.
+"""What the page says about the AI adjuster, which is: nothing, mostly.
 
-Three outcomes, not two: it can improve the day, read it and decide it is
-already right, or fail outright. The last two used to look identical to a
-parent, so an adjuster that agreed with the plan was reported as "couldn't
-fine-tune it right now" and read as something being broken.
+The component still reports three outcomes -- the AI can improve the day, read
+it and decide it is already right, or fail outright -- because the difference
+is real and worth logging. A parent is not shown it: they asked for a day out,
+and all three outcomes hand them a real plan. Development keeps the detail in
+the browser console.
+
+The exception is revising, where the parent asked for one specific change.
+Silence there reads as the button doing nothing, so all three outcomes still
+get a message -- worded by what happened to their plan, not by which step of
+ours produced it.
 """
 
 import re
@@ -15,7 +21,8 @@ from src.components import plan_trip as plan_module
 from src.components import replan_trip as replan_module
 
 SETTLED = "This is already the best plan for your day. No changes needed."
-FAILED = "finish this time"
+FAILED = "update your plan this time"   # apostrophe arrives escaped
+UPDATED = "Your plan has been updated."
 BASE = {
     # The planning form asks for a day; /plan only builds one when asked.
     "generate": "1","destination": "Vancouver", "age_years": "2", "age_months": "0"}
@@ -83,7 +90,9 @@ class TheComponentReportsWhatHappenedTest(unittest.TestCase):
         self.assertTrue(kept["adjusted"])
 
 
-class ThePlanningPageSaysSoTest(unittest.TestCase):
+class ThePlanningPageStaysQuietTest(unittest.TestCase):
+    """A first generate says nothing about the adjuster, whatever it did."""
+
     def setUp(self):
         self.client = app_module.app.test_client()
 
@@ -94,54 +103,80 @@ class ThePlanningPageSaysSoTest(unittest.TestCase):
             return self.client.post("/plan", data={**BASE, **extra},
                                     follow_redirects=True).get_data(as_text=True)
 
-    def test_an_agreeing_adjuster_is_good_news(self):
-        html = self._post(adjusted=True, changed=False)
-        self.assertIn(SETTLED, html)
-        self.assertNotIn(FAILED, html)
+    def test_no_outcome_is_announced_on_a_first_generate(self):
+        for adjusted, changed in ((True, True), (True, False), (False, False)):
+            with self.subTest(adjusted=adjusted, changed=changed):
+                html = self._post(adjusted=adjusted, changed=changed)
+                for said in (SETTLED, FAILED, UPDATED):
+                    self.assertNotIn(said, html)
 
-    def test_it_no_longer_says_anything_could_not_be_done(self):
-        # The reported problem, stated directly.
-        html = self._post(adjusted=True, changed=False)
-        for alarming in ("couldn't fine-tune", "Couldn't fine-tune"):
-            with self.subTest(alarming=alarming):
-                self.assertNotIn(alarming, html)
-
-    def test_a_real_failure_still_says_so(self):
-        # Rewording this away would claim the AI approved a plan it never
-        # successfully reviewed.
+    def test_a_failed_adjuster_is_not_named_to_the_parent(self):
+        # The rule-based plan is a real plan. Naming the step that did not run
+        # tells a parent about our pipeline, which is not theirs to act on.
         html = self._post(adjusted=False, changed=False)
-        self.assertIn(FAILED, html)
-        self.assertNotIn(SETTLED, html)
+        for leaking in ("AI fine-tuning", "fine-tuning step", "didn&#39;t finish",
+                        "couldn&#39;t fine-tune", "Showing the rule-based plan"):
+            with self.subTest(leaking=leaking):
+                self.assertNotIn(leaking, html)
 
-    def test_an_improved_plan_says_nothing_on_a_first_generate(self):
-        html = self._post(adjusted=True, changed=True)
-        self.assertNotIn(SETTLED, html)
-        self.assertNotIn(FAILED, html)
+    def test_the_outcome_still_reaches_the_console(self):
+        # Removed from the UI, not from the page: this is what keeps it
+        # visible in development.
+        html = self._post(adjusted=False, changed=False)
+        self.assertIn("console.debug", html)
+        self.assertIn('"adjusted": false', html)
+        self.assertIn('"changed": false', html)
 
-    def test_revising_reports_all_three_outcomes(self):
+    def test_revising_still_reports_all_three_outcomes(self):
+        # The parent asked for a change here, so each outcome owes them an
+        # answer about their own request.
         revising = {"revise_count": "1"}
-        self.assertIn("has been updated",
-                      self._post(adjusted=True, changed=True, **revising))
+        self.assertIn(UPDATED, self._post(adjusted=True, changed=True, **revising))
         self.assertIn(SETTLED, self._post(adjusted=True, changed=False, **revising))
         self.assertIn(FAILED, self._post(adjusted=False, changed=False, **revising))
 
 
-class TheTripPageSaysSoTest(unittest.TestCase):
-    """The in-trip replan had the same two-way message."""
+class TheTripPageStaysQuietTest(unittest.TestCase):
+    """The in-trip replan had a per-stop badge and a three-way status."""
 
     def setUp(self):
         with open("templates/trip.html") as f:
             self.source = f.read()
 
-    def test_it_distinguishes_the_three_outcomes(self):
-        status = re.search(r"status\.textContent = !newPlan\.adjusted.*?;",
+    def test_the_status_no_longer_branches_on_the_adjuster(self):
+        status = re.search(r"status\.textContent = `Updated ready.*?;",
                            self.source, re.DOTALL).group(0)
-        self.assertIn("newPlan.changed", status)
-        self.assertIn("nothing to change", status)
-        self.assertIn("didn't finish this time", status)
+        for leaking in ("newPlan.adjusted", "nothing to change",
+                        "didn't finish this time", "rule-based"):
+            with self.subTest(leaking=leaking):
+                self.assertNotIn(leaking, status)
+
+    def test_no_stop_wears_an_adjusted_badge(self):
+        self.assertNotIn("adjusted</span>", self.source)
+        self.assertNotIn('"✨ adjusted"', self.source)
+
+    def test_it_logs_the_outcome_instead(self):
+        self.assertIn("logAdjustment(newPlan", self.source)
+        self.assertIn("logAdjustment(PLANS[0]", self.source)
 
     def test_it_no_longer_says_it_could_not_fine_tune_a_good_plan(self):
         self.assertNotIn("couldn't fine-tune it right now", self.source)
+
+
+class ThePlanPreviewCarriesNoBadgeTest(unittest.TestCase):
+    """The macro behind every stop line on the planning page."""
+
+    def setUp(self):
+        with open("templates/_stop_preview.html") as f:
+            self.source = f.read()
+
+    def test_the_badge_is_gone(self):
+        self.assertNotIn("adjusted", self.source)
+
+    def test_the_reason_tooltip_is_no_longer_a_tell(self):
+        # It used to appear only on adjusted stops, which made its presence
+        # the signal. Every stop has a reason, so every stop shows one.
+        self.assertIn('{% if stop.reason %} title="{{ stop.reason }}"', self.source)
 
 
 if __name__ == "__main__":

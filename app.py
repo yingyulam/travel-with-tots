@@ -1478,6 +1478,7 @@ def plan():
     resolve_plan_child(form, _current_parent())
 
     hours_report = None
+    adjustment = None
     revise_count = clamp_int(request.form.get("revise_count"), 0, MAX_REVISE_ROUNDS, 0)
     is_revise = revise_count > 0
     revise_message, revise_error = None, False
@@ -1505,29 +1506,24 @@ def plan():
         )
         plans = [Plan.from_dict(result)]
         hours_report = result.get("hours")
-        # Three outcomes, not two. The AI can improve the day, read it and
-        # decide it is already right, or fail outright. Those last two used to
-        # look the same to a parent, so an adjuster that agreed was reported as
-        # something going wrong.
-        if not result["adjusted"]:
-            # It raised: a reply that failed validation, a timeout, an
-            # unconfigured key. What is shown is the rule-based plan, which is
-            # a real plan, so name the step that did not run rather than imply
-            # the day is broken.
-            note = ("Showing the rule-based plan. The AI fine-tuning step "
-                    "didn't finish this time.")
-            if is_revise:
-                revise_message, revise_error = note, True
+        # Whether the AI step ran, and whether it moved anything. Not shown on
+        # a first generate: the parent asked for a day out, and either way they
+        # got a real plan. plan.html logs this to the console instead, so it
+        # stays visible while developing.
+        adjustment = {"adjusted": result["adjusted"], "changed": result["changed"]}
+        # A revise is the exception. The parent asked for a specific change, so
+        # saying nothing would read as the button having done nothing. Three
+        # outcomes, described by what happened to their plan rather than by
+        # which step of ours produced it.
+        if is_revise:
+            if not result["adjusted"]:
+                revise_message = "We couldn't update your plan this time."
+                revise_error = True
+            elif not result["changed"]:
+                revise_message = ("This is already the best plan for your day. "
+                                  "No changes needed.")
             else:
-                flash(note)
-        elif not result["changed"]:
-            settled = "This is already the best plan for your day. No changes needed."
-            if is_revise:
-                revise_message = settled
-            else:
-                flash(settled)
-        elif is_revise:
-            revise_message = "Your plan has been updated."
+                revise_message = "Your plan has been updated."
         # The whole form is carried to the in-trip page when a plan is chosen,
         # so a plan can still be saved from there without re-asking for it.
         trip_context = form
@@ -1540,6 +1536,7 @@ def plan():
         form=form,
         plans=plans,
         hours_report=hours_report,
+        adjustment=adjustment,
         trip_context=trip_context,
         transit_options=TRANSIT_OPTIONS,
         dining_options=DINING_OPTIONS,
@@ -1614,7 +1611,7 @@ def trip():
                   + int(context.get("age_months") or 0))
     trip = _build_trip(
         destination=context.get("destination"),
-        transit=context.get("transit", []),
+        transit=normalise_transit(context.get("transit")),
         bedtime=context.get("bedtime", ""),
         age_months=age_months,
         dining=context.get("dining", ""),
