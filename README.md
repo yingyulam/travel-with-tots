@@ -1174,24 +1174,69 @@ parent's own words and every report about the venue with it. Both appear under
 ### Hours, and the day being planned
 
 The plan form carries a **date**, because which hours apply depends on it. A
-venue has a default open/close pair, required before it can be approved, and
-optionally hours for any of four slots: summer or winter, weekday or weekend.
-
-`data_loader.get_venues(on_date=...)` resolves the pair for that day, so
-`itinerary.venue_open_for` and every other caller stay date-unaware and read the
-same two keys they always did. A venue with the same hours all year needs no
-slot rows at all, which is most of them.
+venue has **one** open/close pair, required before it can be approved, and
+`data_loader.get_venues(on_date=...)` resolves it for that day so every caller
+stays date-unaware and reads the same two keys it always did.
 
 ```
-2026-07-15  summer weekday   slot set   -> 09:00-18:00
-2026-07-11  summer weekend   slot set   -> 08:00-20:00
-2026-01-14  winter weekday   no slot    -> the default pair
+2026-09-15  weekday        -> the default pair
+2026-12-25  holiday, park  -> the default pair. Nothing is locked
+2026-12-25  holiday, museum-> unknown. A pair says nothing about Christmas
+any date    no pair at all -> unknown, so not schedulable
 ```
 
-Hours are required to approve a venue. A blank pair is treated as open all day
-by `venue_open_for`, which is how a museum ends up scheduled at eight in the
-evening, and deciding whether a place can be visited at a time is most of what
-the planner does.
+**A holiday depends on whether there is a door.** This used to refuse every
+venue on all 11 BC statutory holidays, so Canada Day produced a plan with *zero
+stops* while every park in the city sat there open. It also contradicted the
+importer, which writes 06:00–22:00 for all 218 City parks precisely because a
+park has no door. `data_loader.HOURS_ARE_A_CONVENTION` — `park`, `beach`,
+`seawall` — names that assumption once and both readers share it. `garden` is
+deliberately excluded: all four of ours are gated and ticketed, and shut on
+Christmas like any other paid attraction.
+
+### One pair, and a note for the rest
+
+There used to be a `venue_hours` table keyed on (season, day type): six slots
+per venue, 12 columns on every candidate row, six time-input pairs on every
+review. **It never held a single row**, and the real data showed why it never
+would. Of seven venues OpenStreetMap disagreed with us about, it could express
+one:
+
+```
+Science World      Mo-Su 10:00-17:00                 a plain pair, no slot needed
+Marine Gateway     Mo-Su 09:00-23:00                 a plain pair, ours was wrong
+Vancouver Art Gallery  Sa-Th 10:00-17:00; Fr 10:00-20:00   one late weekday
+Maritime Museum    Sep-May: Mo off                   closed one weekday, seasonally
+Capilano           four date-range bands             finer than two seasons
+Grouse Mountain    Dec 24, Dec 25 of its own         specific dates
+Pacific Centre     Mo-Fr / Sa-Su                     the one case that fitted
+```
+
+`weekday` meant Monday to Friday as one thing, so "closed Mondays" — the
+commonest real museum pattern — had no shape in the model at all. So the table
+is gone, and what a single pair cannot hold goes in **`hours_note`**, in words a
+parent reads, shown on the plan and trip pages:
+
+> Closed Mondays September to May — check before you go.
+
+The planner does not parse it, deliberately. It does not prevent the Monday
+mistake, it tells the parent about it, and that is the honest trade: no small
+model expresses season × weekday, and a note somebody reads beats a slot nobody
+fills. Migrating the tracked candidate file confirmed the diagnosis — of the 12
+columns dropped, **zero rows had a value in any of them**.
+
+### Hours are entered once, and nothing may quietly undo it
+
+`set_venue_default_hours` is the only path by which an approved venue's hours
+change. `_seed_venues` used to write `open_time`/`close_time` unconditionally on
+every startup, so it silently reverted that path. It really happened: the
+Vancouver Aquarium was corrected from 09:30 to 10:00 through the review page,
+after OSM showed the app was sending families half an hour before it opened, and
+the next boot put 09:30 back. Nobody was told.
+
+Hours now join `lat`/`lng` in the fill-only group — the seed supplies them to a
+new row and never overwrites an existing one. Between a static file and a
+decision somebody made against outside evidence, the decision wins.
 
 ### The check before a plan is shown
 
