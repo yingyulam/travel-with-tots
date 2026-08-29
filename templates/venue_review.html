@@ -317,12 +317,66 @@
       {{ unverified|length }} of {{ unverified_total }}.
     </p>
     {% for v in unverified %}
-    <label class="review-pick">
-      <input type="checkbox" name="picked" value="{{ v.id }}">
-      <span><strong>{{ v.name }}</strong> &middot; {{ v.type or 'no type' }}
-        {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
-        {%- if not v.open_time %} &middot; no hours{% endif %}</span>
-    </label>
+    {# Everything the row already carried but did not show. Hours especially:
+       they were mentioned only when missing, so the one field the planner acts
+       on was invisible on every venue a reviewer was being asked to vouch for. #}
+    <div class="plan-option">
+      <label class="review-pick">
+        <input type="checkbox" name="picked" value="{{ v.id }}">
+        <span><strong>{{ v.name }}</strong> &middot; {{ v.type or 'no type' }}
+          {%- if v.setting %} &middot; {{ v.setting }}{% endif %}
+          {%- if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}
+          {%- if v.city %}, {{ v.city }}{% endif %}</span>
+      </label>
+
+      {% set week = unverified_hours.get(v.id) %}
+      <p class="meta">
+        {% if week %}
+          {% for index, label in weekdays %}
+            {{ label }} {{ week[index][0] ~ '-' ~ week[index][1]
+                           if index in week else 'closed' }}{{ ", " if not loop.last }}
+          {%- endfor %}
+        {% elif v.open_time and v.close_time %}
+          Hours {{ v.open_time }}&ndash;{{ v.close_time }}, every day
+        {% else %}
+          <strong>No hours, so it is never scheduled.</strong>
+        {% endif %}
+        {%- if v.hours_note %} &middot; {{ v.hours_note }}{% endif %}
+        {%- if v.can_eat %} &middot; food on site{% endif %}
+      </p>
+      {% if v.lat %}
+      <p class="meta">
+        <a href="https://www.google.com/maps/search/?api=1&query={{ v.lat }},{{ v.lng }}"
+           target="_blank" rel="noopener noreferrer">Check the location on a map</a>
+      </p>
+      {% else %}
+        <p class="meta">No coordinates, so distances cannot be measured from it.</p>
+      {% endif %}
+
+      {% set reported = unverified_reports.get(v.id, {}) %}
+      {% if reported %}
+      <div class="badges">
+        {% for key, label in flag_labels %}
+          {% if key in reported %}
+          <span class="badge{{ ' badge-pending' if not reported[key] }}">{{
+            label if reported[key] else 'No ' ~ label|lower }}</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# Most of these were typed in with no citation, so there is often nothing
+         to check against. Saying so is the point: it makes confirming one of
+         those a visibly different act from confirming a cited row. #}
+      <label class="field field-full"><span>Checked against</span>
+        <input type="url" name="{{ v.id }}-source_url"
+               value="{{ v.source_link or '' }}"
+               placeholder="https://the venue's own page">
+        <span class="field-hint">
+          {%- if v.source_link %}Already cited. Replace it if you checked elsewhere.
+          {%- else %}<strong>No citation yet.</strong> Paste what you checked, and
+            the confirmation records it.{% endif %}</span></label>
+    </div>
     {% endfor %}
     <button type="submit" class="cta">Confirm checked</button>
   </form>

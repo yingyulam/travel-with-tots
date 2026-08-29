@@ -1028,15 +1028,24 @@ def get_unverified_venues(limit=None):
         return conn.execute(sql, params).fetchall()
 
 
-def mark_verified(venue_id, admin_id):
+def mark_verified(venue_id, admin_id, source_url=None):
     """Record that a human confirmed a venue already in the searchable set.
 
     Separate from promote_submission, which also changes `source`: this one only
     ever stamps, so confirming a seeded venue cannot accidentally publish
     anything. Scoped to VERIFIED_SOURCES so it cannot quietly bless a pending
     submission that belongs in the other queue.
+
+    `source_url` is what the confirmation was checked against, and it is the
+    difference between a stamp that means something and one that does not: 21 of
+    the 28 hand-typed venues carry no citation at all, so without this a venue
+    confirmed today against its own website is indistinguishable next year from
+    one nobody ever looked at. Blank leaves whatever is already there.
     """
     source_clause, source_params = _verified_source_clause()
+    if source_url:
+        _write(f"UPDATE venues SET source_url = ? WHERE id = ? AND {source_clause}",
+               [source_url, venue_id, *source_params])
     _write(
         "UPDATE venues SET verified_at = datetime('now'), verified_by = ? "
         f"WHERE id = ? AND {source_clause}",

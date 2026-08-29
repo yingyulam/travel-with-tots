@@ -402,7 +402,13 @@ def venue_review():
         # none. The parent ticked them when they logged the place and they are
         # sitting in venue_reports; without this the card shows nothing.
         submission_reports=db.reported_flags([v["id"] for v in submissions]),
-        unverified=unverified[:UNVERIFIED_PAGE_SIZE],
+        unverified=[dict(v, source_link=_safe_url(v["source_url"]))
+                    for v in unverified[:UNVERIFIED_PAGE_SIZE]],
+        unverified_reports=db.reported_flags(
+            [v["id"] for v in unverified[:UNVERIFIED_PAGE_SIZE]]),
+        # So a venue with a per-day timetable is not described as "every day".
+        unverified_hours=db.get_venue_hours(
+            [v["id"] for v in unverified[:UNVERIFIED_PAGE_SIZE]]),
         unverified_total=len(unverified),
         flag_labels=FLAG_LABELS,
         conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
@@ -872,12 +878,21 @@ def venue_restore():
 @login_required
 @admin_required
 def venue_confirm_batch():
-    """Record that a person checked venues the app was already planning around."""
+    """Record that a person checked venues the app was already planning around.
+
+    A citation may come with each one, from that venue's own box. It is what
+    makes the stamp mean something later: most of these rows have none, so
+    "confirmed" would otherwise say only that somebody clicked.
+    """
     admin_id = _current_parent()["id"]
     picked = request.form.getlist("picked")
+    cited = 0
     for venue_id in picked:
-        mark_verified(int(venue_id), admin_id)
-    flash(f"Confirmed {len(picked)} venue{'s' if len(picked) != 1 else ''}."
+        source_url = _safe_url(request.form.get(f"{venue_id}-source_url", "").strip())
+        cited += bool(source_url)
+        mark_verified(int(venue_id), admin_id, source_url or None)
+    flash(f"Confirmed {len(picked)} venue{'s' if len(picked) != 1 else ''}"
+          + (f", {cited} with a citation." if cited else ".")
           if picked else "Nothing selected.")
     return redirect(url_for("venue_review"))
 

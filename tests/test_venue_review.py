@@ -192,6 +192,74 @@ class ReviewPageTest(_ReviewTest):
         self.assertIn("No amenities reported.",
                       self.client.get("/venues/review").get_data(as_text=True))
 
+    def _awaiting(self, name="A Museum", **fields):
+        """A curated venue with hours, waiting to be confirmed."""
+        fields.setdefault("open_time", "09:00")
+        fields.setdefault("close_time", "17:00")
+        return db.add_venue(name, source="curated", city="Vancouver",
+                            venue_type="museum", **fields)
+
+    def test_confirming_shows_what_a_reviewer_needs_to_check(self):
+        # The list used to be a name and a type. Hours were mentioned only when
+        # missing, so the one field the planner acts on was invisible on every
+        # venue somebody was being asked to vouch for.
+        self._awaiting(lat=49.28, lng=-123.12)
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        block = body[body.index("3. Confirm"):]
+        for needed in ("Hours 09:00", "Check the location on a map",
+                       "Checked against"):
+            with self.subTest(needed=needed):
+                self.assertIn(needed, block)
+
+    def test_a_venue_with_no_citation_says_so(self):
+        self._awaiting()
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn("No citation yet.", body)
+
+    def test_confirming_records_what_it_was_checked_against(self):
+        self._awaiting()
+        venue = db.get_unverified_venues()[0]
+        self.client.post("/venues/confirm", data={
+            "picked": str(venue["id"]),
+            f"{venue['id']}-source_url": "https://example.org/hours"})
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT source_url, verified_at FROM venues "
+                               "WHERE id = ?", (venue["id"],)).fetchone()
+        self.assertEqual(row["source_url"], "https://example.org/hours")
+        self.assertIsNotNone(row["verified_at"])
+
+    def test_a_citation_that_is_not_a_web_address_is_not_stored(self):
+        # Rendered as a link on the next load, and Jinja does not stop a
+        # javascript: href.
+        self._awaiting()
+        venue = db.get_unverified_venues()[0]
+        self.client.post("/venues/confirm", data={
+            "picked": str(venue["id"]),
+            f"{venue['id']}-source_url": "javascript:alert(1)"})
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT source_url, verified_at FROM venues "
+                               "WHERE id = ?", (venue["id"],)).fetchone()
+        self.assertIsNone(row["source_url"])
+        self.assertIsNotNone(row["verified_at"])   # still confirmed
+
+    def test_confirming_without_a_citation_still_works(self):
+        self._awaiting()
+        venue = db.get_unverified_venues()[0]
+        self.client.post("/venues/confirm", data={"picked": str(venue["id"])})
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT verified_at FROM venues WHERE id = ?",
+                               (venue["id"],)).fetchone()
+        self.assertIsNotNone(row["verified_at"])
+
+    def test_a_per_day_timetable_is_not_described_as_every_day(self):
+        self._awaiting()
+        venue = db.get_unverified_venues()[0]
+        db.set_venue_hours(venue["id"], {day: ("10:00", "17:00")
+                                         for day in range(1, 7)})
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        block = body[body.index("3. Confirm"):]
+        self.assertIn("Mo closed", " ".join(block.split()))
+
     def test_a_non_admin_is_redirected(self):
         with mock.patch.object(
                 self.app_module, "_current_parent",
