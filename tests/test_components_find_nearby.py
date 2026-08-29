@@ -98,7 +98,10 @@ class FindNearbyCuratedTest(unittest.TestCase):
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "A Mall", can_eat=1)
             _insert_venue(conn, "A Park")
-        result = find_nearby(need="restaurant", city="Vancouver")
+        # Stubbed like its sibling below: escalating is the point, and a real
+        # call would make the suite hit the network.
+        with mock.patch("src.components.find_nearby.search_web", return_value=[]):
+            result = find_nearby(need="restaurant", city="Vancouver")
         self.assertNotEqual(result["source"], "curated")
 
     def test_a_need_the_table_cannot_answer_escalates(self):
