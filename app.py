@@ -18,6 +18,7 @@ from flask import (
     Flask,
     flash,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -44,7 +45,7 @@ from src.components.geocode import (
     reverse_geocode,
 )
 from src.components.place_search import PlaceSearchError, search_places
-from src import osm, postgres, supabase_sync
+from src import osm, postgres, ratelimit, supabase_sync
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
@@ -144,12 +145,48 @@ except KeyError:
 # Over HTTPS the session cookie should never be sent in clear, and a deployment
 # is HTTPS-only while local development is not. Off by default so `flask run` on
 # http://localhost still logs you in; render.yaml turns it on.
+#
+# SameSite=Lax is also what stands in for CSRF tokens: a browser will not send
+# this cookie on a cross-site POST, so a form on somebody else's page cannot act
+# as a logged-in parent. That is why logout is a POST rather than a GET -- Lax
+# *does* send the cookie on a cross-site top-level GET, so a link or an <img>
+# could otherwise log a parent out.
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get(
         "SESSION_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes"),
+    # Every route reads a body somebody else sent. Unset, Flask will buffer a
+    # body of any size, which on a 512MB instance is a one-request memory kill.
+    # Larger than any real submit here: the biggest is the review page posting
+    # a page of hours for a batch of candidates.
+    MAX_CONTENT_LENGTH=256 * 1024,
 )
+
+# Whether X-Forwarded-For can be believed. True only behind a proxy that sets
+# it; off a proxy it is a header the caller wrote, and trusting it would let one
+# attacker present as an unlimited number of addresses. render.yaml turns it on.
+TRUST_PROXY = os.environ.get(
+    "TRUST_PROXY", "").strip().lower() in ("1", "true", "yes")
+
+# What one caller may do per minute on the routes that cost money. Generous
+# against real use -- a parent plans a day a few times, not sixty -- and low
+# enough that a script cannot spend a month's API budget before anyone notices.
+CHAT_LIMIT, CHAT_WINDOW = 20, 60
+PLAN_LIMIT, PLAN_WINDOW = 12, 60
+LOOKUP_LIMIT, LOOKUP_WINDOW = 40, 60
+# Tighter, because guessing repeatedly is the whole attack on this one.
+LOGIN_LIMIT, LOGIN_WINDOW = 8, 300
+
+# Caps on what a caller may put in a chat turn. `history` is echoed back by the
+# widget, so it is the caller's to inflate, and every turn of it is paid for as
+# prompt tokens. A real conversation is a few short turns.
+MAX_MESSAGE_CHARS = 4_000
+MAX_HISTORY_TURNS = 10
+MAX_HISTORY_CHARS = 4_000
+# A rating carries the question and answer it is about, and they are written
+# to data/results.json, which is read whole on every save.
+MAX_FEEDBACK_CHARS = 8_000
 
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
 # A no-op when the data source is Supabase: the tables are already there.
@@ -257,6 +294,95 @@ def admin_required(view):
     return wrapped
 
 
+def rate_limited(limit, window):
+    """Cap how often one caller may reach this view.
+
+    Keyed on the parent when there is one and the address otherwise, so a
+    household behind one address is not throttled by a stranger, and a logged-in
+    parent is not punished for sharing an office with one.
+
+    Answers 429 with Retry-After. JSON for the JSON routes, so the widget can
+    say something rather than failing on a parse error; for a form POST, the
+    flash-and-redirect the rest of the app already uses, so the parent lands
+    back on the page they submitted with the reason on it.
+    """
+    def decorate(view):
+        bucket = ratelimit.RateLimit(limit, window)
+
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not _rate_limits_on():
+                return view(*args, **kwargs)
+            parent = _current_parent()
+            key = f"parent:{parent['id']}" if parent else f"ip:{_caller_address()}"
+            try:
+                bucket.check(key)
+            except ratelimit.TooMany as e:
+                message = (f"That's a lot of requests. Please wait "
+                           f"{e.retry_after} seconds and try again.")
+                if request.is_json:
+                    response = make_response(jsonify({"error": message}), 429)
+                else:
+                    flash(message)
+                    response = make_response(
+                        redirect(request.referrer or url_for("home")))
+                response.headers["Retry-After"] = str(e.retry_after)
+                return response
+            return view(*args, **kwargs)
+        return wrapped
+    return decorate
+
+
+def _rate_limits_on():
+    """Whether to enforce the limits. Read per request, not at import.
+
+    Off in the test suite, which `tests/__init__.py` sets, for the same reason
+    it pins the database: every test file runs in one process, so the buckets
+    are shared across the whole run. Nineteen posts to the planning routes in
+    three seconds is one caller as far as a limiter is concerned, so the later
+    tests were answered 429 by a limit meant for a stranger with a script.
+
+    Default on, and off only when something says "off" out loud, so forgetting
+    to set it leaves the limits in place rather than removing them.
+    """
+    return os.environ.get("RATE_LIMITS", "").strip().lower() != "off"
+
+
+def _caller_address():
+    """The client's address, trusting proxy headers only when told to.
+
+    X-Forwarded-For is set by whoever spoke to us, so off a proxy it is simply
+    a header the caller chose and trusting it would let one attacker look like
+    thousands. Render sits in front of this and sets it, so TRUST_PROXY says
+    when to believe it. `access_route[-1]` rather than `[0]`: the last entry is
+    the one our own proxy added, and the earlier ones are still the caller's
+    to invent.
+    """
+    if TRUST_PROXY and request.access_route:
+        return request.access_route[-1]
+    return request.remote_addr or "unknown"
+
+
+@app.after_request
+def _security_headers(response):
+    """Headers a browser needs in order to defend the page.
+
+    No Content-Security-Policy yet: the templates carry inline handlers and
+    styles, so a useful policy would need 'unsafe-inline', which is a policy
+    that mostly is not one. Worth doing properly rather than for show.
+    """
+    # This app has no reason to be framed, and framing is how a click on an
+    # invisible overlay becomes a click on "Delete trip".
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    # Stop a browser guessing a content type: a stored venue note sniffed as
+    # HTML would run as HTML.
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    # A trip page's URL says where a family is going. Do not hand it to every
+    # site they click through to.
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    return response
+
+
 @app.context_processor
 def inject_current_parent():
     """Make the logged-in parent (and their children, with computed age)
@@ -284,7 +410,14 @@ def home():
     return render_template("index.html")
 
 
+# The shortest password worth calling one. Not a character-class rule: those
+# push people towards "Passw0rd!" and a long ordinary phrase is stronger. This
+# is the floor, and the login limiter above is what makes guessing expensive.
+MIN_PASSWORD_LENGTH = 10
+
+
 @app.route("/signup", methods=["GET", "POST"])
+@rate_limited(LOGIN_LIMIT, LOGIN_WINDOW)
 def signup():
     """Create a parent account. Children are added afterward from the dashboard."""
     if request.method == "POST":
@@ -292,6 +425,10 @@ def signup():
         required = ("parent_name", "email", "password", "confirm_password")
         if any(not form.get(field, "").strip() for field in required):
             flash("Please fill in every field.")
+            return render_template("signup.html", form=form)
+        if len(form["password"]) < MIN_PASSWORD_LENGTH:
+            flash(f"Please use a password of at least {MIN_PASSWORD_LENGTH} "
+                  "characters.")
             return render_template("signup.html", form=form)
         if form["password"] != form["confirm_password"]:
             flash("Passwords do not match.")
@@ -311,13 +448,20 @@ def signup():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@rate_limited(LOGIN_LIMIT, LOGIN_WINDOW)
 def login():
-    """Log an existing parent in."""
+    """Log an existing parent in.
+
+    The hash is checked even when no such account exists, against a throwaway
+    one. Skipping it made a wrong email answer measurably faster than a wrong
+    password, which is enough to sort real addresses from invented ones.
+    """
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         parent = get_parent_by_email(email)
-        if parent is None or not check_password_hash(parent["password_hash"], password):
+        stored = parent["password_hash"] if parent else _ABSENT_ACCOUNT_HASH
+        if not check_password_hash(stored, password) or parent is None:
             flash("Incorrect email or password.")
             return render_template("login.html", email=email)
         session["parent_id"] = parent["id"]
@@ -326,9 +470,20 @@ def login():
     return render_template("login.html", email="")
 
 
-@app.route("/logout")
+# Compared against when the email matches no account, purely so that path costs
+# the same as a real check. Hashed from random bytes at import, so no password
+# can match it.
+_ABSENT_ACCOUNT_HASH = generate_password_hash(os.urandom(16).hex())
+
+
+@app.route("/logout", methods=["POST"])
 def logout():
-    """Log the current parent out."""
+    """Log the current parent out.
+
+    POST rather than GET, which is what makes SameSite=Lax cover it: Lax still
+    sends the cookie on a cross-site top-level GET, so as a GET this was a link
+    or an <img> on any page that logged a parent out.
+    """
     session.clear()
     return redirect(url_for("home"))
 
@@ -1765,12 +1920,15 @@ def log_place_search_route():
 
 
 @app.route("/plan/accommodation-search", methods=["POST"])
+@rate_limited(LOOKUP_LIMIT, LOOKUP_WINDOW)
 def accommodation_search_route():
     """Name lookup for the accommodation pin on the planning form.
 
     Open to anyone, because /plan is: a parent plans a day before they have an
-    account. That is the same exposure /plan already carries, which spends an
-    AI call per generate against no login.
+    account. Rate limited rather than closed, because every call is a billed
+    Google Places request and the field searches as the parent types: the two
+    cost guards in static/plan-accommodation.js are the client's manners, and
+    this is what holds when the caller is not that client.
     """
     return _place_search_response()
 
@@ -1859,6 +2017,7 @@ def save_trip():
 
 
 @app.route("/plan", methods=["GET", "POST"])
+@rate_limited(PLAN_LIMIT, PLAN_WINDOW)
 def plan():
     """Planning page: the trip form and, after generating, comparable plans.
 
@@ -2130,6 +2289,7 @@ def report_amenities(venue_id):
 
 
 @app.route("/replan", methods=["POST"])
+@rate_limited(PLAN_LIMIT, PLAN_WINDOW)
 def replan_route():
     """Re-plan the rest of the day and return a NEW plan as JSON."""
     data = request.get_json(silent=True) or {}
@@ -2145,6 +2305,7 @@ def replan_route():
 
 
 @app.route("/replan/adjust", methods=["POST"])
+@rate_limited(PLAN_LIMIT, PLAN_WINDOW)
 def replan_adjust_route():
     """Re-plan the rest of the day (rule-based), then let the AI adjuster
     smooth it -- the same draft-then-adjust pattern /plan uses. Returns a NEW
@@ -2179,6 +2340,7 @@ def replan_adjust_route():
 
 
 @app.route("/find_nearby", methods=["POST"])
+@rate_limited(LOOKUP_LIMIT, LOOKUP_WINDOW)
 def find_nearby_route():
     """Venues matching an immediate need as JSON, narrowed to the parent's
     location when the browser shared it. Location is optional on purpose: a
@@ -2210,7 +2372,32 @@ def find_nearby_route():
                     or location["city"] else None})
 
 
+def _capped_history(history):
+    """The recent turns of a conversation, short enough to pay for.
+
+    `history` is held by the widget and echoed back with every message, so its
+    length and contents are the caller's to choose, and every turn is billed as
+    prompt tokens. Unbounded, one request could carry a prompt of any size.
+
+    The newest turns are kept rather than the oldest, because that is the part
+    of a conversation the next answer depends on.
+    """
+    if not isinstance(history, list):
+        return []
+    turns = []
+    for turn in history[-MAX_HISTORY_TURNS:]:
+        if not isinstance(turn, dict):
+            continue
+        content = turn.get("content")
+        if not isinstance(content, str):
+            continue
+        turns.append({"role": "user" if turn.get("role") == "user" else "assistant",
+                      "content": content[:MAX_HISTORY_CHARS]})
+    return turns
+
+
 @app.route("/chatbot", methods=["POST"])
+@rate_limited(CHAT_LIMIT, CHAT_WINDOW)
 def chatbot_route():
     """One turn of the chat bubble, as JSON.
 
@@ -2226,6 +2413,8 @@ def chatbot_route():
     message = (data.get("message") or "").strip()
     if not message:
         return jsonify({"error": "message is required"}), 400
+    if len(message) > MAX_MESSAGE_CHARS:
+        return jsonify({"error": "That message is too long. Please shorten it."}), 413
 
     model = data.get("model")
     if model not in ALLOWED_CHAT_MODELS:
@@ -2244,7 +2433,7 @@ def chatbot_route():
         conversation = None
 
     try:
-        result = handle_message(message, history=data.get("history") or [],
+        result = handle_message(message, history=_capped_history(data.get("history")),
                                 model=model, conversation=conversation,
                                 context=_chat_context(data),
                                 force_workflow=data.get("force_workflow"))
@@ -2258,12 +2447,19 @@ def chatbot_route():
 
 
 @app.route("/feedback", methods=["POST"])
+@rate_limited(CHAT_LIMIT, CHAT_WINDOW)
 def feedback_route():
     """Save a thumbs up/down rating on a chatbot response, an AI-generated
-    plan, or an AI replan, as JSON."""
+    plan, or an AI replan, as JSON.
+
+    Both texts are truncated rather than refused: a rating is worth keeping
+    even if the answer it quotes was long. They are stored in
+    data/results.json, which is read whole and rewritten on every save, so
+    without a cap an anonymous caller sets how much memory that costs.
+    """
     data = request.get_json(silent=True) or {}
-    question = (data.get("question") or "").strip()
-    response_text = data.get("response") or ""
+    question = (data.get("question") or "").strip()[:MAX_FEEDBACK_CHARS]
+    response_text = (data.get("response") or "")[:MAX_FEEDBACK_CHARS]
     rating = data.get("rating")
     kind = data.get("kind") or "chatbot"
     if (not question or not response_text or rating not in ("up", "down")

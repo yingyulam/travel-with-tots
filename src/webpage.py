@@ -18,8 +18,11 @@ the same spirit as nominatim.py, because a venue's own site is somebody's small
 server rather than an API.
 """
 
+import ipaddress
 import re
+import socket
 import time
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -39,6 +42,11 @@ MAX_BYTES = 500_000
 # hours/visit page, never at the end of a 20,000-word blog, and a cap is what
 # stops one enormous page dominating a batch's token budget.
 MAX_CHARS = 12_000
+
+# Redirects are followed by hand rather than by requests, so every hop can be
+# checked. Three covers the redirects real sites use (http to https, bare domain
+# to www, / to /home) and ends a loop quickly.
+MAX_REDIRECTS = 3
 
 # Tags whose *contents* are not prose. Dropped whole, or a stylesheet's
 # "font-size:14px" arrives as text and reads like data.
@@ -85,22 +93,75 @@ def to_text(html: str) -> str:
     return text.strip()
 
 
+def require_public_address(url: str) -> None:
+    """Raise unless every address `url`'s host resolves to is on the internet.
+
+    This is what stops a fetch reaching inward. The URL is not ours: it comes
+    from `official_site`, which picks it out of web search results, so anyone
+    who can rank a page has a say in it. Without this, a proposal batch could be
+    steered into fetching `http://169.254.169.254/` -- the cloud metadata
+    service, which hands out instance credentials on most hosts -- or a database
+    on localhost. The page body is then shown to the reviewer and written to
+    data/venue_candidates.csv, which is tracked in git, so a read of an internal
+    service would be exfiltrated to both.
+
+    Every resolved address is checked, not just the first: a name that answers
+    with one public and one private address must not get through on the strength
+    of the public one. `is_global` is False for private, loopback, link-local,
+    multicast and reserved ranges, in IPv4 and IPv6 alike.
+
+    What this does not stop is DNS rebinding, where the name resolves publicly
+    here and privately when requests connects a moment later. Closing that means
+    connecting to the address already checked and setting Host by hand, which is
+    more machinery than an admin-triggered, once-per-second batch warrants.
+    """
+    host = urlparse(url).hostname
+    if not host:
+        raise PageError(f"no host in {url!r}")
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except socket.gaierror as e:
+        raise PageError(f"could not resolve {host}: {e}") from None
+    for address in addresses:
+        if not ipaddress.ip_address(address).is_global:
+            raise PageError(
+                f"refusing to fetch {host}: {address} is not a public address")
+
+
+def _get_checking_every_hop(url: str, timeout):
+    """GET `url`, following redirects one at a time so each can be checked.
+
+    By hand rather than `allow_redirects=True`, because that is how an address
+    check gets walked past: a site that is public at the first URL redirects to
+    169.254.169.254, and requests follows it without asking again. Venues' sites
+    really do redirect (http to https, / to /home), so this follows rather than
+    refuses.
+    """
+    for _ in range(MAX_REDIRECTS + 1):
+        require_public_address(url)
+        response = requests.get(
+            url, timeout=timeout, headers={"User-Agent": USER_AGENT},
+            allow_redirects=False)
+        if not (response.is_redirect or response.is_permanent_redirect):
+            return response
+        url = urljoin(url, response.headers.get("Location", ""))
+        if not url.startswith(("http://", "https://")):
+            raise PageError(f"refusing a redirect to {url!r}")
+    raise PageError(f"more than {MAX_REDIRECTS} redirects")
+
+
 def fetch_text(url: str, timeout=REQUEST_TIMEOUT_SECONDS) -> str:
     """The readable text of one page, capped at MAX_CHARS.
 
     Raises PageError for anything that is not a page of text we could read:
     a transport failure, a non-200, a non-HTML content type, a body over
-    MAX_BYTES, or markup that reduces to nothing.
+    MAX_BYTES, markup that reduces to nothing, or a host that is not on the
+    public internet.
     """
     if not (url or "").startswith(("http://", "https://")):
         raise PageError(f"not a web address: {url!r}")
     try:
-        response = requests.get(
-            url, timeout=timeout, headers={"User-Agent": USER_AGENT},
-            # A venue's site may redirect http to https or / to /home; a
-            # redirect chain off the host is somebody else's page, and
-            # official_site already decided which host we trust.
-            allow_redirects=True)
+        response = _get_checking_every_hop(url, timeout)
     except requests.exceptions.RequestException as e:
         raise PageError(f"{type(e).__name__}: {e}") from None
     finally:

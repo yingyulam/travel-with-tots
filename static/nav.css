@@ -117,7 +117,10 @@ body.sidebar-expanded .twt-sidebar {
   padding: 0;
 }
 
-.twt-sidebar-nav a {
+/* Log out is a form button rather than a link, because it changes state, so it
+   is styled alongside the links to read as one of them. */
+.twt-sidebar-nav a,
+.twt-sidebar-nav .nav-logout button {
   display: block;
   padding: 0.75rem 1.25rem;
   color: #fff;
@@ -127,7 +130,16 @@ body.sidebar-expanded .twt-sidebar {
   font-size: 0.95rem;
 }
 
-.twt-sidebar-nav a:hover {
+.twt-sidebar-nav .nav-logout button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.twt-sidebar-nav a:hover,
+.twt-sidebar-nav .nav-logout button:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
 }

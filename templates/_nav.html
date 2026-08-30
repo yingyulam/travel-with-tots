@@ -30,7 +30,10 @@
     <li><a href="{{ url_for('components') }}">Components</a></li>
     <li><a href="{{ url_for('workflows') }}">Workflows</a></li>
     {% endif %}
-    <li><a href="{{ url_for('logout') }}">Log out</a></li>
+    {# A form, not a link: logging out changes state, and as a GET any other
+       site could trigger it with an <img> tag. #}
+    <li><form method="post" action="{{ url_for('logout') }}" class="nav-logout">
+      <button type="submit">Log out</button></form></li>
   </ul>
 </nav>
 <script>

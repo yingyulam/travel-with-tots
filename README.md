@@ -78,6 +78,8 @@ Keys load from `.env`. None is ever sent to the browser.
 | `SUPABASE_DB_URL`     | Optional | Serving pages from Supabase.               |
 | `DB_BACKEND`          | Optional | Pins the data source: `local` or `supabase`. |
 | `SESSION_COOKIE_SECURE` | Optional | Marks the session cookie HTTPS-only.     |
+| `TRUST_PROXY`         | Optional | Believe `X-Forwarded-For`. Only behind a proxy. |
+| `RATE_LIMITS`         | Optional | Set to `off` to disable request limits.     |
 
 Leave the optional ones out and those features say so cleanly. Everything else
 keeps working.
