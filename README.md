@@ -31,10 +31,10 @@ judgment is genuinely needed.
 Admins get more: a review queue for new venues, an editable knowledge base, and
 test pages for every AI component.
 
-**Data lives in local SQLite.** `/settings` can copy it into a Supabase project:
-it generates the `CREATE TABLE` statements to paste into Supabase's SQL editor,
-then copies every row, skipping any already there. The app still reads and
-writes locally either way; the copy is one-way and additive.
+**Data lives in SQLite by default, or in Supabase.** A dropdown on `/settings`
+switches which one serves every page. There is also a one-way clone that copies
+the local rows up, skipping any already there. Local SQLite stays the default,
+and the fallback if Supabase cannot be reached.
 
 ---
 
@@ -74,7 +74,8 @@ Keys load from `.env`. None is ever sent to the browser.
 | `OPENROUTER_API_KEY`  | Yes      | Every LLM call.                           |
 | `TAVILY_API_KEY`      | Optional | Web search, and finding new venues.       |
 | `GOOGLE_MAPS_API_KEY` | Optional | Searching for a place by name.            |
-| `SUPABASE_URL`, `SUPABASE_API_KEY` | Optional | Copying the database to Supabase. |
+| `SUPABASE_URL`, `SUPABASE_API_KEY` | Optional | Cloning the database to Supabase. |
+| `SUPABASE_DB_URL`     | Optional | Serving pages from Supabase.               |
 
 Leave the optional ones out and those features say so cleanly. Everything else
 keeps working.
@@ -260,6 +261,8 @@ travel-with-tots/
 ├── app.py                     # Flask entry point: routes, auth, forms
 ├── src/
 │   ├── db.py                  # the only module with SQL
+│   ├── postgres.py            # the same SQL, translated for Supabase
+│   ├── supabase_sync.py       # clone local rows up; which source is selected
 │   ├── data_loader.py         # venues as plain dicts, hours for a date
 │   ├── models.py              # Plan and Trip objects
 │   ├── itinerary.py           # builds the day
@@ -298,6 +301,15 @@ only module that writes SQL. Everything else works in plain dicts. The tables
 are `parents`, `children`, `trips`, `venues`, `venue_reports` (one amenity claim
 each), `venue_hours` (one day's opening hours, only for venues that vary by day)
 and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a decision). Ratings, candidates and intent logs are flat files in `data/`.
+
+**Supabase is the same SQL over a different connection.** `src/postgres.py`
+translates SQLite's dialect on the way through (`?` to `%s`, `IFNULL` to
+`COALESCE`, `LIKE` to `ILIKE`) and returns rows as dicts, so nothing above
+`db.py` knows which database it is talking to. Setting it up is three steps on
+`/settings`: paste the generated `CREATE TABLE`s into Supabase's SQL editor,
+clone the rows, then paste the second block that adds the id sequences, indexes
+and foreign keys. Once switched, the two databases diverge: rows written in
+Supabase do not come back down.
 
 **Scripts** cover the jobs too slow or too rude for a web request:
 `import_open_data.py` (dry run by default), `propose_venues.py`,

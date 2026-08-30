@@ -7,6 +7,7 @@ the src/ package; this file just wires HTTP requests to that logic.
 
 import json
 import os
+from contextlib import closing
 from datetime import date, datetime, timezone
 from functools import wraps
 
@@ -43,11 +44,10 @@ from src.components.geocode import (
     reverse_geocode,
 )
 from src.components.place_search import PlaceSearchError, search_places
-from src import osm, supabase_sync
+from src import osm, postgres, supabase_sync
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
-import sqlite3
 
 from src.data_loader import (
     CITIES,
@@ -598,7 +598,7 @@ def venue_review_candidates():
                 continue
             try:
                 _approve_candidate(merged, admin_id)
-            except sqlite3.IntegrityError:
+            except db.INTEGRITY_ERRORS:
                 # idx_venues_curated_identity refuses a second curated venue
                 # with the same name and city. Uncaught, this unwound the loop
                 # and 500'd the whole submit: every row after this one lost its
@@ -1132,7 +1132,10 @@ def settings():
         data_source=supabase_sync.active_source(),
         data_sources=supabase_sync.SOURCES,
         supabase_configured=_supabase_configured(),
-        supabase_ddl=supabase_sync.postgres_ddl())
+        supabase_db_url_set=bool(supabase_sync.db_url()),
+        backend_error=db.LAST_BACKEND_ERROR,
+        supabase_ddl=supabase_sync.postgres_ddl(),
+        supabase_runtime_ddl=supabase_sync.postgres_runtime_ddl())
 
 
 def _supabase_configured():
@@ -1142,6 +1145,27 @@ def _supabase_configured():
     except supabase_sync.SyncError:
         return False
     return True
+
+
+def _supabase_unreachable():
+    """Why a connection to Supabase failed, or None if one can be opened.
+
+    Run before the dropdown is allowed to switch, so an unusable connection
+    string is a sentence on this page rather than a warning banner on every
+    other one.
+    """
+    url = supabase_sync.db_url()
+    if not url:
+        return "SUPABASE_DB_URL is not set in .env."
+    try:
+        with closing(postgres.connect(url)) as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception as e:                                      # noqa: BLE001
+        # Broad on purpose: a bad host, a bad password, a missing driver and a
+        # firewall all mean the same thing here, and all of them should reach
+        # the admin as a sentence.
+        return f"{type(e).__name__}: {postgres.first_line(e)}"
+    return None
 
 
 @app.route("/settings/knowledge-base", methods=["POST"])
@@ -1162,11 +1186,16 @@ def save_knowledge_base():
 def save_data_source():
     """Record which backend the app should use."""
     chosen = request.form.get("source", "")
+    if chosen == supabase_sync.SUPABASE:
+        problem = _supabase_unreachable()
+        if problem:
+            flash(f"Staying on the local database: Supabase could not be "
+                  f"reached. {problem}")
+            return redirect(url_for("settings"))
     supabase_sync.set_active_source(chosen)
-    active = supabase_sync.active_source()
-    if active == supabase_sync.SUPABASE:
-        flash("Data source set to Supabase. Reads and writes still come from "
-              "the local database: only the clone below writes to Supabase.")
+    if supabase_sync.active_source() == supabase_sync.SUPABASE:
+        flash("Data source set to Supabase. Every page now reads and writes "
+              "there. Rows written here will not appear in the local database.")
     else:
         flash("Data source set to the local database.")
     return redirect(url_for("settings"))

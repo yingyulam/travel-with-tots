@@ -17,9 +17,21 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
+from . import postgres
+
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = _DATA_DIR / "app.db"
+
+# What DB_PATH is when nobody has redirected it. Tests and one-off scripts point
+# DB_PATH at their own file, and naming a specific SQLite file is a clear enough
+# statement of intent to override the data-source dropdown: without this, running
+# the suite with Supabase selected would send 300-odd writes to the live project.
+_DEFAULT_DB_PATH = DB_PATH
+
+# Why the last attempt to reach Supabase failed, or None. Read by /settings so a
+# fallback to local is visible rather than silent.
+LAST_BACKEND_ERROR = None
 VENUES_SEED = _DATA_DIR / "venues.json"
 
 # Age is never stored -- children keep a date of birth and age is derived.
@@ -188,6 +200,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_check_open
     ON venue_hours_checks(venue_id, source) WHERE status = 'pending';
 """
 
+# What a unique-index violation looks like, whichever database is serving. The
+# review page catches this per row so one clashing candidate cannot unwind a
+# whole batch of decisions; without the Postgres class in here, that catch would
+# quietly stop working the moment Supabase was selected.
+INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + postgres.integrity_errors()
+
 # Feature/flag columns on `venues` that the AI planner is allowed to filter
 # candidates by -- never string-interpolate a column name that isn't in here.
 # The only venue flag left as a column. It is not reportable: it follows the
@@ -251,11 +269,54 @@ TRIP_FIELDS = (
 )
 
 
-def connect():
-    """Open a connection with row access by name and foreign keys enforced."""
+def connect_sqlite():
+    """Open the local SQLite file, whichever data source is selected.
+
+    Asked for by name rather than dispatched, because everything that reads a
+    PRAGMA or runs executescript is SQLite-only: schema creation, the column
+    migrations, and the read side of the clone. Naming it means those can never
+    be handed a Postgres connection.
+    """
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def _supabase_dsn():
+    """The Postgres connection string to serve from, or None to stay local.
+
+    Four conditions, in this order because the first is the cheapest and the
+    most important: DB_PATH names the real file, the dropdown says Supabase, a
+    connection string is set, and psycopg is installed. Anything missing means
+    SQLite, which is the path that always works.
+    """
+    if Path(DB_PATH) != _DEFAULT_DB_PATH:
+        return None
+    from . import supabase_sync          # imports db, so it cannot be top-level
+    if supabase_sync.active_source() != supabase_sync.SUPABASE:
+        return None
+    return supabase_sync.db_url() or None
+
+
+def connect():
+    """A connection to whichever database the admin selected.
+
+    Falls back to SQLite when Supabase cannot be reached, recording why in
+    LAST_BACKEND_ERROR. A page that renders local data with a warning on
+    /settings beats every page 500ing, and the alternative to recording it is a
+    silent switch back, which is worse than either.
+    """
+    global LAST_BACKEND_ERROR
+    dsn = _supabase_dsn()
+    if dsn is None:
+        return connect_sqlite()
+    try:
+        conn = postgres.connect(dsn)
+    except (ImportError, *postgres.unreachable_errors()) as e:
+        LAST_BACKEND_ERROR = postgres.first_line(e)
+        return connect_sqlite()
+    LAST_BACKEND_ERROR = None
     return conn
 
 
@@ -278,8 +339,15 @@ def create_schema(conn):
 
 
 def init_db():
-    """Create the tables if they don't exist and seed initial data once."""
-    with closing(connect()) as conn:
+    """Create the tables if they don't exist and seed initial data once.
+
+    SQLite only. On Supabase the tables were created by the SQL on /settings and
+    the migration machinery below cannot run there at all: it is PRAGMA
+    table_info and ALTER TABLE the whole way down.
+    """
+    if _supabase_dsn() is not None:
+        return
+    with closing(connect_sqlite()) as conn:
         create_schema(conn)
         _drop_dead_columns(conn)
         _migrate_trips_ownership(conn)

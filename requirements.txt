@@ -6,6 +6,8 @@ chromadb>=0.5
 langgraph>=0.2
 langchain-openai>=0.2
 openai>=1.0
-# Optional: only needed to clone the local database into Supabase.
-# The app runs on SQLite without it.
+# Optional, and only for the Supabase data source on /settings: `supabase`
+# clones the local database up (REST), `psycopg` is what serves pages from it
+# (SQL). The app runs on local SQLite without either.
 supabase>=2.0
+psycopg[binary]>=3.1

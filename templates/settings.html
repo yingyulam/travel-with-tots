@@ -22,14 +22,21 @@
     <button type="submit" class="cta-secondary">Save data source</button>
   </form>
 
-  {# Said plainly rather than implied. The switch is stored and the clone below
-     is real; serving pages from Supabase is not built, and a dropdown that
-     looked like it did that would be the worst of both. #}
-  {% if data_source == 'supabase' %}
-  <p class="meta"><strong>Supabase is selected, and the app is still reading and
-    writing locally.</strong> Only the clone below talks to Supabase. Serving
-    pages from it needs the whole of src/db.py behind an adapter, which is a
-    separate piece of work.</p>
+  {% if not supabase_db_url_set %}
+    <p class="meta"><strong>SUPABASE_DB_URL is not set in .env,</strong> so
+      Supabase cannot serve pages yet. It is the connection string under
+      Connect in your Supabase project.</p>
+  {% endif %}
+
+  {# A fallback the admin cannot see is worse than either outcome: they would
+     be looking at local data believing it was Supabase. #}
+  {% if backend_error %}
+    <p class="meta"><strong>Supabase is selected but was not reachable, so this
+      page is showing local data.</strong> {{ backend_error }}</p>
+  {% elif data_source == 'supabase' %}
+    <p class="meta"><strong>Supabase is serving every page.</strong> Anything
+      saved now stays there: the two databases diverge from here, and cloning
+      again will not bring these rows back down.</p>
   {% endif %}
 
   <h3>Clone local data to Supabase</h3>
@@ -41,16 +48,26 @@
     Supabase are skipped, so running it twice copies nothing the second time.</p>
 
   <details class="per-day">
-    <summary>First, create the tables (run this once in Supabase)</summary>
+    <summary>Step 1: create the tables (run this once in Supabase)</summary>
     <p class="field-hint">The Supabase client cannot create tables, so paste this
       into the SQL Editor in your Supabase project and run it. It is generated
       from the live local schema, and is safe to run more than once.</p>
     <textarea rows="12" readonly onclick="this.select()">{{ supabase_ddl }}</textarea>
   </details>
 
+  <details class="per-day">
+    <summary>Step 3: finish the schema (run once, after cloning)</summary>
+    <p class="field-hint">Step 1 leaves out three things a clone does not need
+      and the app does: id sequences, foreign keys, and the unique indexes that
+      stop duplicate venues. Without the sequences every insert fails, so run
+      this before switching the dropdown to Supabase. Safe to run again after
+      another clone, and re-running fixes the sequences.</p>
+    <textarea rows="12" readonly onclick="this.select()">{{ supabase_runtime_ddl }}</textarea>
+  </details>
+
   <form method="post" action="{{ url_for('clone_to_supabase') }}" class="section-form">
     <button type="submit" class="cta" {{ 'disabled' if not supabase_configured }}>
-      Clone Local Data to Supabase</button>
+      Step 2: Clone Local Data to Supabase</button>
   </form>
 </section>
 
