@@ -31,6 +31,11 @@ judgment is genuinely needed.
 Admins get more: a review queue for new venues, an editable knowledge base, and
 test pages for every AI component.
 
+**Data lives in local SQLite.** `/settings` can copy it into a Supabase project:
+it generates the `CREATE TABLE` statements to paste into Supabase's SQL editor,
+then copies every row, skipping any already there. The app still reads and
+writes locally either way; the copy is one-way and additive.
+
 ---
 
 ## Quick start
@@ -69,6 +74,7 @@ Keys load from `.env`. None is ever sent to the browser.
 | `OPENROUTER_API_KEY`  | Yes      | Every LLM call.                           |
 | `TAVILY_API_KEY`      | Optional | Web search, and finding new venues.       |
 | `GOOGLE_MAPS_API_KEY` | Optional | Searching for a place by name.            |
+| `SUPABASE_URL`, `SUPABASE_API_KEY` | Optional | Copying the database to Supabase. |
 
 Leave the optional ones out and those features say so cleanly. Everything else
 keeps working.

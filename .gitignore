@@ -22,6 +22,8 @@ data/app.db
 # RAG index (rebuildable from data/knowledge_base.md)
 data/chroma/
 data/rag_config.json
+# Which backend /settings is set to. Generated, and local to one install.
+data/data_source.json
 
 # Chatbot ratings (runtime data)
 data/results.json

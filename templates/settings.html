@@ -5,6 +5,56 @@
 
 {% block content %}
 <section class="card">
+  <h2>Data source</h2>
+  <p class="meta">Where the app keeps its data. Local SQLite is the default and
+    the fallback.</p>
+
+  <form method="post" action="{{ url_for('save_data_source') }}" class="section-form">
+    <label class="field field-full">
+      <span>Read and write from</span>
+      <select name="source">
+        {% for source in data_sources %}
+        <option value="{{ source }}" {{ 'selected' if source == data_source }}>
+          {{ 'Local (SQLite)' if source == 'local' else 'Supabase' }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="cta-secondary">Save data source</button>
+  </form>
+
+  {# Said plainly rather than implied. The switch is stored and the clone below
+     is real; serving pages from Supabase is not built, and a dropdown that
+     looked like it did that would be the worst of both. #}
+  {% if data_source == 'supabase' %}
+  <p class="meta"><strong>Supabase is selected, and the app is still reading and
+    writing locally.</strong> Only the clone below talks to Supabase. Serving
+    pages from it needs the whole of src/db.py behind an adapter, which is a
+    separate piece of work.</p>
+  {% endif %}
+
+  <h3>Clone local data to Supabase</h3>
+  {% if not supabase_configured %}
+    <p class="meta"><strong>SUPABASE_URL and SUPABASE_API_KEY are not set in
+      .env.</strong> Add them and reload this page.</p>
+  {% endif %}
+  <p class="meta">Copies every row from the local database. Rows already in
+    Supabase are skipped, so running it twice copies nothing the second time.</p>
+
+  <details class="per-day">
+    <summary>First, create the tables (run this once in Supabase)</summary>
+    <p class="field-hint">The Supabase client cannot create tables, so paste this
+      into the SQL Editor in your Supabase project and run it. It is generated
+      from the live local schema, and is safe to run more than once.</p>
+    <textarea rows="12" readonly onclick="this.select()">{{ supabase_ddl }}</textarea>
+  </details>
+
+  <form method="post" action="{{ url_for('clone_to_supabase') }}" class="section-form">
+    <button type="submit" class="cta" {{ 'disabled' if not supabase_configured }}>
+      Clone Local Data to Supabase</button>
+  </form>
+</section>
+
+<section class="card">
   <form method="post" action="{{ url_for('save_knowledge_base') }}" class="section-form">
     <h2>Knowledge base</h2>
     <p class="meta">Facts the chatbot uses to answer questions (data/knowledge_base.md).</p>

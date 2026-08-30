@@ -43,7 +43,7 @@ from src.components.geocode import (
     reverse_geocode,
 )
 from src.components.place_search import PlaceSearchError, search_places
-from src import osm
+from src import osm, supabase_sync
 from src.components.plan_trip import plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
@@ -1128,7 +1128,20 @@ def settings():
     with open(WEBSITE_CHATBOT_PROMPT_PATH) as f:
         prompt = f.read()
     return render_template(
-        "settings.html", knowledge_base=knowledge_base, prompt=prompt)
+        "settings.html", knowledge_base=knowledge_base, prompt=prompt,
+        data_source=supabase_sync.active_source(),
+        data_sources=supabase_sync.SOURCES,
+        supabase_configured=_supabase_configured(),
+        supabase_ddl=supabase_sync.postgres_ddl())
+
+
+def _supabase_configured():
+    """Whether both Supabase credentials are set, without revealing either."""
+    try:
+        supabase_sync.credentials()
+    except supabase_sync.SyncError:
+        return False
+    return True
 
 
 @app.route("/settings/knowledge-base", methods=["POST"])
@@ -1140,6 +1153,49 @@ def save_knowledge_base():
     rag.KNOWLEDGE_BASE_PATH.write_text(content)
     rag.rebuild_index(rag.get_chunk_size())
     flash("Knowledge base saved. Re-indexing in the background.")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/data-source", methods=["POST"])
+@login_required
+@admin_required
+def save_data_source():
+    """Record which backend the app should use."""
+    chosen = request.form.get("source", "")
+    supabase_sync.set_active_source(chosen)
+    active = supabase_sync.active_source()
+    if active == supabase_sync.SUPABASE:
+        flash("Data source set to Supabase. Reads and writes still come from "
+              "the local database: only the clone below writes to Supabase.")
+    else:
+        flash("Data source set to the local database.")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/clone-to-supabase", methods=["POST"])
+@login_required
+@admin_required
+def clone_to_supabase():
+    """Copy every local row into Supabase, skipping what is already there."""
+    try:
+        summary = supabase_sync.clone()
+    except supabase_sync.SyncError as e:
+        flash(str(e))
+        return redirect(url_for("settings"))
+    except Exception as e:                                      # noqa: BLE001
+        # Deliberately broad: this talks to somebody else's database over the
+        # network, and every failure mode there should reach the admin as a
+        # sentence rather than a 500 on the settings page.
+        print(f"Clone to Supabase failed: {type(e).__name__}: {e}")
+        flash(f"Clone failed: {type(e).__name__}. The details are in the "
+              "server log.")
+        return redirect(url_for("settings"))
+
+    total = summary.pop("_total", 0)
+    parts = [f"{name} {counts['copied']}/{counts['local']}"
+             for name, counts in summary.items() if counts["local"]]
+    flash(f"Copied {total} row{'s' if total != 1 else ''} to Supabase. "
+          + ", ".join(parts) + ".")
     return redirect(url_for("settings"))
 
 

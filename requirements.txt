@@ -6,3 +6,6 @@ chromadb>=0.5
 langgraph>=0.2
 langchain-openai>=0.2
 openai>=1.0
+# Optional: only needed to clone the local database into Supabase.
+# The app runs on SQLite without it.
+supabase>=2.0
