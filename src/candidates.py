@@ -41,7 +41,7 @@ STATUSES = (PENDING, APPROVED, REJECTED)
 # What the agent writes: what it found, and where it found it.
 PROPOSED_COLUMNS = ("name", "type", "setting", "neighbourhood", "city",
                     "address", "lat", "lng", "source_url", "evidence",
-                    "official_url", "hours_note", "external_id")
+                    "official_url", "hours_note", "hours_source", "external_id")
 
 # Fields the proposer fills even though review owns them. Hours still never
 # come from a search snippet -- the proposal prompt forbids that, because a
@@ -77,7 +77,7 @@ REVIEWED_COLUMNS = (PREFILLED_COLUMNS
                                    | CANDIDATE_FEATURE_COLUMNS)))
 
 COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
-           + ("hours_source", "proposed_at", "decided_at", "decided_by"))
+           + ("proposed_at", "decided_at", "decided_by"))
 
 # Fields review may change. Everything the agent proposed is correctable, since
 # a wrong neighbourhood is exactly what a human is there to fix, except the
@@ -97,9 +97,15 @@ COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
 # pipeline vouched for it, and for an approved candidate that is always
 # "curated" because a human clicked; a settable one would invite writing
 # "municipal_open_data" onto a reviewed row and moving it between queues.
+# hours_source is excluded for the same reason as official_url: it says where
+# the times came from, and a reviewer who disagrees changes the times rather
+# than rewriting the provenance. It also has to be in PROPOSED_COLUMNS, because
+# `add` copies only those and the prefilled ones -- it sat outside both and was
+# silently dropped on write, so a week read from a venue's own page arrived
+# with no record of where it came from.
 EDITABLE = tuple(c for c in PROPOSED_COLUMNS
                  if c not in ("lat", "lng", "source_url", "evidence",
-                              "official_url", "hours_note",
+                              "official_url", "hours_note", "hours_source",
                               "external_id")) + REVIEWED_COLUMNS
 
 

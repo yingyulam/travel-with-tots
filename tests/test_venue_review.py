@@ -453,6 +453,20 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["open_time"], "10:00")
         self.assertEqual(candidates.load()[0]["status"], candidates.APPROVED)
 
+    def test_a_proposal_keeps_the_record_of_where_its_hours_came_from(self):
+        # add() copies only PROPOSED_COLUMNS + PREFILLED_COLUMNS, and
+        # hours_source sat outside both, so a week read from a venue's own page
+        # arrived with no record of where it came from and the review card
+        # could not say it was unconfirmed.
+        candidates.add([{"name": "A Farm", "type": "farm",
+                         "open_time": "10:00", "close_time": "16:00",
+                         "hours_week": "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00",
+                         "hours_source": "read from example.org"}])
+        row = next(r for r in candidates.load() if r["name"] == "A Farm")
+        self.assertEqual(row["hours_source"], "read from example.org")
+        self.assertEqual(row["hours_week"],
+                         "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+
     def test_reproposing_reads_the_official_site_without_rejecting(self):
         # The row that is neither wrong nor ready: keep it, look it up again.
         row = self._propose()
@@ -480,6 +494,33 @@ class CandidateBatchTest(_ReviewTest):
         after = candidates.load()[0]
         self.assertEqual(after["id"], row["id"])
         self.assertEqual(after["name"], "Corrected Name")
+
+    def test_a_failed_lookup_does_not_erase_what_is_there(self):
+        # A refresh may improve a row and must never degrade one: a site that
+        # is down today would otherwise erase hours read from it last week.
+        row = self._propose()
+        candidates.update(row["id"], open_time="10:00", close_time="16:00",
+                          hours_week="Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+        with mock.patch.object(self.app_module.propose_venues, "enrich"):
+            self._post("repropose", [row["id"]])
+        after = candidates.load()[0]
+        self.assertEqual(after["open_time"], "10:00")
+        self.assertEqual(after["hours_week"],
+                         "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+
+    def test_reproposing_refreshes_hours_a_row_already_has(self):
+        # enrich skips the page read when hours exist, so a repropose has to
+        # look up as if nothing were known or it could never refresh anything.
+        row = self._propose()
+        candidates.update(row["id"], open_time="09:00", close_time="17:00")
+        def fresh(proposals):
+            self.assertEqual(proposals[0]["open_time"], "")   # asked as if new
+            proposals[0]["open_time"] = "10:00"
+            proposals[0]["close_time"] = "16:00"
+        with mock.patch.object(self.app_module.propose_venues, "enrich",
+                               side_effect=fresh):
+            self._post("repropose", [row["id"]])
+        self.assertEqual(candidates.load()[0]["open_time"], "10:00")
 
     def test_reproposing_an_unticked_row_leaves_it_alone(self):
         row = self._propose()
@@ -518,12 +559,25 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(db.get_venue_hours([venue["id"]]), {})
         self.assertEqual(venue["open_time"], "10:00")
 
+    def test_a_submit_without_the_per_day_fields_keeps_the_week(self):
+        # Absent reads identically to cleared, so a post from anywhere that did
+        # not render those inputs would wipe a week nobody touched. Caught on a
+        # real repropose, which cleared Maplewood Farm's timetable.
+        row = self._propose()
+        candidates.update(row["id"],
+                          hours_week="Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+        self._post("save")          # no day fields at all
+        self.assertEqual(candidates.load()[0]["hours_week"],
+                         "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+
     def test_clearing_the_per_day_fields_clears_a_stored_week(self):
         # A reviewer who disagrees with a read timetable must be able to undo
         # it, so a blank week is written rather than skipped.
         row = self._propose()
         candidates.update(row["id"], hours_week="Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
-        self._post("save", **self._required(row))
+        blanks = {f"{row['id']}-day{d}_open": "" for d in range(7)}
+        blanks.update({f"{row['id']}-day{d}_close": "" for d in range(7)})
+        self._post("save", **{**self._required(row), **blanks})
         self.assertEqual(candidates.load()[0]["hours_week"], "")
 
     def test_a_reviewers_tick_becomes_a_report_they_authored(self):

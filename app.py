@@ -636,11 +636,17 @@ def _candidate_edits(candidate_id, form):
         elif key in form:
             edits[field] = (form.get(key) or "").strip()
     # The week comes back as fourteen time inputs, not as the string it is
-    # stored in, so it is reassembled here. Written on every save, blank
-    # included, or clearing the per-day fields would leave the old week behind
-    # and a reviewer could not undo a timetable they disagreed with.
-    week = _per_day_from_form(form, prefix=f"{candidate_id}-")
-    edits["hours_week"] = osm.to_week_string(week) if week else ""
+    # stored in, so it is reassembled here. Written blank as well as filled, or
+    # clearing the per-day fields could not undo a timetable a reviewer
+    # disagreed with.
+    #
+    # Only when the form actually carried those inputs, though. Absent reads
+    # identically to cleared, and a submit from anywhere that did not render
+    # them would wipe a week nobody touched. The same distinction `on_page`
+    # draws for the checkboxes, for the same reason.
+    if any(key.startswith(f"{candidate_id}-day") for key in form):
+        week = _per_day_from_form(form, prefix=f"{candidate_id}-")
+        edits["hours_week"] = osm.to_week_string(week) if week else ""
     return edits
 
 
@@ -749,12 +755,19 @@ def _repropose_candidate(row) -> int:
     candidate: a reviewer's correction to the name is not undone by looking the
     hours up again.
     """
-    proposal = dict(row)
+    # Looked up as if nothing were known, or `enrich` skips the page read for
+    # any row that already has hours: the reviewer pressing this is asking for
+    # a fresh look precisely because what is there is stale or incomplete.
+    proposal = dict(row, open_time="", close_time="", hours_week="")
     propose_venues.enrich([proposal])
-    fields = {field: proposal.get(field) or ""
-              for field in ("open_time", "close_time", "hours_week",
-                            "hours_note", "official_url", "hours_source")
-              if proposal.get(field) != row.get(field)}
+
+    # Only what the lookup actually produced. A refresh may improve a row and
+    # must never degrade one: a site that is down today would otherwise erase
+    # hours read from it last week.
+    fields = {field: proposal[field] for field in
+              ("open_time", "close_time", "hours_week", "hours_note",
+               "official_url", "hours_source")
+              if proposal.get(field) and proposal[field] != row.get(field)}
     if fields:
         candidates.refresh_evidence(row["id"], **fields)
     return 1
