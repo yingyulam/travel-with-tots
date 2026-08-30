@@ -71,6 +71,7 @@ Keys load from `.env`. None is ever sent to the browser.
 | Variable              | Needed?  | Used for                                  |
 | --------------------- | -------- | ----------------------------------------- |
 | `SECRET_KEY`          | Yes      | Signs the session cookie.                 |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Yes, once | The first admin account.       |
 | `OPENROUTER_API_KEY`  | Yes      | Every LLM call.                           |
 | `TAVILY_API_KEY`      | Optional | Web search, and finding new venues.       |
 | `GOOGLE_MAPS_API_KEY` | Optional | Searching for a place by name.            |
@@ -83,6 +84,28 @@ Keys load from `.env`. None is ever sent to the browser.
 
 Leave the optional ones out and those features say so cleanly. Everything else
 keeps working.
+
+**No credential has a default.** `SECRET_KEY` and `ADMIN_PASSWORD` both refuse
+rather than fall back, because a default that works is one an attacker also has.
+
+To get an admin, sign up through the app like any parent, then promote yourself:
+
+```bash
+python3 scripts/set_admin.py promote you@example.com
+```
+
+Nothing in that path handles a password — you chose it in the signup form.
+`ADMIN_PASSWORD` only seeds an account on a database that has no admin yet.
+
+Before deploying, check who can reach `/settings`:
+
+```bash
+python3 scripts/set_admin.py list
+```
+
+It also reports any admin whose password is guessable, which is worth running
+against a **cloned** database: a clone copies accounts, so a seeded or test
+login follows the data across.
 
 ### Tests
 

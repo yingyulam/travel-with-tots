@@ -55,6 +55,14 @@ services:
         generateValue: true
 
       # Set these in the Render dashboard. sync:false keeps them out of git.
+      #
+      # ADMIN_PASSWORD only creates an account on a database that has no admin
+      # yet, so on a cloned database it does nothing: use scripts/set_admin.py
+      # to change a password that already exists.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: OPENROUTER_API_KEY
         sync: false
       - key: SUPABASE_URL

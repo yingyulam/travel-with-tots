@@ -16,7 +16,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import postgres
 
@@ -713,16 +713,153 @@ def _seed_sample_data(conn):
              "Naps well in the stroller.", "Loves parks and open space."))
 
 
+DEFAULT_ADMIN_EMAIL = "admin@travelwithtots.app"
+
+
 def _seed_admin(conn):
-    """Insert a default admin account once, so someone can log in to the
-    settings page. Idempotent: skipped once any admin account exists."""
+    """Create the first admin account, from ADMIN_PASSWORD in the environment.
+
+    The password used to be the literal "admin1234", which is the same mistake
+    SECRET_KEY used to make and for the same reason: a default that works is one
+    an attacker also has, and this one is published in the repository next to
+    the app it opens. It grants /settings, which can change the data source and
+    rewrite the chatbot's prompt, and every component page that spends API
+    budget.
+
+    No fallback, so a deployment cannot come up with an account somebody else
+    knows the password to. Without ADMIN_PASSWORD there is simply no admin, and
+    the message below says how to make one. Idempotent: skipped once any admin
+    exists, so setting the variable does not reset a password already chosen.
+    """
     if conn.execute("SELECT COUNT(*) FROM parents WHERE is_admin = 1").fetchone()[0]:
         return
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    if not password:
+        print("No admin account: set ADMIN_EMAIL and ADMIN_PASSWORD in .env, "
+              "or run scripts/set_admin.py")
+        return
+    email = os.environ.get("ADMIN_EMAIL", DEFAULT_ADMIN_EMAIL).strip().lower()
     with conn:
         conn.execute(
             "INSERT INTO parents (email, password_hash, name, is_admin) "
-            "VALUES (?, ?, ?, 1)",
-            ("admin@travelwithtots.app", generate_password_hash("admin1234"), "Admin"))
+            "VALUES (?, ?, ?, 1)", (email, generate_password_hash(password), "Admin"))
+    print(f"Created the admin account {email}")
+
+
+# The password `_seed_admin` used to hard-code, published in this repository.
+# Kept only so a database seeded before that changed can be checked for it,
+# which is the one thing a published password is still good for.
+RETIRED_PASSWORD = "admin1234"
+
+# Passwords that must never open an admin account, checked before a deploy.
+# Two kinds, and the second is the one that was missed: the seeded defaults,
+# and the throwaway values tests use. A test that once ran against the real
+# database left `search_web_test_admin2@example.com` with the password "pw",
+# and the clone carried it to Supabase, where it sat as a second admin nobody
+# knew about. Checking only the seeded default would not have found it.
+WEAK_PASSWORDS = (RETIRED_PASSWORD, "demo1234", "pw", "x", "test", "admin",
+                  "password", "secret", "hash", "hashed", "12345678")
+
+
+def admins_with_password(password):
+    """Admin accounts whose password is still `password`.
+
+    Every hash is checked, which is slow by design and fine over a handful of
+    admins.
+    """
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            "SELECT id, email, password_hash FROM parents WHERE is_admin = 1"
+        ).fetchall()
+    return [dict(row) for row in rows
+            if check_password_hash(row["password_hash"], password)]
+
+
+def admins_with_weak_password():
+    """Every admin whose password is one anybody could guess or read here.
+
+    The pre-deploy question, asked properly. `/settings` can change the data
+    source and rewrite the chatbot's prompt, so one such account is enough to
+    lose the deployment.
+    """
+    found = {}
+    for password in WEAK_PASSWORDS:
+        for row in admins_with_password(password):
+            found.setdefault(row["email"], password)
+    return found
+
+
+def list_admins():
+    """Every account that can reach /settings, so the answer to "who has admin"
+    is one command rather than a query somebody writes by hand."""
+    with closing(connect()) as conn:
+        return [dict(row) for row in conn.execute(
+            "SELECT id, email, name FROM parents WHERE is_admin = 1 "
+            "ORDER BY email")]
+
+
+def make_admin(email):
+    """Give an existing account admin rights, leaving its password alone.
+
+    The normal way to get an admin: sign up through the app like any parent,
+    choosing your own password in the form that already validates it, then run
+    this. Nothing here ever sees the password, which is the point -- a script
+    that sets one is a script that has one.
+
+    Returns the parent id, or None when there is no such account.
+    """
+    parent = get_parent_by_email(email.strip().lower())
+    if parent is None:
+        return None
+    _write("UPDATE parents SET is_admin = 1 WHERE id = ?", (parent["id"],))
+    return parent["id"]
+
+
+def revoke_admin(email):
+    """Take admin rights away. The counterpart to make_admin, and what makes a
+    promotion reversible without touching the database by hand."""
+    parent = get_parent_by_email(email.strip().lower())
+    if parent is None:
+        return None
+    _write("UPDATE parents SET is_admin = 0 WHERE id = ?", (parent["id"],))
+    return parent["id"]
+
+
+def set_admin_password(email, password):
+    """Set an account's password and make it an admin, creating it if needed.
+
+    The fallback for when signing up first is not possible: a locked-out
+    deployment, or an account seeded before the password stopped being a
+    constant. Prefer signup plus `make_admin`, which never handles a password.
+
+    Works against whichever backend is selected, because it goes through the
+    same connection everything else does.
+    """
+    email = email.strip().lower()
+    hashed = generate_password_hash(password)
+    existing = get_parent_by_email(email)
+    if existing:
+        _write("UPDATE parents SET password_hash = ?, is_admin = 1 WHERE id = ?",
+               (hashed, existing["id"]))
+        return existing["id"], "updated"
+    return _write(
+        "INSERT INTO parents (email, password_hash, name, is_admin) "
+        "VALUES (?, ?, ?, 1)", (email, hashed, "Admin")), "created"
+
+
+def delete_parent(email):
+    """Remove an account and everything hanging off it.
+
+    Exists for the seeded demo and admin logins, whose passwords are published
+    in this file's own history: on a database cloned before that changed, the
+    fix is to delete them rather than to pick new passwords for accounts nobody
+    uses. Children, trips and reports follow via ON DELETE CASCADE.
+    """
+    parent = get_parent_by_email(email.strip().lower())
+    if parent is None:
+        return None
+    _write("DELETE FROM parents WHERE id = ?", (parent["id"],))
+    return parent["id"]
 
 
 def _write(sql, params):
