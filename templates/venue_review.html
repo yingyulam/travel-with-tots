@@ -103,6 +103,9 @@
       {% endif %}
       {% if not c.open_time or not c.close_time %}
         <p class="meta"><strong>Hours needed to approve.</strong>
+          {%- if c.official_link %} Tick it and press
+            <em>Look checked up again</em> to read them from
+            {{ c.official_domain }}.{% endif %}
           {# hours_note carries the raw OSM string whenever OSM knew the venue
              at all, so its absence is the difference between "OSM had nothing"
              and "OSM had something we could not reduce to one pair". #}
@@ -173,6 +176,11 @@
 
     <button type="submit" name="action" value="save" class="cta-secondary">Save edits</button>
     <button type="submit" name="action" value="approve" class="cta">Approve checked</button>
+    {# A third verdict, for a row that is neither wrong nor ready: look it up
+       again rather than turning it down. Reading the venue's own site is part
+       of it, which is how a candidate proposed before that existed gets its
+       hours without being re-found. #}
+    <button type="submit" name="action" value="repropose" class="cta-secondary">Look checked up again</button>
     <button type="submit" name="action" value="reject" class="cta-secondary">Reject checked</button>
   </form>
   {% endif %}

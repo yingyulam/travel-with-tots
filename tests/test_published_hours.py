@@ -215,6 +215,20 @@ class TheModelCannotInventHoursTest(unittest.TestCase):
             days=[(d, "10:00", "17:00") for d in range(7)]))
         self.assertEqual(week, {})
 
+    def test_an_unpadded_time_is_not_treated_as_invented(self):
+        # Measured on Maplewood's real page: the model answered "8:30" where
+        # the scanner emits "08:30", and a correct week was refused as a
+        # hallucination. The guard has to reject invention, not formatting.
+        week, _ = _read(MAPLEWOOD_TEXT, _answer(
+            days=[(d, "10:00", "16:00") for d in (MO, TU, WE, TH)]
+                 + [(d, "8:30", "16:00") for d in (FR, SA, SU)]))
+        self.assertEqual(week[FR], ("08:30", "16:00"))
+
+    def test_a_time_that_is_not_a_clock_time_is_refused(self):
+        week, _ = _read(MAPLEWOOD_TEXT, _answer(
+            days=[(d, "morning", "16:00") for d in range(7)]))
+        self.assertEqual(week, {})
+
     def test_the_real_times_are_accepted(self):
         # The same shape as the refusals above, differing only in being true,
         # so the guard is shown to reject invention rather than everything.

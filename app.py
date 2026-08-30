@@ -547,7 +547,7 @@ def venue_review_candidates():
     review survives. That is what makes a batch bigger than one sitting workable.
     """
     action = request.form.get("action")
-    if action not in ("save", "approve", "reject"):
+    if action not in ("save", "approve", "reject", "repropose"):
         flash("Unknown action.")
         return redirect(url_for("venue_review"))
 
@@ -558,7 +558,7 @@ def venue_review_candidates():
     # the reviewer never saw.
     on_page = set(request.form.getlist("on_page"))
     admin_id = _current_parent()["id"]
-    saved = approved = rejected = 0
+    saved = approved = rejected = reproposed = 0
     refused = []
 
     for row in candidates.load(candidates.PENDING):
@@ -569,6 +569,15 @@ def venue_review_candidates():
             candidates.update(row["id"], **edits)
             saved += 1
         if row["id"] not in picked:
+            continue
+        if action == "repropose":
+            # Back through the lookups, in place. A third verdict beside approve
+            # and reject, for the row that is neither wrong nor ready: a venue
+            # whose site has published hours since it was proposed, or one that
+            # arrived before a lookup existed. It keeps the row and its id, so
+            # nothing is re-found and no rejection is recorded against a place
+            # that was never turned down.
+            reproposed += _repropose_candidate({**row, **edits})
             continue
         if action == "reject":
             candidates.set_status(row["id"], candidates.REJECTED, decided_by=admin_id)
@@ -604,6 +613,8 @@ def venue_review_candidates():
         parts.append(f"approved {approved}")
     if rejected:
         parts.append(f"rejected {rejected}")
+    if reproposed:
+        parts.append(f"looked {reproposed} up again")
     for name in refused:
         parts.append(f"{name} not approved")
     flash(("; ".join(parts) or "Nothing selected") + ".")
@@ -722,6 +733,31 @@ def _approve_candidate(row, admin_id):
     if week:
         db.set_venue_hours(venue_id, week)
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
+
+
+def _repropose_candidate(row) -> int:
+    """Run a candidate back through the agent's lookups, in place. Returns 1.
+
+    The same work `propose_venues.enrich` does at the end of a batch, for one
+    row that has already been written: the venue's own site, its hours from
+    OpenStreetMap, and failing that the hours printed on that site. A candidate
+    proposed before a lookup existed, or before the venue published its hours,
+    gets them without being re-found or re-searched.
+
+    Deliberately not a re-search. The row keeps its id, its citation and any
+    edits already made, so this refreshes evidence rather than replacing the
+    candidate: a reviewer's correction to the name is not undone by looking the
+    hours up again.
+    """
+    proposal = dict(row)
+    propose_venues.enrich([proposal])
+    fields = {field: proposal.get(field) or ""
+              for field in ("open_time", "close_time", "hours_week",
+                            "hours_note", "official_url", "hours_source")
+              if proposal.get(field) != row.get(field)}
+    if fields:
+        candidates.refresh_evidence(row["id"], **fields)
+    return 1
 
 
 def _hour_pair(form, open_field="open_time", close_field="close_time"):

@@ -453,6 +453,46 @@ class CandidateBatchTest(_ReviewTest):
         self.assertEqual(venue["open_time"], "10:00")
         self.assertEqual(candidates.load()[0]["status"], candidates.APPROVED)
 
+    def test_reproposing_reads_the_official_site_without_rejecting(self):
+        # The row that is neither wrong nor ready: keep it, look it up again.
+        row = self._propose()
+        def fill(proposals):
+            proposals[0]["open_time"] = "10:00"
+            proposals[0]["close_time"] = "16:00"
+            proposals[0]["hours_week"] = "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00"
+            proposals[0]["hours_source"] = "read from example.org"
+        with mock.patch.object(self.app_module.propose_venues, "enrich",
+                               side_effect=fill):
+            self._post("repropose", [row["id"]])
+        after = candidates.load()[0]
+        self.assertEqual(after["status"], candidates.PENDING)   # not rejected
+        self.assertEqual(after["hours_week"],
+                         "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
+        self.assertEqual(after["hours_source"], "read from example.org")
+
+    def test_reproposing_keeps_the_id_and_the_reviewers_edits(self):
+        # A refresh of the evidence, not a replacement of the candidate: a
+        # corrected name must not be undone by looking the hours up again.
+        row = self._propose()
+        self._post("save", **self._required(row, name="Corrected Name"))
+        with mock.patch.object(self.app_module.propose_venues, "enrich"):
+            self._post("repropose", [row["id"]])
+        after = candidates.load()[0]
+        self.assertEqual(after["id"], row["id"])
+        self.assertEqual(after["name"], "Corrected Name")
+
+    def test_reproposing_an_unticked_row_leaves_it_alone(self):
+        row = self._propose()
+        with mock.patch.object(self.app_module.propose_venues, "enrich") as looked:
+            self._post("repropose", picked=[])
+        looked.assert_not_called()
+
+    def test_a_lookup_cannot_rewrite_what_a_reviewer_owns(self):
+        # EDITABLE is the reviewer's permission; LOOKED_UP is the lookup's.
+        # A citation is evidence, and a name is a judgment.
+        with self.assertRaises(ValueError):
+            candidates.refresh_evidence("any", name="Renamed By A Robot")
+
     def test_a_read_week_becomes_venue_hours_rows_on_approval(self):
         # The last link: a timetable read off the venue's own page has to reach
         # venue_hours, or the per-day hours stop at the candidate file.

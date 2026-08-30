@@ -233,6 +233,40 @@ def update(candidate_id, **fields) -> None:
                 return
 
 
+# What a lookup may rewrite, as opposed to what a reviewer may. EDITABLE is
+# the reviewer's permission and deliberately excludes evidence: rewriting a
+# citation would break the one thing that makes a row checkable. Looking a
+# venue up again is the other half of that rule, because the evidence is
+# exactly what a fresh lookup produces.
+#
+# Coordinates are here and not in EDITABLE for the same reason as ever: a
+# geocoder may correct itself, a person typing one cannot.
+LOOKED_UP = ("official_url", "hours_note", "hours_source", "external_id",
+             "lat", "lng", "address", "open_time", "close_time", "hours_week")
+
+
+def refresh_evidence(candidate_id, **fields) -> None:
+    """Write what a fresh lookup found for one candidate.
+
+    Separate from `update` because the permissions differ: a reviewer may not
+    rewrite a citation, and a lookup may. Both raise on an unknown field rather
+    than dropping it silently.
+    """
+    unknown = set(fields) - set(LOOKED_UP)
+    if unknown:
+        raise ValueError(f"not a looked-up field: {', '.join(sorted(unknown))}")
+    if not fields:
+        return
+    with _lock:
+        rows = _read_all()
+        for row in rows:
+            if row.get("id") == candidate_id:
+                row.update({key: "" if value is None else value
+                            for key, value in fields.items()})
+                _write_all(rows)
+                return
+
+
 def set_status(candidate_id, status, decided_by=None) -> None:
     """Record a decision. Raises on an unknown status rather than writing it."""
     if status not in STATUSES:

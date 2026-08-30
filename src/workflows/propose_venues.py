@@ -302,6 +302,26 @@ _PAGE_TIME = re.compile(
     re.IGNORECASE)
 
 
+_CLOCK = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+
+def _clock(value):
+    """A model's time as "HH:MM", or None if it is not one.
+
+    The prompt asks for 24-hour HH:MM and a model gives "8:30" about as often
+    as "08:30". Without this the grounding check compared "8:30" against a page
+    scanner that emits "08:30" and refused a correct answer: measured on
+    Maplewood Farm's real page, which is exactly the venue this was built for.
+    """
+    found = _CLOCK.match((value or "").strip())
+    if not found:
+        return None
+    hour, minute = int(found.group(1)), int(found.group(2))
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 def page_times(text) -> set:
     """Every clock time the page states, normalised to 24-hour "HH:MM".
 
@@ -489,7 +509,7 @@ def hours_from_page(name, page, model=CURATOR_MODEL):
     for entry in answer.get("days") or []:
         if not isinstance(entry, dict) or entry.get("day") not in _DAY_ENUM:
             return {}, note
-        opens, closes = entry.get("open"), entry.get("close")
+        opens, closes = _clock(entry.get("open")), _clock(entry.get("close"))
         if opens not in on_page or closes not in on_page:
             # The whole answer goes, not just this day: a model inventing one
             # time is not one to trust about the rest.
