@@ -50,7 +50,16 @@ def _answer(days=(), closed=(), note=None, states=True):
 
 
 def _read(page, answer, name="A Venue"):
-    """hours_from_page with the model's reply stubbed. Never touches network."""
+    """(week, note) from hours_from_page, with the model's reply stubbed.
+
+    Drops the third value, `missing`, which the tests that care about it read
+    from `hours_from_page` directly. Never touches the network.
+    """
+    week, note, _missing = _read_full(page, answer, name)
+    return week, note
+
+
+def _read_full(page, answer, name="A Venue"):
     with mock.patch.object(pv, "call_openrouter",
                            return_value=(json.dumps(answer), {}, 0.1)):
         return pv.hours_from_page(name, page)
@@ -112,7 +121,8 @@ class WeekdayWeekendHoursTest(unittest.TestCase):
         week = {d: ("10:00", "16:00") for d in (MO, TU, WE, TH)}
         week.update({d: ("08:30", "16:00") for d in (FR, SA, SU)})
         with mock.patch.object(webpage, "fetch_text", return_value=MAPLEWOOD_TEXT), \
-             mock.patch.object(pv, "hours_from_page", return_value=(week, None)):
+             mock.patch.object(pv, "hours_from_page",
+                               return_value=(week, None, set())):
             pv._read_published_hours(proposal)
         self.assertEqual(proposal["hours_week"],
                          "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
@@ -120,6 +130,41 @@ class WeekdayWeekendHoursTest(unittest.TestCase):
         # all" while carrying a full timetable.
         self.assertEqual(proposal["open_time"], "10:00")
         self.assertIn("maplewoodfarm.bc.ca", proposal["hours_source"])
+
+    def test_a_partial_week_is_not_serialised_as_a_closure(self):
+        # "Mo-Fr 09:00-17:00; Sa-Su off" reads back as a complete week with the
+        # weekend shut, which is the inference this whole path refuses. A day
+        # never established has to be left out entirely.
+        part = {d: ("09:00", "17:00") for d in range(5)}
+        written = osm.to_week_string(part, closed=set())
+        self.assertEqual(written, "Mo-Fr 09:00-17:00")
+        self.assertIsNone(osm.per_day_hours(written))       # still incomplete
+        self.assertEqual(sorted(osm.partial_week(written)[1]), [0, 1, 2, 3, 4])
+
+    def test_a_week_with_a_closure_is_not_uniform(self):
+        # "Tuesday to Sunday 10am-4pm, closed Mondays" is six identical days.
+        # Collapsing it to one pair reopens the venue on the day it shuts, and
+        # this rule had been written three times with two of them wrong.
+        shut_monday = {d: ("10:00", "17:00") for d in range(1, 7)}
+        self.assertFalse(osm.is_uniform_week(shut_monday))
+        self.assertTrue(osm.is_uniform_week({d: ("10:00", "17:00")
+                                             for d in range(7)}))
+
+    def test_a_closure_survives_the_whole_round_trip(self):
+        proposal = {"name": "A Centre", "official_url": "https://example.org/"}
+        shut_monday = {d: ("10:00", "16:00") for d in range(1, 7)}
+        with mock.patch.object(webpage, "fetch_text", return_value="10am-4pm"), \
+             mock.patch.object(pv, "hours_from_page",
+                               return_value=(shut_monday, None, set())):
+            pv._read_published_hours(proposal)
+        self.assertEqual(proposal["hours_week"], "Mo off; Tu-Su 10:00-16:00")
+        self.assertEqual(osm.per_day_hours(proposal["hours_week"]), shut_monday)
+
+    def test_a_known_closure_is_still_written(self):
+        shut_monday = {d: ("10:00", "17:00") for d in range(1, 7)}
+        written = osm.to_week_string(shut_monday)
+        self.assertEqual(written, "Mo off; Tu-Su 10:00-17:00")
+        self.assertEqual(osm.per_day_hours(written), shut_monday)
 
     def test_the_stored_week_round_trips_through_the_shared_parser(self):
         # One notation for both sources: what is written here is what
@@ -152,7 +197,8 @@ class IndividualDayHoursTest(unittest.TestCase):
         week = {d: ("10:00", "17:00") for d in range(7)}
         with mock.patch.object(webpage, "fetch_text",
                                return_value="10:00am-5:00pm daily"), \
-             mock.patch.object(pv, "hours_from_page", return_value=(week, None)):
+             mock.patch.object(pv, "hours_from_page",
+                               return_value=(week, None, set())):
             pv._read_published_hours(proposal)
         self.assertEqual((proposal["open_time"], proposal["close_time"]),
                          ("10:00", "17:00"))
@@ -166,12 +212,14 @@ class HoursThatCannotBeFoundTest(unittest.TestCase):
         self.assertEqual(week, {})
         self.assertIsNone(note)
 
-    def test_a_partial_week_is_refused_rather_than_completed(self):
-        # Monday to Friday and nothing about the weekend. Filling the gap would
-        # claim hours nobody published.
-        week, _ = _read("Open weekdays 09:00-17:00", _answer(
+    def test_a_partial_week_is_returned_but_names_what_is_missing(self):
+        # The days that were read are worth showing a reviewer. Filling the gap
+        # is what would claim hours nobody published, so `missing` says which
+        # days still need a person and approval is refused until they have one.
+        week, _, missing = _read_full("Open weekdays 09:00-17:00", _answer(
             days=[(d, "09:00", "17:00") for d in (MO, TU, WE, TH, FR)]))
-        self.assertEqual(week, {})
+        self.assertEqual(sorted(week), [MO, TU, WE, TH, FR])
+        self.assertEqual(sorted(missing), [SA, SU])
 
     def test_an_unreachable_page_leaves_the_proposal_untouched(self):
         proposal = {"name": "A Farm", "official_url": "https://example.org/"}
@@ -193,7 +241,7 @@ class HoursThatCannotBeFoundTest(unittest.TestCase):
         proposal = {"name": "A Farm", "official_url": "https://example.org/"}
         with mock.patch.object(webpage, "fetch_text", return_value="text"), \
              mock.patch.object(pv, "hours_from_page",
-                               return_value=({}, "Closed in January")):
+                               return_value=({}, "Closed in January", set(range(7)))):
             pv._read_published_hours(proposal)
         self.assertIn("Closed in January", proposal["hours_note"])
         self.assertIn("unconfirmed", proposal["hours_note"])
@@ -239,14 +287,14 @@ class TheModelCannotInventHoursTest(unittest.TestCase):
     def test_an_unparseable_reply_leaves_hours_open(self):
         with mock.patch.object(pv, "call_openrouter",
                                return_value=("not json", {}, 0.1)):
-            week, note = pv.hours_from_page("A Farm", MAPLEWOOD_TEXT)
+            week, note, _ = pv.hours_from_page("A Farm", MAPLEWOOD_TEXT)
         self.assertEqual(week, {})
         self.assertIsNone(note)
 
     def test_a_transport_failure_leaves_hours_open(self):
         with mock.patch.object(pv, "call_openrouter",
                                side_effect=requests.exceptions.Timeout("slow")):
-            week, _ = pv.hours_from_page("A Farm", MAPLEWOOD_TEXT)
+            week, _, _ = pv.hours_from_page("A Farm", MAPLEWOOD_TEXT)
         self.assertEqual(week, {})
 
 

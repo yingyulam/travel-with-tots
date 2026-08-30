@@ -516,7 +516,13 @@ def _reviewable_candidates(limit=None):
         # The prefilled week, as the per-day form wants it. Parsed here rather
         # than in the template so a string that no longer reads as a week shows
         # as no week, instead of half a timetable.
-        row["week"] = osm.per_day_hours(row.get("hours_week") or "")
+        # Partial on purpose: a half-read week prefills the form so the
+        # reviewer sees which days were found, while `_cannot_approve` stops
+        # it being approved until the rest are filled in.
+        row["week"], accounted = osm.partial_week(row.get("hours_week") or "")
+        row["missing_days"] = ([osm.WEEKDAYS[d]
+                                for d in sorted(set(range(7)) - accounted)]
+                               if row["week"] else [])
         rows.append(row)
     return rows if limit is None else rows[:limit]
 
@@ -577,7 +583,9 @@ def venue_review_candidates():
             # arrived before a lookup existed. It keeps the row and its id, so
             # nothing is re-found and no rejection is recorded against a place
             # that was never turned down.
-            reproposed += _repropose_candidate({**row, **edits})
+            reproposed += _repropose_candidate(
+                {**row, **edits},
+                pasted=request.form.get(f"{row['id']}-hours_text", "").strip())
             continue
         if action == "reject":
             candidates.set_status(row["id"], candidates.REJECTED, decided_by=admin_id)
@@ -678,6 +686,14 @@ def _cannot_approve(row):
                          ("city", "city")):
         if not (row.get(field) or "").strip():
             return f"no {label}"
+    # A half-read week must not be approved. Blank days mean closed, so
+    # approving "Mo-Fr 09:00-17:00" would record the venue as shut at weekends
+    # on the strength of a page that simply did not mention them.
+    week, accounted = osm.partial_week(row.get("hours_week") or "")
+    if week and len(accounted) != 7:
+        short = ", ".join(osm.WEEKDAYS[d] for d in sorted(set(range(7)) - accounted))
+        return f"hours still missing for {short}"
+
     for field, allowed in APPROVAL_ENUMS:
         if row[field].strip() not in allowed:
             return f"{field} {row[field].strip()!r} is not one we know"
@@ -741,7 +757,7 @@ def _approve_candidate(row, admin_id):
     candidates.set_status(row["id"], candidates.APPROVED, decided_by=admin_id)
 
 
-def _repropose_candidate(row) -> int:
+def _repropose_candidate(row, pasted="") -> int:
     """Run a candidate back through the agent's lookups, in place. Returns 1.
 
     The same work `propose_venues.enrich` does at the end of a batch, for one
@@ -755,22 +771,71 @@ def _repropose_candidate(row) -> int:
     candidate: a reviewer's correction to the name is not undone by looking the
     hours up again.
     """
-    # Looked up as if nothing were known, or `enrich` skips the page read for
-    # any row that already has hours: the reviewer pressing this is asking for
-    # a fresh look precisely because what is there is stale or incomplete.
+    # Automatic first, manual second. Text the reviewer pasted wins, because
+    # they only paste when the fetch could not do it: a page too big to read, a
+    # site behind a script, hours in an image's caption. The extraction is the
+    # same either way -- `hours_from_page` never cared where its text came
+    # from -- so a paste needs no second code path and gets the same guards.
     proposal = dict(row, open_time="", close_time="", hours_week="")
-    propose_venues.enrich([proposal])
+    if pasted:
+        _read_pasted_hours(proposal, pasted)
+    else:
+        # Looked up as if nothing were known, or `enrich` skips the page read
+        # for any row that already has hours, and this exists to refresh them.
+        propose_venues.enrich([proposal])
 
-    # Only what the lookup actually produced. A refresh may improve a row and
-    # must never degrade one: a site that is down today would otherwise erase
-    # hours read from it last week.
-    fields = {field: proposal[field] for field in
-              ("open_time", "close_time", "hours_week", "hours_note",
-               "official_url", "hours_source")
-              if proposal.get(field) and proposal[field] != row.get(field)}
+    # A refresh may improve a row and must never degrade one: a site that is
+    # down today must not erase hours read from it last week. So a lookup that
+    # produced no hours writes none. One that did writes all of them, blanks
+    # included, or a week that has since become uniform could not clear the
+    # per-day string it replaces.
+    read_hours = bool(proposal.get("open_time"))
+    hour_fields = ("open_time", "close_time", "hours_week", "hours_note",
+                   "hours_source") if read_hours else ()
+    fields = {field: proposal.get(field) or ""
+              for field in (*hour_fields, "official_url")
+              if (proposal.get(field) or "") != (row.get(field) or "")
+              and (field in hour_fields or proposal.get(field))}
     if fields:
         candidates.refresh_evidence(row["id"], **fields)
     return 1
+
+
+def _read_pasted_hours(proposal, pasted) -> None:
+    """Fill a proposal's hours from text a reviewer pasted, in place.
+
+    The manual half of the fallback, and deliberately the same three guards the
+    automatic half gets: every time must appear in the pasted text, seasonal
+    detail goes to `hours_note`, and a day the text never covered is left for
+    the reviewer rather than guessed. Pasting does not make a claim more true.
+
+    The text itself is not stored. It is input, not evidence: the official URL
+    is the provenance, and the reviewer's own confirmation is what makes the
+    hours trusted.
+    """
+    week, note, missing = propose_venues.hours_from_page(
+        proposal.get("name") or "this venue", pasted)
+    if note:
+        proposal["hours_note"] = f"{note} (from what you pasted, unconfirmed)"
+    if not week:
+        flash("Couldn't read opening hours from that text. "
+              "Paste the part of the page that lists the days and times.")
+        return
+    pairs = set(week.values())
+    if osm.is_uniform_week(week):
+        proposal["open_time"], proposal["close_time"] = pairs.pop()
+    else:
+        proposal["hours_week"] = osm.to_week_string(
+            week, closed=set(range(7)) - missing - set(week))
+        usual = max(pairs, key=list(week.values()).count)
+        proposal["open_time"], proposal["close_time"] = usual
+    where = propose_venues.domain(proposal.get("official_url")) or "the site"
+    proposal["hours_source"] = f"pasted from {where}"
+    if missing:
+        short = ", ".join(osm.WEEKDAYS[d] for d in sorted(missing))
+        flash(f"Read {len(week)} day{'s' if len(week) != 1 else ''} for "
+              f"{proposal.get('name')}. Still missing: {short}. Fill those in "
+              "below, or clear the week if the venue is not open then.")
 
 
 def _hour_pair(form, open_field="open_time", close_field="close_time"):
@@ -836,9 +901,7 @@ def _week_worth_storing(week):
     and approval got it wrong: a reviewer filling in a uniform week on a
     candidate had seven identical rows written for it.
     """
-    if len(week) == 7 and len(set(week.values())) == 1:
-        return {}
-    return week
+    return {} if osm.is_uniform_week(week) else week
 
 
 def _store_week(venue_id, week, hours_note=None):

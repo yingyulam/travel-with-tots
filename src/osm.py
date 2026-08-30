@@ -236,8 +236,33 @@ def per_day_hours(osm_hours):
         return None
     if osm_hours.strip() == "24/7":
         return {day: ("00:00", "23:59") for day in range(7)}
+    table, accounted = partial_week(osm_hours)
+    if table is None:
+        return None
+    # A partial week is refused rather than read as "closed the rest". A source
+    # omitting Sunday usually means nobody wrote it down, and guessing shut
+    # would remove a venue from every Sunday plan on the strength of a gap. An
+    # explicit "off" is different: somebody did write it down.
+    return table if len(accounted) == 7 else None
+
+
+def partial_week(osm_hours):
+    """({weekday: (open, close)}, accounted_days), or (None, set()).
+
+    The same reading as `per_day_hours` without the completeness check, so a
+    caller that wants to *show* a half-read week can, while the one that stores
+    it still cannot. That split is the whole point: five days read off a page
+    is useful to put in front of a reviewer and dangerous to save, because a
+    weekday with no row means closed.
+    """
+    if not osm_hours or _SEASONAL.search(osm_hours):
+        return None, set()
+    if osm_hours.strip() == "24/7":
+        return {day: ("00:00", "23:59") for day in range(7)}, set(range(7))
     table, accounted = {}, set()
     for clause in (c.strip() for c in osm_hours.split(";")):
+        if not clause:
+            continue
         if not clause:
             continue
         shut = _CLOSED_CLAUSE.match(clause)
@@ -248,16 +273,12 @@ def per_day_hours(osm_hours):
             continue
         found = _CLAUSE.match(clause)
         if not found:
-            return None
+            return None, set()
         pair = (_pad(found.group("open")), _pad(found.group("close")))
         for day in _days_in(found.group("days")):
             table[day] = pair
             accounted.add(day)
-    # A partial week is refused rather than read as "closed the rest". A source
-    # omitting Sunday usually means nobody wrote it down, and guessing shut
-    # would remove a venue from every Sunday plan on the strength of a gap. An
-    # explicit "off" is different: somebody did write it down.
-    return table if len(accounted) == 7 else None
+    return table, accounted
 
 
 # A bare "HH:MM-HH:MM". Enough to tell whether our single pair appears in what
@@ -271,27 +292,62 @@ _DAY_SPECIFIC = re.compile(
     r"\b(Mo|Tu|We|Th|Fr|Sa|Su|PH|SH)\b|\boff\b|\bclosed\b", re.IGNORECASE)
 
 
-def to_week_string(table) -> str:
+def is_uniform_week(table) -> bool:
+    """Whether a single open/close pair says everything this week says.
+
+    Every day present *and* identical. Six identical days is a **closure**, not
+    a uniform week: collapsing it would reopen the venue on the day it shuts.
+
+    Here rather than in either caller because the rule had been written three
+    times, and two of the copies were wrong. A paste reading "Tuesday to Sunday
+    10am-4pm, closed Mondays" collapsed to 10:00-16:00 every day.
+    """
+    return len(table) == 7 and len(set(table.values())) == 1
+
+
+def to_week_string(table, closed=None) -> str:
     """{weekday: (open, close)} back into the syntax per_day_hours reads.
 
     The round trip is the point: a week read off a venue's own website is
     stored in the same form OSM would have given it, so one parser serves both
     sources and a reviewer sees one notation. Consecutive days that agree are
-    grouped, and a day absent from the table is written "off", since that is
-    the difference between a closure and a gap.
+    grouped.
+
+    `closed` is the days known to be shut, written "off". A day in neither
+    `table` nor `closed` is **left out entirely**, because it was never
+    established either way and the reader has to be able to tell that from a
+    closure. Without this a week read as Monday to Friday serialised as
+    "Mo-Fr 09:00-17:00; Sa-Su off", which reads back as a complete week with
+    the weekend shut: the exact inference the whole path refuses to make.
+
+    Defaults to treating every unlisted day as closed, which is what the review
+    form means by a blank day and what a complete week needs.
     """
     if not table:
         return ""
-    runs, start = [], 0
-    for day in range(1, 8):
-        if day == 7 or table.get(day) != table.get(day - 1):
-            runs.append((start, day - 1, table.get(start)))
-            start = day
-    parts = []
-    for first, last, pair in runs:
+    known = set(table) | (set(range(7)) if closed is None else set(closed))
+    parts, run = [], []
+
+    def flush():
+        if not run:
+            return
+        first, last = run[0], run[-1]
         days = (WEEKDAYS[first] if first == last
                 else f"{WEEKDAYS[first]}-{WEEKDAYS[last]}")
+        pair = table.get(first)
         parts.append(f"{days} {pair[0]}-{pair[1]}" if pair else f"{days} off")
+
+    for day in range(7):
+        if day not in known:
+            flush()
+            run = []
+            continue
+        if run and table.get(day) == table.get(run[-1]) and day == run[-1] + 1:
+            run.append(day)
+        else:
+            flush()
+            run = [day]
+    flush()
     return "; ".join(parts)
 
 

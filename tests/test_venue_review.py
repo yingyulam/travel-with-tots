@@ -522,6 +522,82 @@ class CandidateBatchTest(_ReviewTest):
             self._post("repropose", [row["id"]])
         self.assertEqual(candidates.load()[0]["open_time"], "10:00")
 
+    def test_pasted_text_is_read_instead_of_fetching(self):
+        # Automatic first, manual second: a paste means the fetch could not do
+        # it, so the paste wins and the site is not touched.
+        row = self._propose()
+        with mock.patch.object(self.app_module.propose_venues, "enrich") as fetched, \
+             mock.patch.object(self.app_module.propose_venues, "hours_from_page",
+                               return_value=({d: ("09:30", "18:00")
+                                              for d in range(7)}, None, set())):
+            self._post("repropose", [row["id"]],
+                       **{f"{row['id']}-hours_text": "Open 9:30am to 6pm daily"})
+        fetched.assert_not_called()
+        self.assertEqual(candidates.load()[0]["open_time"], "09:30")
+
+    def test_a_paste_records_where_it_came_from(self):
+        row = self._propose()
+        with mock.patch.object(self.app_module.propose_venues, "hours_from_page",
+                               return_value=({d: ("09:00", "17:00")
+                                              for d in range(7)}, None, set())):
+            self._post("repropose", [row["id"]],
+                       **{f"{row['id']}-hours_text": "9am to 5pm"})
+        self.assertIn("pasted from", candidates.load()[0]["hours_source"])
+
+    def test_a_partial_paste_keeps_what_it_read_and_names_the_rest(self):
+        row = self._propose()
+        with mock.patch.object(self.app_module.propose_venues, "hours_from_page",
+                               return_value=({d: ("09:00", "17:00")
+                                              for d in range(5)}, None, {5, 6})):
+            self._post("repropose", [row["id"]],
+                       **{f"{row['id']}-hours_text": "Weekdays 9-5"})
+        self.assertEqual(candidates.load()[0]["hours_week"], "Mo-Fr 09:00-17:00")
+
+    def test_a_partial_week_cannot_be_approved(self):
+        # Blank days mean closed, so approving a half-read week would record
+        # the venue as shut at weekends on the strength of silence.
+        row = self._propose()
+        candidates.update(row["id"], hours_week="Mo-Fr 09:00-17:00")
+        self._post("approve", [row["id"]], **self._required(row))
+        self.assertIsNone(self._venue("Bloedel Conservatory"))
+        self.assertEqual(candidates.load()[0]["status"], candidates.PENDING)
+
+    def test_completing_the_week_lets_it_be_approved(self):
+        row = self._propose()
+        candidates.update(row["id"], hours_week="Mo-Fr 09:00-17:00")
+        full = {f"{row['id']}-day{d}_open": "09:00" for d in range(7)}
+        full.update({f"{row['id']}-day{d}_close": "17:00" for d in range(7)})
+        self._post("approve", [row["id"]], **{**self._required(row), **full})
+        self.assertIsNotNone(self._venue("Bloedel Conservatory"))
+
+    def test_the_card_names_the_days_still_missing(self):
+        row = self._propose()
+        candidates.update(row["id"], hours_week="Mo-Fr 09:00-17:00")
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn("Only part of the week was read", body)
+        self.assertIn("Sa, Su", body)
+
+    def test_every_candidate_offers_a_paste_box(self):
+        row = self._propose()
+        body = self.client.get("/venues/review").get_data(as_text=True)
+        self.assertIn(f'name="{row["id"]}-hours_text"', body)
+        self.assertIn("paste it here exactly", body)
+
+    def test_a_refresh_can_clear_a_week_that_became_uniform(self):
+        # "Only non-empty changes" protected a row from a failed lookup, and
+        # also stopped a successful one clearing the per-day string it replaces.
+        row = self._propose()
+        candidates.update(row["id"], hours_week="Mo-Fr 09:00-17:00; Sa-Su off")
+        def uniform(proposals):
+            proposals[0]["open_time"] = "10:00"
+            proposals[0]["close_time"] = "17:00"
+        with mock.patch.object(self.app_module.propose_venues, "enrich",
+                               side_effect=uniform):
+            self._post("repropose", [row["id"]])
+        after = candidates.load()[0]
+        self.assertEqual(after["hours_week"], "")
+        self.assertEqual(after["open_time"], "10:00")
+
     def test_reproposing_an_unticked_row_leaves_it_alone(self):
         row = self._propose()
         with mock.patch.object(self.app_module.propose_venues, "enrich") as looked:

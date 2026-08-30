@@ -150,8 +150,32 @@
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>,
           unconfirmed.</p>
       {% endif %}
+      {% if c.missing_days %}
+        <p class="meta"><strong>Only part of the week was read.</strong>
+          Still missing: {{ c.missing_days|join(', ') }}. Fill those days in
+          below, or clear the week. A blank day means the venue is closed then,
+          so it cannot be approved until every day has an answer.</p>
+      {% endif %}
       {{ hour_fields(weekdays, (c.open_time, c.close_time), c.week,
                      c.hours_note, prefix=c.id ~ '-') }}
+
+      {# The manual half of the fallback. Automatic reading is tried first; this
+         is for the page that is too big, behind a script, or puts its hours in
+         an image. Nothing about the text has to be tidy. #}
+      <details class="per-day">
+        <summary>Paste the hours from the site instead</summary>
+        <p class="field-hint">
+          Open
+          {%- if c.official_link %}
+            <a href="{{ c.official_link }}" target="_blank" rel="noopener noreferrer">{{ c.official_domain }}</a>
+          {%- else %} the venue's site{% endif %},
+          copy whatever it says about opening times, and paste it here exactly
+          as it appears. Any wording or layout is fine. Then tick this venue and
+          press <em>Look checked up again</em>.
+        </p>
+        <textarea name="{{ c.id }}-hours_text" rows="4"
+                  placeholder="e.g. Monday to Thursday 10:00am - 4:00pm&#10;Friday, Saturday &amp; Sunday 8.30am until 4pm&#10;Closed Christmas Day"></textarea>
+      </details>
 
 
       {{ flags(c.id, c, conditional_flags) }}

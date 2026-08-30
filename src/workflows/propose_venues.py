@@ -484,9 +484,11 @@ def hours_from_page(name, page, model=CURATOR_MODEL):
     2. Every time has to appear on the page (`page_times`). This is the
        anti-invention guard, and it is arithmetic rather than trust: the same
        primitive `_grounded` uses on a venue name.
-    3. All seven days must be accounted for, opened or explicitly shut. A page
-       giving Monday to Friday and nothing about the weekend is a gap, and
-       filling it would claim hours nobody published.
+    Returns (week, note, missing), where `missing` is the weekday numbers the
+    text never covered. A partial week is **returned rather than discarded**:
+    five days read off a page is worth putting in front of a reviewer, and the
+    caller decides whether it may be stored. What is never done is filling the
+    gap, because a weekday with no row means closed and nobody published that.
 
     The note survives a refused week. "Closed in January" is worth showing a
     reviewer even when the timetable itself is unusable.
@@ -498,23 +500,23 @@ def hours_from_page(name, page, model=CURATOR_MODEL):
         answer = parse_json_reply(reply)
     except (ValueError, requests.exceptions.RequestException, KeyError) as e:
         print(f"Hours reading skipped for {name}: {type(e).__name__}: {e}")
-        return {}, None
+        return {}, None, set(range(7))
 
     if not isinstance(answer, dict) or not answer.get("states_hours"):
-        return {}, None
+        return {}, None, set(range(7))
     note = (answer.get("note") or "").strip() or None
 
     on_page = page_times(page)
     table, accounted = {}, set()
     for entry in answer.get("days") or []:
         if not isinstance(entry, dict) or entry.get("day") not in _DAY_ENUM:
-            return {}, note
+            return {}, note, set(range(7))
         opens, closes = _clock(entry.get("open")), _clock(entry.get("close"))
         if opens not in on_page or closes not in on_page:
             # The whole answer goes, not just this day: a model inventing one
             # time is not one to trust about the rest.
             print(f"Refusing hours for {name}: {opens}-{closes} is not on the page")
-            return {}, note
+            return {}, note, set(range(7))
         index = _DAY_ENUM.index(entry["day"])
         table[index] = (opens, closes)
         accounted.add(index)
@@ -522,10 +524,11 @@ def hours_from_page(name, page, model=CURATOR_MODEL):
         if day in _DAY_ENUM:
             accounted.add(_DAY_ENUM.index(day))
 
-    if len(accounted) != 7:
-        print(f"Read {len(accounted)} of 7 days for {name}, leaving hours open")
-        return {}, note
-    return table, note
+    missing = set(range(7)) - accounted
+    if missing:
+        print(f"Read {len(accounted)} of 7 days for {name}; "
+              f"missing {', '.join(_DAY_ENUM[d] for d in sorted(missing))}")
+    return table, note, missing
 
 
 def _hours_from_osm(names) -> dict:
@@ -759,7 +762,7 @@ def _read_published_hours(proposal) -> None:
         print(f"Could not read {url}: {e}")
         return
 
-    week, note = hours_from_page(proposal["name"], page)
+    week, note, missing = hours_from_page(proposal["name"], page)
     if note and not proposal.get("hours_note"):
         # Kept even when the week was refused: "closed in January" is worth a
         # reviewer's attention whether or not the timetable was usable.
@@ -768,13 +771,18 @@ def _read_published_hours(proposal) -> None:
         return
 
     pairs = set(week.values())
-    if len(week) == 7 and len(pairs) == 1:
+    if osm.is_uniform_week(week):
         proposal["open_time"], proposal["close_time"] = pairs.pop()
     else:
-        proposal["hours_week"] = osm.to_week_string(week)
+        # A partial week is written too, so the reviewer's form opens showing
+        # the days that were read rather than blank. It cannot be approved
+        # while it is partial (see _cannot_approve): a weekday with no row
+        # means closed, and nobody published that.
+        proposal["hours_week"] = osm.to_week_string(
+            week, closed=set(range(7)) - missing - set(week))
         # The representative pair as well, so the venue does not land under
-        # "no hours at all" while carrying a full timetable. Nothing plans from
-        # it once the week exists; get_venues_missing_hours reads it.
+        # "no hours at all" while carrying a timetable. Nothing plans from it
+        # once a complete week exists; get_venues_missing_hours reads it.
         usual = max(pairs, key=list(week.values()).count)
         proposal["open_time"], proposal["close_time"] = usual
     proposal["hours_source"] = f"read from {domain(url)}"
