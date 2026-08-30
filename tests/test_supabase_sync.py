@@ -198,6 +198,31 @@ class WhenSupabaseIsNotReadyTest(_SyncTest):
         self.assertIn("parents", str(caught.exception))
         self.assertIn("SQL editor", str(caught.exception))
 
+    def test_an_rls_refusal_says_which_key_to_use(self):
+        # Hit for real: RLS on plus a publishable key refuses every insert with
+        # 42501. The publishable key is the browser one and RLS is exactly what
+        # restricts it, so the fix is the secret key, not a policy change.
+        class Locked(FakeSupabase):
+            def table(self, name):
+                table = super().table(name)
+                original = table.execute
+
+                def execute():
+                    if table._count:
+                        return original()
+                    raise RuntimeError(
+                        "{'message': 'new row violates row-level security "
+                        "policy for table \"%s\"', 'code': '42501'}" % name)
+                table.execute = execute
+                return table
+
+        with self.assertRaises(sync.SyncError) as caught:
+            sync.clone(Locked())
+        message = str(caught.exception)
+        self.assertIn("parents", message)
+        self.assertIn("secret key", message)
+        self.assertIn("never leaves the server", message)
+
     def test_missing_credentials_are_a_sentence_not_a_stack_trace(self):
         with mock.patch.dict(os.environ, {"SUPABASE_URL": "",
                                           "SUPABASE_API_KEY": ""}):

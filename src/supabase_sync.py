@@ -172,6 +172,16 @@ def _is_missing_table(error) -> bool:
     return "PGRST205" in text or "Could not find the table" in text
 
 
+# Postgres' "insufficient privilege". With row-level security on, which is what
+# the SQL editor recommends and what keeps a publishable key safe, an insert
+# through a publishable key is refused: that key is meant for browsers, and its
+# safety *is* RLS. A clone is a server-side admin job and wants a secret key,
+# which bypasses RLS.
+def _is_rls_refusal(error) -> bool:
+    text = str(error)
+    return "42501" in text or "row-level security" in text
+
+
 def _remote_count(client, table):
     """How many rows Supabase holds, for the before-and-after summary."""
     try:
@@ -210,10 +220,21 @@ def clone(client=None, tables=TABLES):
                             "could not be skipped.")
         before = _remote_count(client, table)
         for start in range(0, len(rows), CHUNK):
-            client.table(table).upsert(
-                rows[start:start + CHUNK],
-                on_conflict=",".join(keys),
-                ignore_duplicates=True).execute()
+            try:
+                client.table(table).upsert(
+                    rows[start:start + CHUNK],
+                    on_conflict=",".join(keys),
+                    ignore_duplicates=True).execute()
+            except Exception as e:                              # noqa: BLE001
+                if _is_rls_refusal(e):
+                    raise SyncError(
+                        f"Supabase refused the write to '{table}': row-level "
+                        "security is on and SUPABASE_API_KEY is a publishable "
+                        "key, which browsers use and RLS is meant to restrict. "
+                        "Put the project's secret key (sb_secret_..., or "
+                        "service_role) in .env instead. It bypasses RLS and "
+                        "never leaves the server.") from None
+                raise
         copied = max(_remote_count(client, table) - before, 0)
         summary[table] = {"local": len(rows), "copied": copied,
                           "skipped": len(rows) - copied}
