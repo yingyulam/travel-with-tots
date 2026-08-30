@@ -218,6 +218,22 @@ class WhichDatabaseServesTest(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def test_the_environment_can_pin_supabase_without_the_settings_file(self):
+        # How a deployment survives an ephemeral disk. data/data_source.json is
+        # generated and does not persist across a deploy, so without this the
+        # app would come back up reading a fresh empty SQLite file it had just
+        # seeded with demo rows, and say nothing about it.
+        sync.set_active_source(sync.LOCAL)
+        with mock.patch.object(sync, "db_url", lambda: "postgresql://somewhere"), \
+             mock.patch.dict(os.environ, {"DB_BACKEND": "supabase"}):
+            self.assertEqual(db._supabase_dsn(), "postgresql://somewhere")
+
+    def test_local_wins_over_a_pinned_supabase(self):
+        # Whichever way they disagree, the database that always works wins.
+        with self._choose(sync.SUPABASE, "postgresql://somewhere"), \
+             mock.patch.dict(os.environ, {"DB_BACKEND": "local"}):
+            self.assertIsNone(db._supabase_dsn())
+
     def test_the_environment_can_override_the_dropdown(self):
         # How the suite stays offline. Sixty-odd tests call a query function
         # without redirecting DB_PATH, so they read whatever is configured;

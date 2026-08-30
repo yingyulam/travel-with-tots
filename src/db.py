@@ -287,25 +287,31 @@ def connect_sqlite():
 def _supabase_dsn():
     """The Postgres connection string to serve from, or None to stay local.
 
-    Five conditions, cheapest first: DB_BACKEND does not force local, DB_PATH
-    names the real file, the dropdown says Supabase, a connection string is set,
-    and psycopg is installed. Anything missing means SQLite, which is the path
-    that always works.
+    Conditions, cheapest first: DB_BACKEND does not force local, DB_PATH names
+    the real file, Supabase is chosen (by DB_BACKEND or by the dropdown), a
+    connection string is set, and psycopg is installed. Anything missing means
+    SQLite, which is the path that always works.
 
-    DB_BACKEND=local is the one that overrides a person's own dropdown, and it
-    exists because the DB_PATH check is not enough on its own. Sixty-odd tests
-    call query functions without redirecting DB_PATH, so they read whatever
-    database is live: harmless when that was a local file, but with Supabase
-    selected they turn into network reads against the real project, which is
-    both slow and a suite that depends on someone else's uptime. `tests/` sets
-    it, so this holds however the suite is invoked.
+    **DB_BACKEND overrides the dropdown, in both directions**, and each
+    direction earns its keep:
+
+    * `local` is how the suite stays offline. Sixty-odd tests call a query
+      function without redirecting DB_PATH, so they read whatever database is
+      live: harmless when that could only be a local file, but with Supabase
+      selected they become network reads against the real project. `tests/`
+      sets it, so this holds however the suite is invoked.
+    * `supabase` is how a deployment pins the backend. The dropdown is stored
+      in `data/data_source.json`, and a host with an ephemeral disk loses that
+      file on every deploy: the app would come back up quietly reading a fresh,
+      empty SQLite database it had just seeded with demo rows.
     """
-    if os.environ.get("DB_BACKEND", "").strip().lower() == "local":
+    from . import supabase_sync          # imports db, so it cannot be top-level
+    backend = os.environ.get("DB_BACKEND", "").strip().lower()
+    if backend == supabase_sync.LOCAL:
         return None
     if Path(DB_PATH) != _DEFAULT_DB_PATH:
         return None
-    from . import supabase_sync          # imports db, so it cannot be top-level
-    if supabase_sync.active_source() != supabase_sync.SUPABASE:
+    if supabase_sync.SUPABASE not in (backend, supabase_sync.active_source()):
         return None
     return supabase_sync.db_url() or None
 

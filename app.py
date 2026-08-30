@@ -141,7 +141,18 @@ except KeyError:
         "  python3 -c \"import secrets; print('SECRET_KEY=' + secrets.token_hex(32))\" >> .env"
     ) from None
 
+# Over HTTPS the session cookie should never be sent in clear, and a deployment
+# is HTTPS-only while local development is not. Off by default so `flask run` on
+# http://localhost still logs you in; render.yaml turns it on.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get(
+        "SESSION_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes"),
+)
+
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
+# A no-op when the data source is Supabase: the tables are already there.
 init_db()
 
 # Chunk + embed the knowledge base in the background; the chatbot widget

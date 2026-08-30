@@ -1,11 +1,22 @@
 Flask>=3.0
+Werkzeug>=3.0
+MarkupSafe>=2.1
 requests>=2.31
 python-dotenv>=1.0
-sentence-transformers>=3.0
+gunicorn>=23.0
+
+# Retrieval for the chatbot. Embeddings run on ONNX Runtime, which chromadb
+# ships and depends on, so the model is the same all-MiniLM-L6-v2 as before
+# without PyTorch's 518MB. Pinned explicitly because rag.py imports it.
 chromadb>=0.5
+onnxruntime>=1.17
+
+# The LLM calls.
 langgraph>=0.2
+langchain-core>=0.3
 langchain-openai>=0.2
 openai>=1.0
+
 # Optional, and only for the Supabase data source on /settings: `supabase`
 # clones the local database up (REST), `psycopg` is what serves pages from it
 # (SQL). The app runs on local SQLite without either.

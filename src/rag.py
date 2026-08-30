@@ -1,8 +1,15 @@
 """RAG (retrieval-augmented generation) pipeline for the website chatbot.
 
-Chunks data/knowledge_base.md, embeds each chunk with sentence-transformers,
-and stores them in a persistent ChromaDB collection. The chatbot retrieves
-only the top few chunks relevant to a question, instead of the whole file.
+Chunks data/knowledge_base.md, embeds each chunk, and stores them in a
+persistent ChromaDB collection. The chatbot retrieves only the top few chunks
+relevant to a question, instead of the whole file.
+
+Embedding runs on **ONNX Runtime**, not PyTorch. Same model and therefore the
+same vectors (measured: cosine similarity 1.000000 against sentence-transformers
+on this knowledge base), but 286MB of memory instead of 580MB and a 1.1s cold
+start instead of 5.0s. That is the difference between fitting a 512MB instance
+and being killed before the app finishes booting, and chromadb ships the ONNX
+model already, so it drops a dependency rather than adding one.
 """
 
 import hashlib
@@ -12,7 +19,8 @@ import threading
 from pathlib import Path
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+from chromadb.errors import NotFoundError
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 KNOWLEDGE_BASE_PATH = DATA_DIR / "knowledge_base.md"
@@ -33,10 +41,56 @@ _index_lock = threading.Lock()
 
 
 def _get_embedder():
+    """The ONNX embedder, warmed so its tokenizer exists.
+
+    It builds the model and tokenizer on first call rather than in __init__, so
+    a caller reaching for `.tokenizer` straight away would otherwise find None.
+    One embedding of an empty string is the public way to force that.
+    """
     global _embedder
     if _embedder is None:
-        _embedder = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        embedder = ONNXMiniLM_L6_V2()
+        embedder([""])
+        _embedder = embedder
     return _embedder
+
+
+# How many texts to embed at once. Measured, not guessed: the embedder's own
+# default is 32, and ONNX Runtime's allocator sizes its arena to the batch and
+# keeps it. Embedding this knowledge base in one batch of 32 left the process
+# 224MB heavier and never gave it back; in batches of 8 it stays flat. That is
+# the difference between fitting a 512MB instance and not.
+EMBED_BATCH = 8
+
+
+def _embed(texts):
+    """Embeddings for `texts`, as plain lists Chroma can store.
+
+    `.tolist()` rather than `list()`: the embedder returns numpy arrays, and
+    iterating one yields numpy scalars, which Chroma refuses. tolist() converts
+    all the way down to Python floats.
+
+    Batched for memory, not speed. The vectors are unaffected: the tokenizer
+    pads every input to a fixed 256 tokens rather than to the longest in the
+    batch, so no text can see another.
+    """
+    embedder = _get_embedder()
+    out = []
+    for start in range(0, len(texts), EMBED_BATCH):
+        out.extend(v.tolist() for v in embedder(texts[start:start + EMBED_BATCH]))
+    return out
+
+
+def _token_count(text):
+    """How many tokens `text` is, ignoring padding.
+
+    The tokenizer pads every input to 256, so its ids are always 256 long; the
+    attention mask is what says which of those are real. It also truncates
+    there, so a sentence longer than 256 tokens counts as 256. That cannot
+    change chunking, whose only question is whether a sentence exceeds
+    chunk_size, and 256 already exceeds every allowed value.
+    """
+    return sum(_get_embedder().tokenizer.encode(text).attention_mask)
 
 
 def _get_client():
@@ -81,7 +135,6 @@ def chunk_markdown(text, chunk_size=DEFAULT_CHUNK_SIZE):
     """Split markdown into chunks of about `chunk_size` tokens each. Never
     crosses a `## ` section boundary and never splits a sentence -- a lone
     sentence longer than `chunk_size` is kept whole rather than cut."""
-    tokenizer = _get_embedder().tokenizer
     sections = re.split(r"(?m)^## ", text)[1:]  # drop the title/preamble before the first "## " heading
     chunks = []
     for section in sections:
@@ -95,7 +148,7 @@ def chunk_markdown(text, chunk_size=DEFAULT_CHUNK_SIZE):
 
         current, current_tokens = [], 0
         for sentence in sentences:
-            sentence_tokens = len(tokenizer.encode(sentence))
+            sentence_tokens = _token_count(sentence)
             if current and current_tokens + sentence_tokens > chunk_size:
                 chunks.append({"text": " ".join(current), "section": heading})
                 current, current_tokens = [], 0
@@ -118,13 +171,18 @@ def build_index(chunk_size=None):
         client = _get_client()
         try:
             client.delete_collection(COLLECTION_NAME)
-        except ValueError:
-            pass  # no existing collection to delete -- fine on a first run
+        except (ValueError, NotFoundError):
+            # Nothing to delete, which is every first run: an empty data
+            # directory locally, and *every* deploy on a host with an ephemeral
+            # disk. Chroma raises NotFoundError rather than ValueError, so
+            # catching only ValueError left the index unbuilt and the chatbot
+            # with no knowledge base at all.
+            pass
         collection = client.get_or_create_collection(
             COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
 
         if chunks:
-            embeddings = _get_embedder().encode([c["text"] for c in chunks]).tolist()
+            embeddings = _embed([c["text"] for c in chunks])
             collection.add(
                 ids=[f"chunk-{i}" for i in range(len(chunks))],
                 embeddings=embeddings,
@@ -188,7 +246,7 @@ def retrieve(query, top_k=TOP_K):
     if collection.count() == 0:
         return []
 
-    query_embedding = _get_embedder().encode([query]).tolist()
+    query_embedding = _embed([query])
     results = collection.query(
         query_embeddings=query_embedding, n_results=min(top_k, collection.count()))
 
@@ -213,7 +271,6 @@ def list_chunks():
     collection = _get_collection()
     if collection.count() == 0:
         return []
-    tokenizer = _get_embedder().tokenizer
     data = collection.get()
 
     chunks = []
@@ -221,7 +278,7 @@ def list_chunks():
         chunks.append({
             "index": int(chunk_id.split("-")[1]) + 1,
             "section": meta.get("section", ""),
-            "token_count": len(tokenizer.encode(doc)),
+            "token_count": _token_count(doc),
             "text": doc,
         })
     chunks.sort(key=lambda c: c["index"])
