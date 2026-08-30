@@ -23,8 +23,13 @@ this can be tested against a fake, which matters: the credentials are empty in
 import json
 import os
 from contextlib import closing
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from . import db
+
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 # Parents before children, venues before the rows that reference them. A copy
 # into a database with foreign keys fails on order, and Supabase's generated
@@ -82,12 +87,20 @@ class SyncError(Exception):
 
 
 def credentials():
-    """(url, key) from the environment, or raise.
+    """(url, key) from .env, or raise.
 
-    Read per call rather than at import: a key added to .env should work on the
-    next click rather than after a restart, which is the same reasoning
-    log_a_place uses for its key check.
+    Re-read per call, and that is the point rather than a detail: `load_dotenv`
+    fills os.environ once at import, so a key pasted into .env while the server
+    is running would not be seen until a restart. Swapping this key is exactly
+    what an admin does here, having been told by the previous error to swap it,
+    and being told to restart as well would be a poor answer.
+
+    `override=True` so the new value wins over the stale one already in
+    os.environ. A real environment variable set outside .env still wins when
+    there is no .env entry, which is the deployment case.
     """
+    if _ENV_PATH.exists():
+        load_dotenv(_ENV_PATH, override=True)
     url = os.environ.get("SUPABASE_URL", "").strip()
     key = os.environ.get("SUPABASE_API_KEY", "").strip()
     if not url or not key:

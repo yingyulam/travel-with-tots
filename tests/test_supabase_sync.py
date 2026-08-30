@@ -224,11 +224,29 @@ class WhenSupabaseIsNotReadyTest(_SyncTest):
         self.assertIn("never leaves the server", message)
 
     def test_missing_credentials_are_a_sentence_not_a_stack_trace(self):
-        with mock.patch.dict(os.environ, {"SUPABASE_URL": "",
+        # _ENV_PATH is pointed away from the real .env as well as the
+        # environment being emptied: credentials() re-reads that file on every
+        # call, so the developer's own keys would otherwise satisfy this.
+        missing = pathlib.Path(self._tmp.name) / "no.env"
+        with mock.patch.object(sync, "_ENV_PATH", missing), \
+             mock.patch.dict(os.environ, {"SUPABASE_URL": "",
                                           "SUPABASE_API_KEY": ""}):
             with self.assertRaises(sync.SyncError) as caught:
                 sync.credentials()
         self.assertIn(".env", str(caught.exception))
+
+    def test_a_key_swapped_while_running_is_picked_up(self):
+        # load_dotenv fills os.environ once at import, so without re-reading,
+        # a key pasted into .env would need a restart. Swapping the key is
+        # exactly what the RLS error above tells an admin to do.
+        env = pathlib.Path(self._tmp.name) / ".env"
+        env.write_text("SUPABASE_URL=https://one.example\n"
+                       "SUPABASE_API_KEY=sb_publishable_first\n")
+        with mock.patch.object(sync, "_ENV_PATH", env):
+            self.assertEqual(sync.credentials()[1], "sb_publishable_first")
+            env.write_text("SUPABASE_URL=https://one.example\n"
+                           "SUPABASE_API_KEY=sb_secret_second\n")
+            self.assertEqual(sync.credentials()[1], "sb_secret_second")
 
     def test_an_unrelated_failure_is_not_disguised_as_a_missing_table(self):
         class Broken(FakeSupabase):
