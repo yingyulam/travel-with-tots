@@ -1297,6 +1297,11 @@ def settings():
         "settings.html", knowledge_base=knowledge_base, prompt=prompt,
         data_source=supabase_sync.active_source(),
         data_sources=supabase_sync.SOURCES,
+        # What is actually serving, which is not always what the dropdown says:
+        # the dropdown lives in a file, and a host with an ephemeral disk loses
+        # it on every deploy while DB_BACKEND keeps pinning the real backend.
+        effective_source=db.effective_backend(),
+        pinned_backend=db.backend_pinned_by_env(),
         supabase_configured=_supabase_configured(),
         supabase_db_url_set=bool(supabase_sync.db_url()),
         backend_error=db.LAST_BACKEND_ERROR,

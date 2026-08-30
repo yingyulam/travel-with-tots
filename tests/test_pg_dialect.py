@@ -218,6 +218,27 @@ class WhichDatabaseServesTest(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def test_the_page_reports_what_is_serving_not_what_is_stored(self):
+        # The bug this exists to stop: on a host with an ephemeral disk the
+        # dropdown's file is gone after every deploy, so it read "local" while
+        # DB_BACKEND pinned Supabase and Supabase was serving every page. An
+        # admin was told the wrong database was live by the one page whose job
+        # is answering that.
+        sync.set_active_source(sync.LOCAL)
+        with mock.patch.object(sync, "db_url", lambda: "postgresql://somewhere"), \
+             mock.patch.dict(os.environ, {"DB_BACKEND": "supabase"}):
+            self.assertEqual(sync.active_source(), sync.LOCAL)      # the file
+            self.assertEqual(db.effective_backend(), sync.SUPABASE)  # the truth
+            self.assertEqual(db.backend_pinned_by_env(), sync.SUPABASE)
+
+    def test_nothing_is_pinned_when_the_variable_is_unset(self):
+        with mock.patch.dict(os.environ, {"DB_BACKEND": ""}):
+            self.assertIsNone(db.backend_pinned_by_env())
+
+    def test_an_unrecognised_pin_is_not_reported_as_one(self):
+        with mock.patch.dict(os.environ, {"DB_BACKEND": "mysql"}):
+            self.assertIsNone(db.backend_pinned_by_env())
+
     def test_the_environment_can_pin_supabase_without_the_settings_file(self):
         # How a deployment survives an ephemeral disk. data/data_source.json is
         # generated and does not persist across a deploy, so without this the

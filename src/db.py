@@ -316,6 +316,31 @@ def _supabase_dsn():
     return supabase_sync.db_url() or None
 
 
+def effective_backend():
+    """Which database is actually serving: "supabase" or "local".
+
+    Not the same question as `supabase_sync.active_source()`, which reads the
+    dropdown's file. The two disagree whenever DB_BACKEND is set, and on a host
+    with an ephemeral disk that is the normal case: the file is gone after every
+    deploy, so the dropdown reads "local" while the environment pins Supabase.
+    /settings asks this instead, or it reports the setting rather than the truth.
+    """
+    from . import supabase_sync
+    return (supabase_sync.SUPABASE if _supabase_dsn() is not None
+            else supabase_sync.LOCAL)
+
+
+def backend_pinned_by_env():
+    """The backend DB_BACKEND forces, or None when it is not set.
+
+    What lets /settings say the dropdown has no effect, rather than showing a
+    control that silently does nothing.
+    """
+    from . import supabase_sync
+    backend = os.environ.get("DB_BACKEND", "").strip().lower()
+    return backend if backend in supabase_sync.SOURCES else None
+
+
 def connect():
     """A connection to whichever database the admin selected.
 

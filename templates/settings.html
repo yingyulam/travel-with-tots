@@ -6,37 +6,51 @@
 {% block content %}
 <section class="card">
   <h2>Data source</h2>
-  <p class="meta">Where the app keeps its data. Local SQLite is the default and
-    the fallback.</p>
+
+  {# The truth first, before the control. This page's whole job is saying which
+     database is live, and the dropdown below cannot answer that on its own: it
+     is stored in a file, and a deployment loses that file on every deploy while
+     DB_BACKEND keeps pinning the real backend. Reading the setting back would
+     have reported "Local" to an admin whose pages were served by Supabase. #}
+  <p class="meta">Serving every page right now:
+    <strong>{{ 'Supabase' if effective_source == 'supabase' else 'Local SQLite' }}</strong>.
+    Local SQLite is the default and the fallback.</p>
+
+  {% if backend_error %}
+    <p class="meta"><strong>Supabase was selected but could not be reached, so
+      this page is showing local data.</strong> {{ backend_error }}</p>
+  {% elif effective_source == 'supabase' %}
+    <p class="meta">Anything saved now stays in Supabase: the two databases
+      diverge from here, and cloning again will not bring these rows back
+      down.</p>
+  {% endif %}
+
+  {% if pinned_backend %}
+    <p class="meta"><strong>Pinned by the environment.</strong>
+      <code>DB_BACKEND={{ pinned_backend }}</code> is set, so it decides, and
+      the dropdown below does nothing until that is removed. That is deliberate
+      on a host with an ephemeral disk, where this page's own setting cannot
+      survive a deploy.</p>
+  {% endif %}
 
   <form method="post" action="{{ url_for('save_data_source') }}" class="section-form">
     <label class="field field-full">
       <span>Read and write from</span>
-      <select name="source">
+      <select name="source" {{ 'disabled' if pinned_backend }}>
         {% for source in data_sources %}
         <option value="{{ source }}" {{ 'selected' if source == data_source }}>
           {{ 'Local (SQLite)' if source == 'local' else 'Supabase' }}</option>
         {% endfor %}
       </select>
     </label>
-    <button type="submit" class="cta-secondary">Save data source</button>
+    <button type="submit" class="cta-secondary"
+            {{ 'disabled' if pinned_backend }}>Save data source</button>
   </form>
 
   {% if not supabase_db_url_set %}
-    <p class="meta"><strong>SUPABASE_DB_URL is not set in .env,</strong> so
-      Supabase cannot serve pages yet. It is the connection string under
-      Connect in your Supabase project.</p>
-  {% endif %}
-
-  {# A fallback the admin cannot see is worse than either outcome: they would
-     be looking at local data believing it was Supabase. #}
-  {% if backend_error %}
-    <p class="meta"><strong>Supabase is selected but was not reachable, so this
-      page is showing local data.</strong> {{ backend_error }}</p>
-  {% elif data_source == 'supabase' %}
-    <p class="meta"><strong>Supabase is serving every page.</strong> Anything
-      saved now stays there: the two databases diverge from here, and cloning
-      again will not bring these rows back down.</p>
+    <p class="meta"><strong>SUPABASE_DB_URL is not set,</strong> so Supabase
+      cannot serve pages yet. It is the connection string under Connect in your
+      Supabase project.</p>
   {% endif %}
 
   <h3>Clone local data to Supabase</h3>
