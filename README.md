@@ -83,10 +83,12 @@ keeps working.
 ### Tests
 
 ```bash
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests -t .
 ```
 
-Around 1100 tests, all offline: every external service is stubbed.
+Around 1250 tests, all offline: every external service is stubbed, and
+`tests/__init__.py` pins the database to local SQLite so the suite never reads
+Supabase. `-t .` is what makes that file load.
 
 ---
 

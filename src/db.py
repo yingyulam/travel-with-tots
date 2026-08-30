@@ -11,6 +11,7 @@ are intentionally deferred to a later stage.
 """
 
 import json
+import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -286,11 +287,21 @@ def connect_sqlite():
 def _supabase_dsn():
     """The Postgres connection string to serve from, or None to stay local.
 
-    Four conditions, in this order because the first is the cheapest and the
-    most important: DB_PATH names the real file, the dropdown says Supabase, a
-    connection string is set, and psycopg is installed. Anything missing means
-    SQLite, which is the path that always works.
+    Five conditions, cheapest first: DB_BACKEND does not force local, DB_PATH
+    names the real file, the dropdown says Supabase, a connection string is set,
+    and psycopg is installed. Anything missing means SQLite, which is the path
+    that always works.
+
+    DB_BACKEND=local is the one that overrides a person's own dropdown, and it
+    exists because the DB_PATH check is not enough on its own. Sixty-odd tests
+    call query functions without redirecting DB_PATH, so they read whatever
+    database is live: harmless when that was a local file, but with Supabase
+    selected they turn into network reads against the real project, which is
+    both slow and a suite that depends on someone else's uptime. `tests/` sets
+    it, so this holds however the suite is invoked.
     """
+    if os.environ.get("DB_BACKEND", "").strip().lower() == "local":
+        return None
     if Path(DB_PATH) != _DEFAULT_DB_PATH:
         return None
     from . import supabase_sync          # imports db, so it cannot be top-level

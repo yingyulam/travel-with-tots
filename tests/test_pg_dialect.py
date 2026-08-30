@@ -211,9 +211,21 @@ class WhichDatabaseServesTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self._source = pathlib.Path(self._tmp.name) / "data_source.json"
-        patcher = mock.patch.object(sync, "SOURCE_PATH", self._source)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for patcher in (mock.patch.object(sync, "SOURCE_PATH", self._source),
+                        # tests/__init__.py pins the whole suite to local, which
+                        # is what this class exists to switch off.
+                        mock.patch.dict(os.environ, {"DB_BACKEND": ""})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_the_environment_can_override_the_dropdown(self):
+        # How the suite stays offline. Sixty-odd tests call a query function
+        # without redirecting DB_PATH, so they read whatever is configured;
+        # with Supabase selected those became network reads against the real
+        # project. Also how a deployment pins the backend without the file.
+        with self._choose(sync.SUPABASE, "postgresql://somewhere"), \
+             mock.patch.dict(os.environ, {"DB_BACKEND": "local"}):
+            self.assertIsNone(db._supabase_dsn())
 
     def _choose(self, source, url):
         sync.set_active_source(source)
