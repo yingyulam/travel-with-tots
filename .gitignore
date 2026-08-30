@@ -24,6 +24,9 @@ data/chroma/
 data/rag_config.json
 # Which backend /settings is set to. Generated, and local to one install.
 data/data_source.json
+# Generated from the live schema by supabase_sync.postgres_ddl(); it would
+# drift the moment a column was added.
+supabase_schema.sql
 
 # Chatbot ratings (runtime data)
 data/results.json
