@@ -14,6 +14,7 @@ model already, so it drops a dependency rather than adding one.
 
 import hashlib
 import json
+import os
 import re
 import threading
 from pathlib import Path
@@ -214,6 +215,24 @@ def rebuild_index(chunk_size=None):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def autobuild_allowed():
+    """Whether startup may build the index when there isn't one.
+
+    Off in a deployment, and that is the point rather than a convenience.
+    Building costs roughly 580MB where serving costs 190MB, so on a 512MB
+    instance the attempt is killed by the host -- and because it runs at
+    startup, the replacement worker attempts it again. One missing index turns
+    into a restart loop, and every request lands on a worker that is about to
+    die: the chat turn gets an HTML 502 from the proxy rather than an answer.
+
+    With it off, a missing index degrades honestly instead. The chatbot reports
+    that the knowledge base is not ready and every other page keeps working.
+    The index is meant to be built during the deploy (see render.yaml), where
+    the memory cap does not apply.
+    """
+    return os.environ.get("RAG_AUTOBUILD", "").strip().lower() != "off"
+
+
 def init_index_async():
     """Called once at app startup. Skips re-embedding if the on-disk config
     already matches the current knowledge base file's content."""
@@ -233,6 +252,14 @@ def init_index_async():
                     return
         except (json.JSONDecodeError, OSError):
             pass
+    if not autobuild_allowed():
+        _set_status(state="error", error=(
+            "No search index, and RAG_AUTOBUILD=off so one was not built here. "
+            "It belongs in the deploy step: the build ran but produced nothing, "
+            "most likely because it ran out of memory."))
+        print("No search index. Build it during deploy, or unset RAG_AUTOBUILD "
+              "to build it at startup.")
+        return
     rebuild_index()
 
 
