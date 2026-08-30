@@ -7,6 +7,7 @@ the src/ package; this file just wires HTTP requests to that logic.
 
 import json
 import os
+import traceback
 from contextlib import closing
 from datetime import date, datetime, timezone
 from functools import wraps
@@ -25,6 +26,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from src import candidates, db, rag
@@ -361,6 +363,30 @@ def _caller_address():
     if TRUST_PROXY and request.access_route:
         return request.access_route[-1]
     return request.remote_addr or "unknown"
+
+
+@app.errorhandler(Exception)
+def _json_endpoints_answer_json(error):
+    """Keep a JSON endpoint answering JSON, even when it fails.
+
+    The chat widget, the planner and find-nearby all parse every reply. A Flask
+    HTML error page therefore surfaced as the browser's own parse message --
+    Safari says "The string did not match the expected pattern" -- which told a
+    parent nothing and told the log nothing either. The routes catch the errors
+    they expect; this is for the ones nobody predicted, which are precisely the
+    ones worth seeing.
+
+    HTML requests keep Flask's normal behaviour, so an ordinary page still gets
+    an ordinary error page.
+    """
+    unexpected = not isinstance(error, HTTPException)
+    if unexpected:
+        traceback.print_exc()
+    if not request.is_json:
+        return error if isinstance(error, HTTPException) else ("Server error", 500)
+    if unexpected:
+        return jsonify({"error": "Something went wrong on the server."}), 500
+    return jsonify({"error": error.description}), error.code
 
 
 @app.after_request

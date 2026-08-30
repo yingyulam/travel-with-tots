@@ -319,6 +319,33 @@ document.addEventListener("click", (e) => {
 
     watchStatus();
 
+    // The route answers JSON for everything it handles itself, but not every
+    // reply comes from the route: a crashed worker, a proxy timeout or a body
+    // over the size cap all arrive as an HTML error page. Parsing that blindly
+    // threw the browser's own message -- Safari says "The string did not match
+    // the expected pattern" -- which told a parent nothing and told us less.
+    async function readReply(res) {
+      const body = await res.text();
+      try {
+        return JSON.parse(body);
+      } catch {
+        return { error: describeFailure(res, body) };
+      }
+    }
+
+    function describeFailure(res, body) {
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        return "The server didn't finish that request. It may have run out of "
+             + "memory or taken too long. Please try again.";
+      }
+      if (res.status === 413) return "That message was too long.";
+      if (res.status === 429) return "Too many requests. Please wait a moment.";
+      // Worth surfacing rather than swallowing: an unexpected shape is a bug,
+      // and the status plus the first line is what makes it findable in a log.
+      const first = body.trim().split("\n")[0].slice(0, 120);
+      return `Unexpected reply from the server (HTTP ${res.status}). ${first}`;
+    }
+
     let history = [];
     // Where a multi-turn workflow has got to, held here and echoed back with
     // every message. Same grain as history: no cookie size ceiling, no clash
@@ -881,7 +908,7 @@ document.addEventListener("click", (e) => {
             force_workflow: window.twtForceWorkflow || null,
           }),
         });
-        const data = await res.json();
+        const data = await readReply(res);
         if (!res.ok) throw new Error(data.error || "Something went wrong.");
 
         const feedback = {
