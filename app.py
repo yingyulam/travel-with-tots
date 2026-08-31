@@ -2046,8 +2046,14 @@ def delete_place_route(place_id):
 @app.route("/save-trip", methods=["POST"])
 @login_required
 def save_trip():
-    """Persist a generated plan as a trip for each child the logged-in parent
-    picked on the planning page, so it shows up on the dashboard."""
+    """Persist a generated plan as a trip, one per child the parent picked on
+    the planning page, so it shows up on the dashboard.
+
+    A child is optional. The day belongs to the parent, and child_id only
+    records whose age shaped it: worth having, not what makes the plan real.
+    Requiring one turned Save into a redirect back to /plan that saved nothing
+    and said nothing, for the parent least likely to know why.
+    """
     parent = _current_parent()
     valid_ids = {str(child["id"]) for child in get_children(parent["id"])}
     try:
@@ -2056,8 +2062,6 @@ def save_trip():
     except (TypeError, ValueError):
         return redirect(url_for("plan"))
     child_ids = [cid for cid in trip_form.get("child_ids", []) if cid in valid_ids]
-    if not child_ids:
-        return redirect(url_for("plan"))
 
     fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
     fields["transit"] = trip_form.get("transit") or DEFAULT_TRANSIT
@@ -2065,8 +2069,11 @@ def save_trip():
     fields["plan_label"] = plan_data.get("label")
     fields["plan_json"] = json.dumps(plan_data)
     fields["trip_date"] = trip_form.get("trip_date") or date.today().isoformat()
-    for child_id in child_ids:
-        add_trip(parent["id"], int(child_id), **fields)
+    # [None] is one trip with nobody attached, not zero trips. child_id is
+    # nullable and ON DELETE SET NULL, so the dashboard already reads a trip
+    # whose child is missing; this is the same row, arrived at sooner.
+    for child_id in child_ids or [None]:
+        add_trip(parent["id"], int(child_id) if child_id else None, **fields)
     return redirect(url_for("dashboard"))
 
 

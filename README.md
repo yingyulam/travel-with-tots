@@ -24,7 +24,10 @@ judgment is genuinely needed.
 - **Ask questions.** A chat bubble on every page that knows how the site works.
 - **Find somewhere nearby.** Share your location, say what you need (a nursing
   room, lunch, somewhere quiet), get real places with map links.
-- **Save things.** Your children's ages, past trips, and places you found.
+- **Save things.** Your children's ages, past trips, and places you found. A
+  saved day is yours, not a child's, so logging a child first is optional: tell
+  us an age on the form and save. Naming a child just means we remember whose
+  age to plan around next time.
 - **Help it grow.** Log a place the app is missing, or report what you found
   when you got there.
 

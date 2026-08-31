@@ -138,14 +138,15 @@
   {% if not saved %}
   <div class="action-panel">
     <p class="panel-title">Keep this day</p>
-    {% if current_parent and trip_form and trip_form.child_ids %}
+    {% if current_parent and trip_form %}
     <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form" id="save-trip-form">
       <textarea name="plan" id="save-plan-field" hidden></textarea>
       <textarea name="trip_form" hidden>{{ trip_form | tojson }}</textarea>
       <button type="submit" class="cta-secondary">💾 Save this plan</button>
     </form>
     {% elif current_parent %}
-    <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
+    {# No trip form behind this day, so there is nothing to save it from. #}
+    <p class="save-plan-hint">Build this day on the <a href="{{ url_for('plan') }}">planning page</a> to save it.</p>
     {% else %}
     <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
     {% endif %}

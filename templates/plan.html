@@ -280,14 +280,12 @@
         <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
         <button type="submit" class="cta">Start this day</button>
       </form>
-      {% if current_parent and form.child_ids %}
+      {% if current_parent %}
       <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
         <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
         <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
         <button type="submit" class="cta-secondary">💾 Save this plan</button>
       </form>
-      {% elif current_parent %}
-      <p class="save-plan-hint">Add a child on your <a href="{{ url_for('dashboard') }}">dashboard</a> to save this plan.</p>
       {% else %}
       <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
       {% endif %}

@@ -63,7 +63,9 @@
     {% for trip in trips %}
     <div class="plan-option">
       <h3 class="plan-option-title"><a href="{{ url_for('view_trip', trip_id=trip.id) }}">{{ trip.plan_label or 'Trip' }}</a></h3>
-      <p class="plan-blurb">{{ trip.destination }} for {{ trip.child_name or 'a child no longer on your account' }}</p>
+      {# No name means either no child was picked or one was since removed, and
+         child_id cannot tell those apart, so the clause is dropped instead. #}
+      <p class="plan-blurb">{{ trip.destination }}{% if trip.child_name %} for {{ trip.child_name }}{% endif %}</p>
       <p class="meta">{{ trip.trip_date }}</p>
       <ol class="preview-list">
         {% for stop in trip.plan.preview() %}{{ stop_line(stop) }}{% endfor %}
