@@ -74,7 +74,9 @@ SYSTEM_PROMPT = (
     "means, call it anyway rather than asking them yourself: it answers "
     "with the question and the buttons that go with it, and buttons beat "
     "a typed reply for somebody holding a toddler.\n"
-    "Use exactly one tool per message. Keep replies short and plain. After "
+    "Use exactly one tool per message. Keep replies short and plain, with no "
+    "markdown: no **bold**, no #headings, no backticks. The chat shows text "
+    "exactly as you write it, so those characters appear on screen. After "
     "extract_form_tool, say which details you picked up and ask them to check "
     "the form. Never write an itinerary of your own."
 )
@@ -528,6 +530,12 @@ def run_agent(message: str, history: list[dict] | None = None,
     # path collected it.
     replan = _artifact_of("replan_tool", tool_messages)
     logged = _artifact_of("log_place_tool", tool_messages)
+    # The planning form the extractor read out of their words. Surfaced under
+    # the same key the workflow used, so the widget draws the same handoff card
+    # it always did. Without this the form was extracted and then dropped: the
+    # parent got a paragraph describing their day back instead of a form to
+    # check, which is the one thing this tool exists to avoid.
+    extracted = _artifact_of("extract_form_tool", tool_messages)
     # Whichever tool asked, if one did. Chips travel in the same keys a
     # workflow's do, so the widget draws them without knowing which side of the
     # app produced the question.
@@ -542,6 +550,7 @@ def run_agent(message: str, history: list[dict] | None = None,
         "places": nearby.get("places", []),
         "source": nearby.get("source"),
         "replan_request": replan.get("replan_request"),
+        "form": extracted.get("form"),
         # A collected place, for the widget to hand to /log-place, which
         # is the one path that writes one. Same key the workflow returns.
         "place_form": logged.get("place_form"),

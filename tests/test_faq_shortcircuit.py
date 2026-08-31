@@ -116,6 +116,18 @@ class StopsAtTheToolTest(unittest.TestCase):
         self.assertIsNone(result["choices"])
         self.assertIs(result["choose_many"], False)
 
+    def test_the_extracted_form_reaches_the_widget(self):
+        """The bug this closes: the extractor ran, read the day correctly, and
+        the form was dropped on the floor. The widget draws its handoff card
+        from data.form, so the parent got a paragraph describing their own day
+        back instead of a form to check."""
+        result, _built = self._run([_form_message(), AIMessage("Got it.")])
+        self.assertEqual(result["form"], {"destination": "Vancouver"})
+
+    def test_no_extraction_means_no_form(self):
+        result, _built = self._run([_faq_message()])
+        self.assertIsNone(result["form"])
+
     def test_only_the_faq_writes_its_own_answers(self):
         # A guard on the list itself. Adding a tool here means its raw output
         # goes straight to a parent, which is only right for the FAQ.
