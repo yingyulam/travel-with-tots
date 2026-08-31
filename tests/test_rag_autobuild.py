@@ -1,13 +1,14 @@
 """Whether startup is allowed to build the search index.
 
-Building costs roughly 580MB where serving costs 190MB. On a 512MB instance the
-attempt is killed by the host, and because it happens at startup the replacement
-worker attempts it again: one missing index becomes a restart loop, and every
-request lands on a worker that is about to die. A chat turn then gets an HTML 502
-from the proxy rather than an answer, which is how this was first noticed.
+Building used to mean loading a 208MB model on a 512MB instance: the attempt was
+killed, the replacement worker tried again, and one missing index became a
+restart loop where every request landed on a worker about to die. So a
+deployment built the index during the deploy and set RAG_AUTOBUILD=off.
 
-So a deployment builds the index during the deploy and forbids it at startup.
-A missing index has to degrade honestly instead of taking the app down with it.
+Embedding happens over the API now, so a build is one request and about a
+second. Startup building is back on by default and the deploy step is gone. The
+switch stays, because "do not build here" is still a reasonable thing to say --
+and because a missing index must still degrade honestly rather than pretend.
 """
 
 import os
@@ -60,7 +61,9 @@ class StartupWithNoIndexTest(unittest.TestCase):
         built.assert_not_called()
         status = rag.get_status()
         self.assertEqual(status["state"], "error")
-        self.assertIn("deploy step", status["error"])
+        # Names the switch that caused it, so the state is explicable from the
+        # message rather than needing somebody to know this file exists.
+        self.assertIn("RAG_AUTOBUILD", status["error"])
 
     def test_it_builds_when_allowed(self):
         with mock.patch.dict(os.environ, {"RAG_AUTOBUILD": ""}), \

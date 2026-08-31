@@ -146,15 +146,16 @@ they stay out of git): `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_API_KEY`,
 
 | | resident |
 | --- | --- |
-| Serving pages, index prebuilt | **~190 MB** |
-| After a chatbot question reaches retrieval | **~470 MB** |
-| Rebuilding the index at runtime | **~580 MB** |
+| Serving pages | **~215 MB** |
+| While building the search index at startup | **~295 MB** |
+| After a chatbot question with retrieval | **~215 MB** |
 
-Free and Starter are both 512 MB, so normal use fits and a rebuild does not.
-That is why `render.yaml` builds the index during the build step: a cold start
-never rebuilds. Editing the knowledge base on `/settings` does rebuild, so on a
-512 MB instance expect that request to be killed and the worker restarted. Edit
-it locally and redeploy, or run on a 2 GB instance if you need to edit it live.
+Free and Starter are both 512 MB, so all of that fits with room to spare. It
+did not used to: embedding in-process needed 208 MB for the model alone, put a
+retrieval at ~470 MB and a rebuild at ~580 MB, and the knowledge-base chat was
+unusable on a small instance while everything else worked. Embedding is an API
+call now, so the index rebuilds on every cold start in about a second and
+editing the knowledge base live is fine.
 
 ---
 
@@ -300,9 +301,19 @@ distinct from "someone looked, and there wasn't one".
 Every model call goes through **OpenRouter**, so the model is a per-request
 choice you can change from the chat widget's dropdown.
 
-**The chatbot** answers questions about the site. `data/knowledge_base.md` is
-chunked, embedded with `all-MiniLM-L6-v2` and stored in ChromaDB, and the index
-rebuilds itself when the knowledge base changes. Admins edit it at `/settings`.
+**The chatbot** answers questions about the site, with citations. It is a RAG
+pipeline: `data/knowledge_base.md` is split into chunks of about 128 tokens
+(never crossing a `##` heading, never splitting a sentence), each chunk is
+embedded with `text-embedding-3-small`, and the vectors go into ChromaDB. A
+question is embedded the same way, and only the chunks above a cosine-similarity
+floor come back — so an off-topic question returns nothing rather than the
+nearest irrelevant paragraph. The index rebuilds when the knowledge base
+changes. Admins edit it at `/settings` and can inspect the chunks at `/chunks`.
+
+The **vector store is local, the vectors are not.** Running the embedding model
+in-process cost 208 MB of memory to search 12 KB of text, which is the wrong
+shape for a small instance, so embedding is an API call and only the index
+lives here.
 
 **The agent** behind the chat bubble is a LangGraph tool-calling loop. It either
 hands the message to a workflow or picks from four tools: answer from the
