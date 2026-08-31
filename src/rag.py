@@ -131,7 +131,8 @@ def _log(stage, since=None):
     so the instance reports its own trace instead.
     """
     elapsed = "" if since is None else f" +{time.monotonic() - since:.2f}s"
-    line = f"{datetime.now(timezone.utc).strftime('%H:%M:%S')} {stage}{elapsed} rss={_rss_mb():.0f}MB"
+    line = (f"{datetime.now(timezone.utc).strftime('%H:%M:%S')} {stage}{elapsed} "
+            f"rss={_rss_mb():.0f}MB thread={threading.current_thread().name}")
     print(f"[rag] {line}", flush=True)
     _trace(line)
     return time.monotonic()
@@ -411,8 +412,18 @@ def retrieve(query, top_k=TOP_K):
     if get_status()["state"] != "ready":
         return []
     started = _log("retrieve: start")
+    # Split finer than reads well, deliberately. On the deployed instance the
+    # trace stopped dead between "start" and "collection opened", so the three
+    # calls that used to sit inside that gap are each named now: which one it
+    # is decides whether this is Chroma's client, its SQLite, or the thread the
+    # request runs on.
+    client = _get_client()
+    _log(f"retrieve: client ready (new={client is not None})", started)
     collection = _get_collection()
-    if collection.count() == 0:
+    _log("retrieve: collection handle", started)
+    count = collection.count()
+    _log(f"retrieve: counted {count}", started)
+    if count == 0:
         _log("retrieve: empty collection, nothing to search", started)
         return []
     _log("retrieve: collection opened", started)
