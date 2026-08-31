@@ -44,12 +44,14 @@ class StartupWithNoIndexTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         for name, value in (
-                ("CHROMA_DIR", pathlib.Path(self._tmp.name) / "chroma"),
+                ("INDEX_PATH", pathlib.Path(self._tmp.name) / "index.json"),
                 ("RAG_CONFIG_PATH", pathlib.Path(self._tmp.name) / "config.json")):
             patcher = mock.patch.object(rag, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        patcher = mock.patch.object(rag, "_client", None)
+        # The vectors are a cached module global now, where they used to be a
+        # Chroma client. Cleared so a test starts with nothing loaded.
+        patcher = mock.patch.object(rag, "_index", None)
         patcher.start()
         self.addCleanup(patcher.stop)
 

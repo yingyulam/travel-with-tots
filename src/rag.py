@@ -1,8 +1,17 @@
 """RAG (retrieval-augmented generation) pipeline for the website chatbot.
 
-Chunks data/knowledge_base.md, embeds each chunk, and stores them in a
-persistent ChromaDB collection. The chatbot retrieves only the top few chunks
+Chunks data/knowledge_base.md, embeds each chunk, and keeps the vectors in a
+JSON file the process reads once. The chatbot retrieves only the top few chunks
 relevant to a question, instead of the whole file.
+
+The vectors lived in a persistent ChromaDB collection until its client turned
+out to be unusable from a gunicorn worker thread on the deployed host: measured
+twice, get_or_create_collection and then get_collection each returned in 0.00s
+at startup on MainThread and never returned on a request thread, taking every
+knowledge-base question to gunicorn's 120s timeout at ~165MB, without ever
+reaching the model. 28 chunks is 28 x 384 floats, about 43KB, so a database
+engine was carrying no weight a list does not. chromadb stays as a dependency:
+the ONNX embedder below comes from it.
 
 Embedding runs on **ONNX Runtime**, not PyTorch. Same model and therefore the
 same vectors (measured: cosine similarity 1.000000 against sentence-transformers
@@ -23,13 +32,19 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import chromadb
-from chromadb.errors import NotFoundError
+import numpy
 from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 KNOWLEDGE_BASE_PATH = DATA_DIR / "knowledge_base.md"
-CHROMA_DIR = DATA_DIR / "chroma"
+# The chunks and their vectors, written by build_index and read at startup.
+# A JSON file rather than a ChromaDB collection: measured on the deployed
+# instance, both get_or_create_collection and get_collection return in 0.00s on
+# MainThread and never return on a gunicorn worker thread, taking every
+# knowledge-base question to the 120s timeout at ~165MB. This knowledge base is
+# 28 chunks -- 28 x 384 floats, about 43KB -- so a database engine, its SQLite
+# file and its threading model were carrying no weight that a list does not.
+INDEX_PATH = DATA_DIR / "rag_index.json"
 RAG_CONFIG_PATH = DATA_DIR / "rag_config.json"
 
 COLLECTION_NAME = "knowledge_base"
@@ -66,7 +81,7 @@ else:
           "will not survive a deploy.")
 
 _embedder = None
-_client = None
+_index = None
 _status = {"state": "not_started", "chunk_size": DEFAULT_CHUNK_SIZE, "error": None}
 _status_lock = threading.Lock()
 _index_lock = threading.Lock()
@@ -81,7 +96,7 @@ TRACE_PATH = DATA_DIR / "rag_trace.log"
 TRACE_LINES = 40
 
 # Named in the startup trace so a deployed instance says which read path it has.
-READ_STRATEGY = "get_collection"
+READ_STRATEGY = "in_memory"
 
 
 def _rss_mb():
@@ -219,34 +234,36 @@ def model_cached():
     return (Path(path) / folder / "model.onnx").exists()
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-        _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-    return _client
+def _load_index():
+    """The chunks and their vectors, read once per process.
 
-
-def _get_collection():
-    """The existing collection, or None when there is not one yet.
-
-    get_collection, not get_or_create_collection. This is the read path: the
-    index is built in build_index, and "or create" is a write, which wants
-    SQLite's write lock. On the deployed instance that lock never arrived --
-    measured twice, the call returns in 0.00s at startup on MainThread and then
-    never returns on a gunicorn worker thread, taking the request to gunicorn's
-    120s timeout while the client itself costs nothing. Locally it is instant
-    across the same thread boundary, which is why it never showed up here.
-
-    Still fetched fresh rather than cached: a rebuild deletes and recreates the
-    collection, so a held handle would go stale.
+    Cached in a module global like the embedder, and reset by build_index so a
+    rebuild is picked up. Missing or unreadable reads as empty, which every
+    caller already handles: not knowing is a reason to answer "nothing found",
+    never a reason to fail a chat turn.
     """
-    try:
-        return _get_client().get_collection(COLLECTION_NAME)
-    except (ValueError, NotFoundError):
-        # Not built yet. None rather than raising, because every caller here
-        # already has an "empty index" path and none of them can build one.
-        return None
+    global _index
+    if _index is None:
+        try:
+            _index = json.loads(INDEX_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            _index = []
+    return _index
+
+
+def _similarities(query_vec, vectors):
+    """Cosine similarity of one vector against many, as a plain array.
+
+    The same number Chroma returned as `1 - distance` on a collection whose
+    space is cosine, so scores are comparable with everything measured before
+    and MIN_SIMILARITY keeps its meaning.
+    """
+    q = numpy.asarray(query_vec, dtype=numpy.float32)
+    m = numpy.asarray(vectors, dtype=numpy.float32)
+    norms = numpy.linalg.norm(m, axis=1) * numpy.linalg.norm(q)
+    # A zero vector would divide by zero rather than simply scoring nothing.
+    norms[norms == 0] = 1.0
+    return (m @ q) / norms
 
 
 def _set_status(**kwargs):
@@ -314,28 +331,13 @@ def build_index(chunk_size=None):
         chunks = chunk_markdown(text, chunk_size)
         _log(f"build: chunked into {len(chunks)}", started)
 
-        client = _get_client()
-        try:
-            client.delete_collection(COLLECTION_NAME)
-        except (ValueError, NotFoundError):
-            # Nothing to delete, which is every first run: an empty data
-            # directory locally, and *every* deploy on a host with an ephemeral
-            # disk. Chroma raises NotFoundError rather than ValueError, so
-            # catching only ValueError left the index unbuilt and the chatbot
-            # with no knowledge base at all.
-            pass
-        collection = client.get_or_create_collection(
-            COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
-
+        global _index
+        embeddings = _embed([c["text"] for c in chunks]) if chunks else []
         if chunks:
-            embeddings = _embed([c["text"] for c in chunks])
             _log("build: embedded", started)
-            collection.add(
-                ids=[f"chunk-{i}" for i in range(len(chunks))],
-                embeddings=embeddings,
-                documents=[c["text"] for c in chunks],
-                metadatas=[{"section": c["section"]} for c in chunks],
-            )
+        _index = [{"text": c["text"], "section": c["section"], "embedding": e}
+                  for c, e in zip(chunks, embeddings)]
+        INDEX_PATH.write_text(json.dumps(_index))
 
         RAG_CONFIG_PATH.write_text(json.dumps({
             "chunk_size": chunk_size,
@@ -392,9 +394,8 @@ def init_index_async():
             text = KNOWLEDGE_BASE_PATH.read_text()
             current_hash = hashlib.sha256(text.encode()).hexdigest()
             if config.get("kb_hash") == current_hash:
-                collection = _get_collection()
-                if (collection is not None and collection.count() > 0) \
-                        or not text.strip():
+                index = _load_index()
+                if index or not text.strip():
                     # Which branch this took answers whether the index came from
                     # the deploy or from this process, and therefore whether the
                     # model was ever downloaded here.
@@ -404,7 +405,7 @@ def init_index_async():
                     # and "the fix is deployed and still hangs in the same call"
                     # look identical from outside, which cost a round trip.
                     _log(f"startup: reusing the index from disk "
-                         f"({collection.count()} chunks), "
+                         f"({len(index)} chunks), "
                          f"model_on_disk={model_cached()}, read={READ_STRATEGY}")
                     _set_status(
                         state="ready",
@@ -436,58 +437,37 @@ def retrieve(query, top_k=TOP_K):
     if get_status()["state"] != "ready":
         return []
     started = _log("retrieve: start")
-    # Split finer than reads well, deliberately. On the deployed instance the
-    # trace stopped dead between "start" and "collection opened", so the three
-    # calls that used to sit inside that gap are each named now: which one it
-    # is decides whether this is Chroma's client, its SQLite, or the thread the
-    # request runs on.
-    client = _get_client()
-    _log(f"retrieve: client ready (new={client is not None})", started)
-    collection = _get_collection()
-    _log(f"retrieve: collection handle (found={collection is not None})", started)
-    count = collection.count() if collection is not None else 0
-    _log(f"retrieve: counted {count}", started)
-    if count == 0:
-        _log("retrieve: empty collection, nothing to search", started)
+    index = _load_index()
+    _log(f"retrieve: index loaded ({len(index)} chunks)", started)
+    if not index:
         return []
-    _log("retrieve: collection opened", started)
 
-    query_embedding = _embed([query])
+    query_vec = _embed([query])[0]
     _log("retrieve: query embedded", started)
-    results = collection.query(
-        query_embeddings=query_embedding, n_results=min(top_k, collection.count()))
+    scores = _similarities(query_vec, [c["embedding"] for c in index])
+    # argsort ascending, reversed: the k best, best first.
+    best = numpy.argsort(scores)[::-1][:min(top_k, len(index))]
     _log("retrieve: search done", started)
 
     sources = []
-    for i, (doc, meta, dist) in enumerate(zip(
-        results["documents"][0], results["metadatas"][0], results["distances"][0]
-    )):
-        score = 1 - dist
+    for i, position in enumerate(best):
+        score = float(scores[position])
         if score < MIN_SIMILARITY:
             continue
+        chunk = index[int(position)]
         sources.append({
             "index": i + 1,
-            "text": doc,
+            "text": chunk["text"],
             "score": score,
-            "section": meta.get("section", ""),
+            "section": chunk["section"],
         })
     return sources
 
 
 def list_chunks():
     """Every current chunk, in knowledge-base order, for the Chunks page."""
-    collection = _get_collection()
-    if collection is None or collection.count() == 0:
-        return []
-    data = collection.get()
-
-    chunks = []
-    for chunk_id, doc, meta in zip(data["ids"], data["documents"], data["metadatas"]):
-        chunks.append({
-            "index": int(chunk_id.split("-")[1]) + 1,
-            "section": meta.get("section", ""),
-            "token_count": _token_count(doc),
-            "text": doc,
-        })
-    chunks.sort(key=lambda c: c["index"])
-    return chunks
+    return [{"index": i + 1,
+             "section": chunk["section"],
+             "token_count": _token_count(chunk["text"]),
+             "text": chunk["text"]}
+            for i, chunk in enumerate(_load_index())]

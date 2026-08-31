@@ -21,6 +21,7 @@ data/app.db
 
 # RAG index (rebuildable from data/knowledge_base.md)
 data/chroma/
+data/rag_index.json
 data/rag_config.json
 # The 86MB ONNX embedding model, downloaded on first use. Kept here rather than
 # in $HOME so a deployment's build can hand it to the running service, which
