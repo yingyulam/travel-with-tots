@@ -39,9 +39,11 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 SYSTEM_PROMPT = (
     "You are Travel with Tots' assistant, answering in the chat bubble on the "
     "site. Use your tools rather than your own knowledge:\n"
+    # No instruction about what to do with the answer, because the model never
+    # sees it: this tool's reply goes straight to the parent (FINAL_ANSWER_TOOLS)
+    # and the turn ends there.
     "- answer_faq_tool for any question about how the site works or what it "
-    "can do. Pass the parent's question through unchanged, and reply with what "
-    "it gives you, keeping its [Source N] markers exactly as they are.\n"
+    "can do. Pass the parent's question through unchanged.\n"
     "- extract_form_tool whenever a parent describes a day out they want, so "
     "their words become the planning form. Pass their whole description. This "
     "is the tool for a description even when it sounds like a request for a "
@@ -181,7 +183,20 @@ TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool,
          replan_tool]
 
 
-def _build_agent(model: str):
+# Tools whose output is already the answer a parent should read, so the model
+# is not asked to word it again. Only the FAQ qualifies: it hands back
+# ask_website_chatbot's reply, grounded in retrieved chunks and carrying
+# [Source N] citations. Every other tool returns a terse line for the model to
+# work from -- "Filled in from their words: destination, age_years." is not
+# something to show anybody -- and their final turn earns its cost.
+#
+# Rewriting the FAQ answer cost a whole round trip and put the citations at the
+# mercy of a prompt asking the model to leave them alone. Returning it verbatim
+# is both cheaper and the only way the markers are guaranteed intact.
+FINAL_ANSWER_TOOLS = frozenset({"answer_faq_tool"})
+
+
+def _build_agent(model: str, stop_after_tools: bool = False):
     """The tool-calling agent, with a bound on how long it may wait.
 
     `timeout` and `max_retries` are the point. Left alone, langchain hands the
@@ -201,7 +216,13 @@ def _build_agent(model: str):
         timeout=REQUEST_TIMEOUT_SECONDS,
         max_retries=1,
     )
-    return create_react_agent(chat, TOOLS, prompt=SYSTEM_PROMPT)
+    # interrupt_after stops the graph the moment a tool returns, before the
+    # model is asked to word an answer from it. Verified to need no
+    # checkpointer, which is what makes it usable here: this agent is built
+    # fresh per turn and holds no thread.
+    return create_react_agent(
+        chat, TOOLS, prompt=SYSTEM_PROMPT,
+        interrupt_after=["tools"] if stop_after_tools else None)
 
 
 def handle_message(message: str, history: list[dict] | None = None,
@@ -386,7 +407,17 @@ def run_agent(message: str, history: list[dict] | None = None,
         messages.append(cls(turn.get("content", "")))
     messages.append(HumanMessage(message))
 
-    result = _build_agent(model).invoke({"messages": messages})
+    # Stop at the tool, then decide whether the model still has work to do.
+    # Three outcomes: no tool was called and the answer is already written; the
+    # tool that ran writes its own answers (the FAQ), so we are finished; or the
+    # tool handed back a working note, and the model is resumed to turn it into
+    # a reply. Resumed on the accumulated messages, so the tool is not run twice.
+    result = _build_agent(model, stop_after_tools=True).invoke(
+        {"messages": messages})
+    last = result["messages"][-1]
+    if isinstance(last, ToolMessage) and last.name not in FINAL_ANSWER_TOOLS:
+        result = _build_agent(model).invoke({"messages": result["messages"]})
+
     tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
 
     # The FAQ tool wraps ask_website_chatbot, so when it ran its result already

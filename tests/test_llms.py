@@ -123,7 +123,13 @@ class RunAgentContractTest(unittest.TestCase):
 
     def test_the_chosen_model_is_used_and_reported(self):
         result, build = self._run(model="nvidia/nemotron-3-super-120b-a12b:free")
-        build.assert_called_once_with("nvidia/nemotron-3-super-120b-a12b:free")
+        # Every build, not one: a turn may build the agent twice, once to stop
+        # at the tool and once to word the answer from it. The model must be
+        # the parent's choice on both, and pinning the call count instead made
+        # this fail for a change that never touched model selection.
+        self.assertTrue(build.call_args_list)
+        for call in build.call_args_list:
+            self.assertEqual(call.args[0], "nvidia/nemotron-3-super-120b-a12b:free")
         self.assertEqual(result["model"], "nvidia/nemotron-3-super-120b-a12b:free")
 
 

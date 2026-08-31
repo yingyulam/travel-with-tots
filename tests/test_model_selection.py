@@ -143,8 +143,13 @@ class TheChatCarriesTheChoiceTest(unittest.TestCase):
         return built, faq, planned
 
     def test_the_agent_itself_runs_on_the_chosen_model(self):
+        # Every build, not one. A turn builds the agent twice when the model
+        # still has to word an answer from a tool's result, and both must run
+        # on the parent's choice.
         built, _faq, _planned = self._turn("answer_faq_tool")
-        built.assert_called_once_with(PICKED)
+        self.assertTrue(built.call_args_list)
+        for call in built.call_args_list:
+            self.assertEqual(call.args[0], PICKED)
 
     def test_the_knowledge_base_answer_runs_on_the_chosen_model(self):
         _built, faq, _planned = self._turn("answer_faq_tool")
