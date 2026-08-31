@@ -601,36 +601,26 @@ document.addEventListener("click", (e) => {
 
       const check = document.createElement("button");
       check.type = "submit";
-      check.className = "twt-chip";
+      check.className = "twt-chip primary";
       check.textContent = "📝 Open the form";
 
-      const generate = document.createElement("button");
-      generate.type = "submit";
-      generate.className = "twt-chip primary";
-      generate.textContent = "✨ Generate my day";
-      // Only this button asks /plan to build a day. Naming the expensive
-      // action rather than the safe one means a post that loses a submit
-      // button's name fills the form in instead of spending a minute on an
-      // AI call nobody asked for.
-      generate.name = "generate";
-      generate.value = "1";
+      // One button, and it does not build a day. Generating from here produced
+      // an itinerary outside the planner -- no version switcher, no situation
+      // buttons, no replanning -- and a second one as soon as the parent
+      // pressed Plan my day on the form it had just opened. The chat collects
+      // the details; the planning page is where a day gets built, and Plan my
+      // day there is the one control that builds it.
+      //
+      // No `generate` field is posted, so /plan fills the boxes in and stops.
 
-      // This page stays on screen while /plan works, so without a visible
-      // change the button looks unclicked for the whole ten seconds and gets
-      // pressed again. Marked with a class rather than `disabled`, because
-      // disabling the submitter mid-submit can drop its name from the post,
-      // and "Generate my day" is nothing but its name. Losing it now costs a
-      // filled-in form rather than an unwanted plan, but the button should
-      // still work.
-      el.addEventListener("submit", (event) => {
+      // This page stays on screen while /plan loads, so without a visible
+      // change the button looks unclicked and gets pressed again.
+      el.addEventListener("submit", () => {
         el.classList.add("working");
-        const clicked = event.submitter === check ? check : generate;
-        clicked.textContent = clicked === check
-          ? "📝 Opening the form…"
-          : "✨ Building your day…";
+        check.textContent = "📝 Opening the form…";
       });
 
-      el.append(check, generate);
+      el.append(check);
       return el;
     }
 

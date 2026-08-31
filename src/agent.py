@@ -56,12 +56,13 @@ SYSTEM_PROMPT = (
     # and the turn ends there.
     "- answer_faq_tool for any question about how the site works or what it "
     "can do. Pass the parent's question through unchanged.\n"
+    "- Asking to plan a day without saying anything about it is not a question "
+    "about the site: ask them for the details, and do not reach for the "
+    "knowledge base.\n"
     "- extract_form_tool whenever a parent describes a day out they want, so "
     "their words become the planning form. Pass their whole description. This "
     "is the tool for a description even when it sounds like a request for a "
     "plan: the form is filled in first so the parent can check it.\n"
-    "- plan_trip_tool only when they explicitly ask you to build the itinerary "
-    "now. Never on a first description of a day.\n"
     "- find_nearby_tool when they need somewhere nearby right now.\n"
     "- log_place_tool when they tell you about a kid-friendly place the "
     "site is missing and want it added. Give it the place's own name, not "
@@ -76,9 +77,9 @@ SYSTEM_PROMPT = (
     "a typed reply for somebody holding a toddler.\n"
     "Use exactly one tool per message. Keep replies short and plain, with no "
     "markdown: no **bold**, no #headings, no backticks. The chat shows text "
-    "exactly as you write it, so those characters appear on screen. After "
-    "extract_form_tool, say which details you picked up and ask them to check "
-    "the form. Never write an itinerary of your own."
+    "exactly as you write it, so those characters appear on screen. Never "
+    "write an itinerary yourself: filling the form is how a day gets planned, "
+    "and the planning page builds it."
 )
 
 # Errors a tool must swallow: the chat route only catches KeyError and
@@ -131,8 +132,13 @@ def extract_form_tool(description: str) -> tuple[str, dict]:
         result = extract_form(description)
     except TOOL_ERRORS as e:
         return f"Couldn't read a form from that ({type(e).__name__}).", {}
-    found = ", ".join(result["found"]) or "nothing"
-    return f"Filled in from their words: {found}.", result
+    # Parent-facing, because this tool answers for itself (FINAL_ANSWER_TOOLS).
+    # Underscores out: these are form field names, and "wake up" reads where
+    # "wake_up" looks like code.
+    found = ", ".join(f.replace("_", " ") for f in result["found"])
+    picked = f"I've filled in {found}. " if found else ""
+    return (f"{picked}Open the form to check it and add anything missing, then "
+            "plan your day from there."), result
 
 
 @tool(response_format="content_and_artifact")
@@ -261,7 +267,12 @@ def log_place_tool(name: str, area: str = "", amenities: list[str] | None = None
     return f"Collected a place to log: {name}.", {"place_form": values}
 
 
-TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool,
+# plan_trip_tool is deliberately not here. A day built in the chat is a day
+# outside the planner: no version switcher, no situation buttons, no replanning,
+# and a second itinerary for the same trip the moment the parent presses Plan my
+# day. The chat fills the form and hands it over; /plan builds the day. The tool
+# is kept for the component test page it was written for.
+TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool,
          replan_tool, log_place_tool]
 
 
@@ -275,7 +286,12 @@ TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool,
 # Rewriting the FAQ answer cost a whole round trip and put the citations at the
 # mercy of a prompt asking the model to leave them alone. Returning it verbatim
 # is both cheaper and the only way the markers are guaranteed intact.
-FINAL_ANSWER_TOOLS = frozenset({"answer_faq_tool"})
+# extract_form_tool is here for a different reason from the FAQ's. Left to word
+# its own reply, the model wrote the itinerary out in the chat instead: a day
+# with no version switcher, no situation buttons and no replanning, and a second
+# one generated the moment the parent pressed Plan my day. Asking it not to did
+# not hold. Not writing the reply is the only way it cannot.
+FINAL_ANSWER_TOOLS = frozenset({"answer_faq_tool", "extract_form_tool"})
 
 
 def _build_agent(model: str, stop_after_tools: bool = False):

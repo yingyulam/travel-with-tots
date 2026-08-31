@@ -26,10 +26,17 @@ def _faq_message(content="Tap Save on the plan page. [Source 1]"):
 
 
 def _form_message():
-    return ToolMessage(content="Filled in from their words: destination.",
+    return ToolMessage(content="I've filled in destination. Open the form…",
                        name="extract_form_tool", tool_call_id="1",
                        artifact={"form": {"destination": "Vancouver"},
                                  "found": ["destination"]})
+
+
+def _nearby_message():
+    """A tool whose output is a working note, not an answer."""
+    return ToolMessage(content="Found A Park, A Mall (curated).",
+                       name="find_nearby_tool", tool_call_id="1",
+                       artifact={"places": [{"name": "A Park"}], "source": "curated"})
 
 
 class StopsAtTheToolTest(unittest.TestCase):
@@ -62,20 +69,21 @@ class StopsAtTheToolTest(unittest.TestCase):
         self.assertEqual(result["sources"], [{"index": 1, "section": "FAQs"}])
 
     def test_a_working_note_is_handed_back_to_the_model(self):
-        # extract_form's line is not an answer, so the second turn earns its
-        # cost. Two builds: stop at the tool, then word the reply.
-        form = _form_message()
-        result, built = self._run([form], [form, AIMessage("Got your destination.")])
-        self.assertEqual(result["reply"], "Got your destination.")
+        # "Found A Park, A Mall (curated)." is not something to show anybody,
+        # so the second turn earns its cost. Two builds: stop at the tool, then
+        # word the reply.
+        nearby = _nearby_message()
+        result, built = self._run([nearby], [nearby, AIMessage("Here are two.")])
+        self.assertEqual(result["reply"], "Here are two.")
         self.assertEqual(built, [True, False])
 
     def test_resuming_does_not_run_the_tool_twice(self):
         # The resume is handed the messages so far, so the tool result is
         # already present and there is nothing for the model to call again.
-        form = _form_message()
-        result, _built = self._run([form], [form, AIMessage("ok")])
+        nearby = _nearby_message()
+        result, _built = self._run([nearby], [nearby, AIMessage("ok")])
         self.assertEqual([c["name"] for c in result["tool_calls"]],
-                         ["extract_form_tool"])
+                         ["find_nearby_tool"])
 
     def test_an_answer_with_no_tool_needs_no_second_turn(self):
         result, built = self._run([AIMessage("Hi there!")])
@@ -112,26 +120,39 @@ class StopsAtTheToolTest(unittest.TestCase):
         self.assertIs(result["choose_many"], True)
 
     def test_a_tool_that_answers_carries_no_chips(self):
-        result, _built = self._run([_form_message(), AIMessage("Got it.")])
+        result, _built = self._run([_nearby_message(), AIMessage("Got it.")])
         self.assertIsNone(result["choices"])
         self.assertIs(result["choose_many"], False)
+
+    def test_the_extractor_writes_its_own_reply(self):
+        # Left a turn to word this, the model wrote the itinerary out in the
+        # chat: a day with no version switcher and no replanning, and a second
+        # one built the moment the parent pressed Plan my day. Asking it not to
+        # did not hold, so it does not get the turn.
+        form = _form_message()
+        result, built = self._run([form])
+        self.assertEqual(result["reply"], form.content)
+        self.assertEqual(built, [True])
 
     def test_the_extracted_form_reaches_the_widget(self):
         """The bug this closes: the extractor ran, read the day correctly, and
         the form was dropped on the floor. The widget draws its handoff card
         from data.form, so the parent got a paragraph describing their own day
         back instead of a form to check."""
-        result, _built = self._run([_form_message(), AIMessage("Got it.")])
+        result, _built = self._run([_form_message()])
         self.assertEqual(result["form"], {"destination": "Vancouver"})
 
     def test_no_extraction_means_no_form(self):
         result, _built = self._run([_faq_message()])
         self.assertIsNone(result["form"])
 
-    def test_only_the_faq_writes_its_own_answers(self):
-        # A guard on the list itself. Adding a tool here means its raw output
-        # goes straight to a parent, which is only right for the FAQ.
-        self.assertEqual(set(FINAL_ANSWER_TOOLS), {"answer_faq_tool"})
+    def test_which_tools_write_their_own_answers(self):
+        # A guard on the list itself. A tool here has its raw output shown to a
+        # parent and denies the model a turn, which is right for the FAQ (its
+        # answer is already written and cited) and for the extractor (a turn
+        # there is a turn to write an itinerary in).
+        self.assertEqual(set(FINAL_ANSWER_TOOLS),
+                         {"answer_faq_tool", "extract_form_tool"})
 
 
 if __name__ == "__main__":
