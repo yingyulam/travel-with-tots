@@ -77,3 +77,62 @@ class ThroughRunAgentTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AlwaysGroundedTest(unittest.TestCase):
+    """A question the knowledge base can answer is answered from it.
+
+    Measured: by the third turn of a conversation the model stopped calling
+    answer_faq_tool, 4 times out of 4, because two knowledge-base answers were
+    already in the transcript. The replies were correct and ungrounded, which
+    is the guarantee retrieval exists to give. Naming it in the prompt took it
+    to 1 in 4; this takes it to 0.
+
+    What decides whether a message is about the site is retrieval, not the
+    model: MIN_SIMILARITY already separates off-topic (~0.11) from real
+    questions (~0.31), so a tool-less turn is offered to the knowledge base and
+    kept only if something comes back.
+    """
+
+    def _turn(self, retrieved, faq_reply="Grounded. [Source 1]"):
+        graph = mock.Mock()
+        graph.invoke.return_value = {"messages": [AIMessage("From memory.")]}
+        with mock.patch("src.agent._build_agent", return_value=graph), \
+             mock.patch("src.agent.rag.retrieve", return_value=retrieved), \
+             mock.patch("src.agent.ask_website_chatbot",
+                        return_value={"reply": faq_reply,
+                                      "sources": retrieved,
+                                      "response_time": 1.0,
+                                      "input_tokens": 1, "output_tokens": 1}):
+            return run_agent("how does replanning work")
+
+    def test_a_tool_less_turn_the_knowledge_base_can_answer_is_grounded(self):
+        result = self._turn([{"index": 1, "section": "Re-planning"}])
+        self.assertEqual(result["reply"], "Grounded. [Source 1]")
+        self.assertEqual(len(result["sources"]), 1)
+
+    def test_it_is_reported_as_the_tool_that_answered(self):
+        # The badge and data/intents.jsonl both read tool_calls, and the FAQ
+        # tool is what produced this answer.
+        result = self._turn([{"index": 1, "section": "Re-planning"}])
+        self.assertEqual([c["name"] for c in result["tool_calls"]],
+                         ["answer_faq_tool"])
+
+    def test_a_greeting_is_left_alone(self):
+        # Retrieval finds nothing above the threshold, so the direct answer
+        # stands. Dragging "hello" into the knowledge base would be worse.
+        result = self._turn([])
+        self.assertEqual(result["reply"], "From memory.")
+        self.assertEqual(result["tool_calls"], [])
+
+    def test_a_retrieval_blip_leaves_the_direct_answer(self):
+        # The agent already has a reply; losing it to a network error would be
+        # a worse turn than an ungrounded one.
+        import requests
+        graph = mock.Mock()
+        graph.invoke.return_value = {"messages": [AIMessage("From memory.")]}
+        with mock.patch("src.agent._build_agent", return_value=graph), \
+             mock.patch("src.agent.rag.retrieve",
+                        side_effect=requests.exceptions.RequestException("down")):
+            result = run_agent("how does replanning work")
+        self.assertEqual(result["reply"], "From memory.")

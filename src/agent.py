@@ -27,6 +27,7 @@ from .agents import (
     REQUEST_TIMEOUT_SECONDS,
     ask_website_chatbot,
 )
+from . import rag
 from .components.extract_form import FormExtractionError, extract_form
 from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
@@ -56,7 +57,10 @@ SYSTEM_PROMPT = (
     # sees it: this tool's reply goes straight to the parent (FINAL_ANSWER_TOOLS)
     # and the turn ends there.
     "- answer_faq_tool for any question about how the site works or what it "
-    "can do. Pass the parent's question through unchanged.\n"
+    "can do. Pass the parent's question through unchanged. Call it every time, "
+    "including when an earlier answer in this conversation looks like it "
+    "covers the question: answers come from the knowledge base, never from "
+    "memory or from what you said before.\n"
     "- Asking to plan a day without saying anything about it is not a question "
     "about the site: ask them for the details, and do not reach for the "
     "knowledge base.\n"
@@ -516,6 +520,36 @@ def _only_earned_citations(reply: str, sources: list) -> str:
         lambda m: m.group(0) if m.group(1) in real else "", reply)
 
 
+def _knowledge_base_answer(message: str, model: str) -> dict | None:
+    """A grounded answer when the agent skipped the tool but should not have.
+
+    Measured: on the third turn of a conversation the model stopped calling
+    answer_faq_tool entirely, 4 times out of 4, because two knowledge-base
+    answers were already sitting in the transcript and it reasoned it knew the
+    subject. The answers were right and completely ungrounded, which is the
+    guarantee this whole path exists to give. Naming the failure mode in the
+    prompt took it from 4 in 4 to 1 in 4, and a prompt is a request.
+
+    What decides whether a message is about the site is retrieval itself, not
+    the model and not a second classifier: MIN_SIMILARITY already separates the
+    two cleanly, with off-topic queries topping out around 0.11 and real ones
+    starting around 0.31. So a turn that used no tool is offered to the
+    knowledge base, and kept only if the knowledge base has something to say.
+    Nothing retrieved means the direct answer stands, which is what "hello"
+    should get.
+    """
+    try:
+        if not rag.retrieve(message):
+            return None
+        answer = ask_website_chatbot(message, model=model)
+    except TOOL_ERRORS:
+        # Retrieval is a best-effort improvement here; the agent already has a
+        # reply, and losing it to a blip would be a worse turn than an
+        # ungrounded one.
+        return None
+    return answer
+
+
 def _asked_a_question(message) -> bool:
     """Whether a tool came back asking rather than answering.
 
@@ -559,6 +593,24 @@ def run_agent(message: str, history: list[dict] | None = None,
         result = _build_agent(model).invoke({"messages": result["messages"]})
 
     tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    if not tool_messages:
+        grounded = _knowledge_base_answer(message, model)
+        if grounded is not None:
+            return {
+                "reply": grounded["reply"],
+                "sources": grounded["sources"],
+                "places": [], "source": None, "replan_request": None,
+                "form": None, "place_form": None,
+                "choices": None, "choose_many": False,
+                "model": model,
+                "response_time": grounded.get("response_time"),
+                "input_tokens": grounded.get("input_tokens"),
+                "output_tokens": grounded.get("output_tokens"),
+                # Named as the tool that answered, because it did: the widget's
+                # badge and data/intents.jsonl both read this.
+                "tool_calls": [{"name": "answer_faq_tool",
+                                "output": grounded["reply"], "data": grounded}],
+            }
 
     # The FAQ tool wraps ask_website_chatbot, so when it ran its result already
     # carries the citations and usage numbers the widget expects.
