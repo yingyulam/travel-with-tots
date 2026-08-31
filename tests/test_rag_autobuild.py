@@ -71,18 +71,35 @@ class StartupWithNoIndexTest(unittest.TestCase):
             rag.init_index_async()
         built.assert_called_once()
 
-    def test_the_chatbot_reports_the_state_rather_than_failing(self):
-        # A missing index must not become an HTML error page: the widget parses
-        # every reply, and the route already answers 503 JSON for this.
+    def _post(self, state):
         import app as app_module
+        app_module.app.config["TESTING"] = True
         with mock.patch.object(rag, "get_status",
-                               return_value={"state": "error", "error": "no index",
-                                             "chunk_size": 128}):
-            app_module.app.config["TESTING"] = True
+                               return_value={"state": state, "error": "x",
+                                             "chunk_size": 128}), \
+             mock.patch.object(app_module, "handle_message",
+                               return_value={"reply": "ok"}) as handled:
             reply = app_module.app.test_client().post(
                 "/chatbot", json={"message": "hello"})
+        return reply, handled
+
+    def test_a_build_in_progress_is_answered_as_json_not_an_error_page(self):
+        # The widget parses every reply, so this has to stay JSON. "Try again
+        # shortly" is also true during the few seconds a first build takes.
+        reply, handled = self._post("indexing")
         self.assertEqual(reply.status_code, 503)
         self.assertIn("error", reply.get_json())
+        handled.assert_not_called()
+
+    def test_a_failed_index_does_not_take_the_rest_of_the_chat_down(self):
+        # This used to refuse the whole turn, which turned a retrieval problem
+        # into a broken chat: a deployment whose build stalled answered 503 to
+        # "plan a trip", which needs no index and had been working. Retrieval
+        # degrades on its own now -- retrieve returns nothing and the FAQ tool
+        # says so -- so the turn goes through.
+        reply, handled = self._post("error")
+        self.assertEqual(reply.status_code, 200)
+        handled.assert_called_once()
 
 
 if __name__ == "__main__":

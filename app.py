@@ -2485,10 +2485,19 @@ def chatbot_route():
     if model not in ALLOWED_CHAT_MODELS:
         model = DEFAULT_MODEL
 
-    # The FAQ tool reads from the index, so the agent is only fully useful once
-    # it's built. Kept as a hard gate rather than a warning, same as before.
-    if rag.get_status()["state"] != "ready":
-        return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
+    # Only the FAQ tool reads the index, so only it needs one. This used to
+    # refuse the whole turn, and that turned a retrieval problem into a broken
+    # chat: a deployment whose index build stalled answered 503 to "plan a
+    # trip", which needs no index at all and had been working. Retrieval now
+    # degrades on its own -- `rag.retrieve` returns nothing when it is not
+    # ready, and `answer_faq_tool` says so -- so there is nothing left for a
+    # gate here to protect.
+    #
+    # Still refused while a first index is genuinely building, because during
+    # those few seconds "try again shortly" is true and useful.
+    if rag.get_status()["state"] == "indexing":
+        return jsonify({"error": "The knowledge base is still indexing. "
+                                 "Please try again shortly."}), 503
 
     # The widget echoes back whatever workflow state it was given, so this is
     # client-controlled: anything that is not a dict is dropped rather than

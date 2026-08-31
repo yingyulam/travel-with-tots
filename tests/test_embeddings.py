@@ -160,6 +160,34 @@ class TokenCountTest(unittest.TestCase):
         self.assertNotEqual(rag._token_count(text), len(text) // 4)
 
 
+class TheVocabularyIsVendoredTest(unittest.TestCase):
+    """tiktoken fetches its vocabulary over the network on first use.
+
+    That first use is inside `chunk_markdown`, so on the first deploy of this
+    change the download did not complete, the index build hung, and the status
+    sat on "indexing" forever -- which gated the entire chat, not just
+    retrieval. The file lives in the repo now.
+    """
+
+    def test_the_cache_directory_points_into_the_repo(self):
+        self.assertEqual(os.environ["TIKTOKEN_CACHE_DIR"],
+                         str(rag.DATA_DIR / "tiktoken"))
+
+    def test_the_vocabulary_file_is_present(self):
+        # The name is sha1(url).hexdigest(); tiktoken looks for exactly that, so
+        # renaming it sends tiktoken back to the network.
+        import hashlib
+        url = ("https://openaipublic.blob.core.windows.net/encodings/"
+               "cl100k_base.tiktoken")
+        expected = hashlib.sha1(url.encode()).hexdigest()
+        self.assertTrue((rag.DATA_DIR / "tiktoken" / expected).is_file())
+
+    def test_counting_tokens_needs_no_network(self):
+        # The encoding may already be cached in this process, so this asserts
+        # the file is readable and sufficient rather than re-proving the block.
+        self.assertGreater(rag._token_count("a sentence with several words"), 3)
+
+
 class NothingLoadsAModelTest(unittest.TestCase):
     def test_the_local_embedder_is_gone(self):
         # The whole point: no 208MB model in the request path.

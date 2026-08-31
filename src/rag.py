@@ -129,6 +129,23 @@ def _embed(texts):
     return out
 
 
+# tiktoken does not ship its vocabulary: on first use it fetches ~1.6MB from
+# openaipublic.blob.core.windows.net and caches it in the system temp directory.
+# That download is the first thing `chunk_markdown` triggers, so on a host where
+# it does not complete, the index build hangs -- status stuck on "indexing"
+# forever, which gates the whole chat rather than just retrieval. It happened on
+# the first deploy of this change.
+#
+# So the vocabulary is vendored in `data/tiktoken/` and pointed at here, before
+# anything asks for an encoding. No download, on any host, ever. `setdefault`
+# rather than assignment, so an explicitly set cache directory still wins.
+#
+# The filename is not arbitrary: tiktoken looks for sha1(url).hexdigest(), so it
+# must stay exactly as it is or tiktoken will decide the cache is empty and go
+# back to the network.
+os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(DATA_DIR / "tiktoken"))
+
+
 def _get_encoding():
     """The tokenizer, loaded once. Costs about 46MB resident, measured."""
     global _encoding
