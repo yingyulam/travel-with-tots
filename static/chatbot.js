@@ -470,7 +470,28 @@ document.addEventListener("click", (e) => {
       return el;
     }
 
-    function renderAssistantReply(bubbleEl, text, sources, feedbackContext, workflow) {
+    // What each tool did, in words a parent reads. The badge names whichever
+    // router handled the turn, and on /chatbot that is the agent picking a
+    // tool: "no workflow" was true of every reply there and told nobody
+    // anything, because no workflow runs on that route by design.
+    const TOOL_LABELS = {
+      answer_faq_tool: "Knowledge base",
+      extract_form_tool: "Filled your form",
+      plan_trip_tool: "Planned a day",
+      find_nearby_tool: "Nearby search",
+      replan_tool: "Replan",
+      log_place_tool: "Log a place",
+    };
+
+    function routedLabel(workflow, toolCalls) {
+      if (workflow) return `⚙️ ${workflow}`;
+      const tool = (toolCalls || []).length ? toolCalls[0].name : null;
+      if (tool) return `🔧 ${TOOL_LABELS[tool] || tool}`;
+      return "💬 answered directly";
+    }
+
+    function renderAssistantReply(bubbleEl, text, sources, feedbackContext, workflow,
+                                  toolCalls) {
       bubbleEl.innerHTML = "";
       const textSpan = document.createElement("span");
       textSpan.className = "twt-chatbot-msg-text";
@@ -530,14 +551,14 @@ document.addEventListener("click", (e) => {
         });
       });
 
-      // Which workflow the intent router picked, if any. Shown rather than
-      // logged only, so you can tell at a glance whether a reply came from a
-      // workflow or from the agent answering directly.
+      // What handled this turn: the named workflow on a test page, the tool the
+      // agent chose on /chatbot, or neither when it simply answered. Shown
+      // rather than logged only, so the routing is visible at a glance.
       const routed = document.createElement("div");
       routed.className = "twt-routed";
       const badge = document.createElement("span");
       badge.className = "twt-badge";
-      badge.textContent = workflow ? `⚙️ ${workflow}` : "💬 no workflow";
+      badge.textContent = routedLabel(workflow, toolCalls);
       routed.appendChild(badge);
       bubbleEl.appendChild(routed);
 
@@ -947,7 +968,7 @@ document.addEventListener("click", (e) => {
           output_tokens: data.output_tokens,
         };
         renderAssistantReply(placeholder, data.reply, data.sources, feedback,
-          data.workflow);
+          data.workflow, data.tool_calls);
         conversation = data.conversation || null;
         // Recorded before the buttons are drawn, so clicking one can mark this
         // very turn as answered.
@@ -1043,7 +1064,7 @@ document.addEventListener("click", (e) => {
         } else if (turn.kind === "reply" && turn.data) {
           const bubbleEl = addMessage("assistant", "");
           renderAssistantReply(bubbleEl, turn.data.reply, turn.data.sources,
-            turn.feedback, turn.data.workflow);
+            turn.feedback, turn.data.workflow, turn.data.tool_calls);
           renderFollowUps(bubbleEl, turn.data, turn);
         }
       });
