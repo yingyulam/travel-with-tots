@@ -82,5 +82,34 @@ class StartupWithNoIndexTest(unittest.TestCase):
         self.assertIn("error", reply.get_json())
 
 
+class ModelCacheLocationTest(unittest.TestCase):
+    """Where the 86MB embedding model is kept, which decided whether the
+    deployed knowledge base worked at all.
+
+    chromadb's default is $HOME/.cache/chroma. A deployment hands only the
+    project directory from a build to the running service, so the model the
+    build downloaded was not there when a request needed it, and the first
+    knowledge-base question re-downloaded 79MB inside the request. gunicorn
+    kills a worker at 120s: measured, that question returned an empty 502 after
+    127.9s while the same route without retrieval answered in 4.1s.
+    """
+
+    def test_the_model_lives_under_the_project_data_directory(self):
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+        self.assertTrue(
+            pathlib.Path(ONNXMiniLM_L6_V2.DOWNLOAD_PATH).is_relative_to(rag.DATA_DIR),
+            "the embedding model must be cached inside the project directory, "
+            "or a deploy cannot hand it to the running service")
+
+    def test_it_is_not_left_in_the_home_cache(self):
+        # The specific default that broke the deployment. Named explicitly so
+        # reverting the override fails here rather than 120 seconds into a
+        # request on the deployed instance.
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+        home_cache = pathlib.Path.home() / ".cache" / "chroma"
+        self.assertFalse(
+            pathlib.Path(ONNXMiniLM_L6_V2.DOWNLOAD_PATH).is_relative_to(home_cache))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,33 @@ DEFAULT_CHUNK_SIZE = 128
 TOP_K = 3
 MIN_SIMILARITY = 0.25
 
+# Where the 86MB ONNX model is kept. chromadb's own default is
+# $HOME/.cache/chroma, and a deployment preserves only the project directory
+# from a build into the running service, so the model the build downloaded was
+# not there when a request needed it. Measured: an absent model is re-downloaded
+# (79MB, then extracted) inside the request that asked the question, which
+# gunicorn kills at 120s -- a knowledge-base question returned an empty 502
+# after 127.9s while the same route without retrieval answered in 4.1s. With the
+# model already on disk the same step takes 0.18s.
+#
+# Under data/ so it travels with the index that is already there, and set as a
+# class attribute because the constructor takes only preferred_providers. Not by
+# setting HOME, which would move pip's cache with it and would apply only in the
+# deployment -- the local/deployed divergence is what hid this in the first
+# place, and here both now read the same path.
+MODEL_DIR = DATA_DIR / "onnx_models"
+
+if hasattr(ONNXMiniLM_L6_V2, "DOWNLOAD_PATH"):
+    ONNXMiniLM_L6_V2.DOWNLOAD_PATH = str(MODEL_DIR / EMBEDDING_MODEL_NAME)
+else:
+    # Said out loud, not raised. Without the override the model lands in $HOME
+    # and the deployed knowledge base is broken exactly as it was before, which
+    # is survivable; raising here would stop the app booting at all and take
+    # every working page down with it.
+    print("chromadb's ONNXMiniLM_L6_V2 has no DOWNLOAD_PATH to override, so the "
+          "embedding model will be cached outside the project directory and "
+          "will not survive a deploy.")
+
 _embedder = None
 _client = None
 _status = {"state": "not_started", "chunk_size": DEFAULT_CHUNK_SIZE, "error": None}

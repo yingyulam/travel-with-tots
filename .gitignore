@@ -22,6 +22,10 @@ data/app.db
 # RAG index (rebuildable from data/knowledge_base.md)
 data/chroma/
 data/rag_config.json
+# The 86MB ONNX embedding model, downloaded on first use. Kept here rather than
+# in $HOME so a deployment's build can hand it to the running service, which
+# only inherits the project directory.
+data/onnx_models/
 # Which backend /settings is set to. Generated, and local to one install.
 data/data_source.json
 # Generated from the live schema by supabase_sync.postgres_ddl(); it would
