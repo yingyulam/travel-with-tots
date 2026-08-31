@@ -1742,8 +1742,15 @@ def replan_trip_run_route():
 
 @app.route("/rag/status")
 def rag_status():
-    """Poll-able indexing status, used by the chatbot widget and Chunks page."""
-    return jsonify(rag.get_status())
+    """Poll-able indexing status, used by the chatbot widget and Chunks page.
+
+    `model_cached` is here because a green index and an answerable question are
+    not the same thing: with the embedding model missing from this instance,
+    every knowledge-base question is killed downloading one while the status
+    still reads "ready". A boolean rather than the path, since this route is
+    public.
+    """
+    return jsonify({**rag.get_status(), "model_cached": rag.model_cached()})
 
 
 @app.route("/chunks")

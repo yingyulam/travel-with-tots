@@ -110,6 +110,27 @@ class ModelCacheLocationTest(unittest.TestCase):
         self.assertFalse(
             pathlib.Path(ONNXMiniLM_L6_V2.DOWNLOAD_PATH).is_relative_to(home_cache))
 
+    def test_an_absent_model_is_reported_as_absent(self):
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+        with mock.patch.object(ONNXMiniLM_L6_V2, "DOWNLOAD_PATH",
+                               "/nonexistent-model-dir"):
+            self.assertFalse(rag.model_cached())
+
+    def test_the_status_route_says_whether_the_model_is_here(self):
+        # Without this the deployed instance could not be asked the one question
+        # that mattered, and four fixes were guessed at from outside instead.
+        import app as app_module
+        app_module.app.config["TESTING"] = True
+        body = app_module.app.test_client().get("/rag/status").get_json()
+        self.assertIn("model_cached", body)
+
+    def test_the_status_route_does_not_leak_the_path(self):
+        # It is public and unauthenticated, so a boolean is the whole answer.
+        import app as app_module
+        app_module.app.config["TESTING"] = True
+        body = app_module.app.test_client().get("/rag/status").get_json()
+        self.assertNotIn(str(rag.MODEL_DIR), str(body))
+
 
 if __name__ == "__main__":
     unittest.main()

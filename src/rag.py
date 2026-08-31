@@ -121,6 +121,24 @@ def _token_count(text):
     return sum(_get_embedder().tokenizer.encode(text).attention_mask)
 
 
+def model_cached():
+    """Whether the embedding model is already on this instance's disk.
+
+    The one fact that could not be seen from outside. A deployment hands only
+    the project directory from a build to the running service, so "the index is
+    ready" and "a question can be answered" are different claims: with the model
+    absent, every knowledge-base question spends its first 79MB downloading one
+    and is killed at 120s, while the index itself is perfect. Read off
+    chromadb's own attributes rather than rebuilt from ours, so it reports where
+    the model is really looked for even if the override above did not take.
+    """
+    path = getattr(ONNXMiniLM_L6_V2, "DOWNLOAD_PATH", None)
+    if path is None:
+        return False
+    folder = getattr(ONNXMiniLM_L6_V2, "EXTRACTED_FOLDER_NAME", "onnx")
+    return (Path(path) / folder / "model.onnx").exists()
+
+
 def _get_client():
     global _client
     if _client is None:
