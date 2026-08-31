@@ -142,13 +142,29 @@ class EveryPageArmsTheSameWayTest(unittest.TestCase):
 
     def test_arming_routes_messages_to_this_workflow(self):
         # The chat is both a workflow's input and the general front door, so
-        # without this a page cannot reach its own workflow when the classifier
-        # prefers another.
+        # without this a page cannot reach its own workflow.
+        #
+        # Arming is unchanged, and the widget turns it into an address: an
+        # armed turn goes to that workflow's own route, an unarmed one to the
+        # agent. It used to be a flag in the body of /chatbot, which meant one
+        # route with two orchestrators, and any caller could set it.
         source = _script(self.WATCHER)
         self.assertIn("window.twtForceWorkflow = mode === \"off\" ? null : workflow;",
                       source)
-        self.assertIn("force_workflow: window.twtForceWorkflow || null,",
-                      _script("static/chatbot.js"))
+        widget = _script("static/chatbot.js")
+        self.assertIn("const armed = window.twtForceWorkflow || null;", widget)
+        # The whole expression, not its pieces. Asserting the URL and the
+        # fallback separately let a mutation that made the branch unreachable
+        # pass, because both strings were still in the file.
+        self.assertIn("const endpoint = armed\n"
+                      "        ? `/workflows/${encodeURIComponent(armed)}/run`\n"
+                      '        : "/chatbot";', widget)
+        self.assertIn("await fetch(endpoint, {", widget)
+
+    def test_the_widget_no_longer_asks_chatbot_to_force_a_workflow(self):
+        # /chatbot is the agent's route now. A leftover flag here would be a
+        # second orchestrator on it, reachable by anyone.
+        self.assertNotIn("force_workflow", _script("static/chatbot.js"))
 
     def test_every_page_names_the_workflow_it_arms(self):
         for _, (_, path) in WORKFLOW_PAGES.items():

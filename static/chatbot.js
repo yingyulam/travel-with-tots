@@ -909,8 +909,19 @@ document.addEventListener("click", (e) => {
       turns.push({ kind: "user", text: message });
       const placeholder = addMessage("assistant", "Thinking…");
 
+      // Where this turn goes. An armed workflow test page names the workflow
+      // it is testing, and that turn goes straight to it; every other turn is
+      // a parent talking to the assistant, and the agent decides. Two routes
+      // rather than a flag on one, so each has a single orchestrator, and the
+      // arming signal is unchanged: workflow-watch.js still just sets the
+      // global.
+      const armed = window.twtForceWorkflow || null;
+      const endpoint = armed
+        ? `/workflows/${encodeURIComponent(armed)}/run`
+        : "/chatbot";
+
       try {
-        const res = await fetch("/chatbot", {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -923,10 +934,6 @@ document.addEventListener("click", (e) => {
             // a replan. A global rather than a DOM lookup, so the contract
             // between that page and this widget is named in both.
             on_trip: window.twtReplanReady === true,
-            // Set by an armed workflow test page, so its messages reach the
-            // workflow it is testing rather than whichever one the classifier
-            // prefers. Null in normal use, which is every page but those.
-            force_workflow: window.twtForceWorkflow || null,
           }),
         });
         const data = await readReply(res);

@@ -305,27 +305,77 @@ def handle_message(message: str, history: list[dict] | None = None,
 
     offered = runnable_message_workflows()
     in_flight = (conversation or {}).get("workflow")
-
-    if in_flight and is_cancel(message):
-        # Skipping the classifier mid-flow is what makes "yes" an answer rather
-        # than an intent, and it is also what used to make a workflow a room
-        # with no door: the only ways out were finishing it or ending the chat.
-        # Checked before dispatch, so it works for every workflow rather than
-        # each one having to remember. Logged against the workflow that was in
-        # play with ran=False, which is exactly what happened.
-        log_decision(message, in_flight, ran=False)
-        return {
-            "reply": ("No problem, I've stopped there. What else can I help "
-                      "you with?"),
-            "sources": [], "model": model, "response_time": None,
-            "input_tokens": None, "output_tokens": None, "tool_calls": [],
-            "workflow": None, "conversation": None, "choices": None,
-            "form": None, "open_form": False, "places": [], "source": None,
-            "ask_location": False, "cancelled": in_flight,
-        }
-
     forced = force_workflow if any(
         w["name"] == force_workflow for w, _ in offered) else None
+
+    if in_flight:
+        chosen = in_flight
+    elif forced:
+        # Nothing to classify: a test page has said where this message goes.
+        # After in-flight on purpose, because mid-conversation "Vancouver" is an
+        # answer to the question just asked, and forcing would restart the flow
+        # on every turn.
+        chosen = forced
+    else:
+        chosen = classify_intent(message, [workflow for workflow, _ in offered])
+
+    reply = run_workflow_turn(chosen, message, conversation=conversation,
+                              context=context, model=model, forced=bool(forced))
+    if reply is not None:
+        return reply
+
+    # Logged as "no workflow" only when none was picked. A workflow that was
+    # picked and then raised has already logged itself, and logging again would
+    # count one message twice in the file accuracy is measured from.
+    if chosen not in {workflow["name"] for workflow, _ in offered}:
+        log_decision(message, None, ran=False)
+
+    # Falling through ends any flow: the parent has moved on, and holding stale
+    # state would silently resume it on their next message.
+    return {**run_agent(message, history=history, model=model),
+            "workflow": None, "conversation": None}
+
+
+def _cancelled(in_flight: str, model: str) -> dict:
+    """Leaving a flow, in the widget's shape."""
+    return {
+        "reply": ("No problem, I've stopped there. What else can I help "
+                  "you with?"),
+        "sources": [], "model": model, "response_time": None,
+        "input_tokens": None, "output_tokens": None, "tool_calls": [],
+        "workflow": None, "conversation": None, "choices": None,
+        "form": None, "open_form": False, "places": [], "source": None,
+        "ask_location": False, "cancelled": in_flight,
+    }
+
+
+def run_workflow_turn(name: str, message: str, *, conversation: dict | None = None,
+                      context: dict | None = None, model: str = DEFAULT_MODEL,
+                      forced: bool = False) -> dict | None:
+    """One turn of the named workflow, in the widget's shape, or None.
+
+    None is "this did not run": the name is not on offer, or the workflow
+    raised. Both are logged, and both leave the caller to answer another way --
+    /chatbot falls through to the agent, the workflow route says so plainly.
+
+    Extracted from handle_message so a workflow has one implementation whether
+    it was reached by the classifier or asked for by name. A second copy behind
+    the workflow route is exactly the duplication the route exists to avoid.
+
+    An in-flight conversation outranks `name`: mid-flow, "yes" is an answer to
+    the question just asked, not a request to start something.
+    """
+    offered = runnable_message_workflows()
+    in_flight = (conversation or {}).get("workflow")
+
+    if in_flight and is_cancel(message):
+        # Checked before dispatch, so it works for every workflow rather than
+        # each one having to remember. Without it a workflow was a room with no
+        # door: the only ways out were finishing it or ending the chat. Logged
+        # against the workflow that was in play with ran=False, which is
+        # exactly what happened.
+        log_decision(message, in_flight, ran=False)
+        return _cancelled(in_flight, model)
 
     if in_flight:
         chosen = in_flight
@@ -334,79 +384,65 @@ def handle_message(message: str, history: list[dict] | None = None,
         state = conversation.get("state")
         if not isinstance(state, dict):
             state = None
-    elif forced:
-        # Nothing to classify: a test page has said where this message goes.
-        # After in-flight on purpose, because mid-conversation "Vancouver" is an
-        # answer to the question just asked, and forcing would restart the flow
-        # on every turn.
-        chosen = forced
-        state = None
     else:
-        chosen = classify_intent(message, [workflow for workflow, _ in offered])
-        state = None
+        chosen, state = name, None
 
     run = next((r for w, r in offered if w["name"] == chosen), None)
+    if run is None:
+        return None
 
-    if run is not None:
-        try:
-            result = run(message, state, context)
-        except TOOL_ERRORS as e:
-            # A workflow that fails must not cost the parent their turn, so it
-            # falls through to the agent. Logged as not-run, so the trace shows
-            # the routing was right even where the execution was not.
-            print(f"Workflow {chosen!r} failed, answering as the chatbot: {e}")
-            log_decision(message, chosen, ran=False, forced=bool(forced))
-        else:
-            log_decision(message, chosen, ran=True, forced=bool(forced))
-            # A workflow that returns a state is still talking; one that returns
-            # None is finished, and the next message starts fresh at the
-            # classifier.
-            next_state = result.get("state")
-            # The widget's keys, so a workflow reply renders like any other.
-            # The usage fields are genuinely unknown here: they come from the
-            # FAQ tool, which did not run.
-            return {
-                "reply": result["reply"],
-                "sources": [],
-                "model": model,
-                "response_time": None,
-                "input_tokens": None,
-                "output_tokens": None,
-                "tool_calls": [],
-                "workflow": chosen,
-                "workflow_result": result,
-                "conversation": ({"workflow": chosen, "state": next_state}
-                                 if next_state else None),
-                "choices": result.get("choices"),
-                # Whether those choices are exclusive. A place has several
-                # features at once, so its chips collect instead of sending.
-                "choose_many": result.get("choose_many", False),
-                "form": result.get("form"),
-                # The same idea as `form`, for a different page: a collected
-                # place, posted to /log-place rather than /plan.
-                "place_form": result.get("place_form"),
-                # A confirmed replan, for the in-trip page to act on. It holds
-                # the plan and its versions, so it does the re-timing.
-                "replan_request": result.get("replan_request"),
-                "open_form": result.get("open_form", False),
-                # Places render as cards with real Maps links, so they travel
-                # as data rather than as URLs written into the reply text.
-                "places": result.get("places") or [],
-                "source": result.get("source"),
-                "ask_location": result.get("ask_location", False),
-                # Offered on every turn a workflow stays open, so leaving is
-                # always one tap away. Sent from here rather than built in the
-                # widget, so the label the parent clicks and the words this
-                # side recognises are the same string.
-                "cancel_choice": CANCEL_CHOICE if next_state else None,
-            }
-    else:
-        log_decision(message, None, ran=False)
+    try:
+        result = run(message, state, context)
+    except TOOL_ERRORS as e:
+        # A workflow that fails must not cost the parent their turn. Logged as
+        # not-run, so the trace shows the routing was right even where the
+        # execution was not.
+        print(f"Workflow {chosen!r} failed, answering as the chatbot: {e}")
+        log_decision(message, chosen, ran=False, forced=forced)
+        return None
 
-    # Falling through ends any flow: the parent has moved on, and holding stale
-    # state would silently resume it on their next message.
-    return {**run_agent(message, history=history, model=model),
-            "workflow": None, "conversation": None}
+    log_decision(message, chosen, ran=True, forced=forced)
+    # A workflow that returns a state is still talking; one that returns None is
+    # finished, and the next message starts fresh.
+    next_state = result.get("state")
+    # The widget's keys, so a workflow reply renders like any other. The usage
+    # fields are genuinely unknown here: they come from the FAQ tool, which did
+    # not run.
+    return {
+        "reply": result["reply"],
+        "sources": [],
+        "model": model,
+        "response_time": None,
+        "input_tokens": None,
+        "output_tokens": None,
+        "tool_calls": [],
+        "workflow": chosen,
+        "workflow_result": result,
+        "conversation": ({"workflow": chosen, "state": next_state}
+                         if next_state else None),
+        "choices": result.get("choices"),
+        # Whether those choices are exclusive. A place has several features at
+        # once, so its chips collect instead of sending.
+        "choose_many": result.get("choose_many", False),
+        "form": result.get("form"),
+        # The same idea as `form`, for a different page: a collected place,
+        # posted to /log-place rather than /plan.
+        "place_form": result.get("place_form"),
+        # A confirmed replan, for the in-trip page to act on. It holds the plan
+        # and its versions, so it does the re-timing.
+        "replan_request": result.get("replan_request"),
+        "open_form": result.get("open_form", False),
+        # Places render as cards with real Maps links, so they travel as data
+        # rather than as URLs written into the reply text.
+        "places": result.get("places") or [],
+        "source": result.get("source"),
+        "ask_location": result.get("ask_location", False),
+        # Offered on every turn a workflow stays open, so leaving is always one
+        # tap away. Sent from here rather than built in the widget, so the label
+        # the parent clicks and the words this side recognises are the same
+        # string.
+        "cancel_choice": CANCEL_CHOICE if next_state else None,
+    }
 
 
 def _artifact_of(name: str, tool_messages: list) -> dict:

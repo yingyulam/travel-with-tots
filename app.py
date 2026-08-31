@@ -121,7 +121,7 @@ from src.interactions import (
     SITUATION_OPTIONS,
     replan,
 )
-from src.agent import handle_message
+from src.agent import handle_message, run_workflow_turn
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
 from src.workflows import log_a_place, workflows_by_trigger
@@ -2530,16 +2530,70 @@ def chatbot_route():
         conversation = None
 
     try:
+        # No force_workflow. It let any caller pick which workflow their message
+        # reached, on a route open to everyone, and the only thing that needed
+        # it was the workflow test pages -- which now post to
+        # /workflows/<name>/run, behind an admin login.
         result = handle_message(message, history=_capped_history(data.get("history")),
                                 model=model, conversation=conversation,
-                                context=_chat_context(data),
-                                force_workflow=data.get("force_workflow"))
+                                context=_chat_context(data))
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:
         print(f"Chat turn failed: {e}")
         return jsonify({"error": "The chatbot is unavailable right now. Please try again."}), 502
 
+    return jsonify(result)
+
+
+@app.route("/workflows/<name>/run", methods=["POST"])
+@login_required
+@admin_required
+def run_workflow_route(name):
+    """One turn of a named workflow, as JSON: the workflow test pages' backend.
+
+    Their own route rather than /chatbot with a flag. /chatbot is the parent's
+    front door and its orchestration is the agent's; this is a demo surface and
+    its orchestration is a named workflow. One router each, and the same
+    run_workflow_turn behind both, so a workflow cannot answer two ways.
+
+    Admin-only, which force_workflow never was: it arrived in the body of a
+    public route, so any caller could pick the workflow their message reached.
+
+    Deliberately not rate limited. The Listen mode on those pages sends message
+    after message on purpose, and the caller is an authenticated admin rather
+    than the open internet the chat limits exist for.
+    """
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    if len(message) > MAX_MESSAGE_CHARS:
+        return jsonify({"error": "That message is too long. Please shorten it."}), 413
+
+    model = data.get("model")
+    if model not in ALLOWED_CHAT_MODELS:
+        model = DEFAULT_MODEL
+
+    # Client-controlled, so anything that is not a dict is dropped rather than
+    # handed to a workflow, which would reach it as an attribute error.
+    conversation = data.get("conversation")
+    if not isinstance(conversation, dict):
+        conversation = None
+
+    try:
+        result = run_workflow_turn(name, message, conversation=conversation,
+                                   context=_chat_context(data), model=model,
+                                   forced=True)
+    except (openai.OpenAIError, requests.exceptions.RequestException) as e:
+        print(f"Workflow turn failed: {e}")
+        return jsonify({"error": "That workflow is unavailable right now."}), 502
+
+    if result is None:
+        # Said plainly rather than answered by the agent. This page exists to
+        # watch one workflow run, so quietly answering as something else would
+        # be the page reporting a pass on a test it never ran.
+        return jsonify({"error": f"No workflow named {name!r} could run that."}), 404
     return jsonify(result)
 
 

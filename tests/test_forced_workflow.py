@@ -104,23 +104,31 @@ class ForcingBeatsTheClassifierTest(unittest.TestCase):
         self.assertFalse(self.logged.call_args.kwargs["forced"])
 
 
-class TheRouteCarriesItTest(unittest.TestCase):
-    def test_the_request_key_reaches_handle_message(self):
-        with mock.patch.object(app_module, "handle_message",
-                               return_value={"reply": "ok"}) as handled, \
-             mock.patch.object(app_module.rag, "get_status",
-                               return_value={"state": "ready"}):
-            app_module.app.test_client().post(
-                "/chatbot", json={"message": "hi", "force_workflow": FILLING})
-        self.assertEqual(handled.call_args.kwargs["force_workflow"], FILLING)
+class TheRouteIgnoresItTest(unittest.TestCase):
+    """/chatbot used to take the workflow name from the request body.
 
-    def test_it_is_absent_in_normal_use(self):
+    It is a public route, so that let anyone decide which workflow their
+    message ran. The only caller that needed it was a workflow test page, and
+    those post to /workflows/<name>/run now, behind an admin login. Forcing is
+    still reachable in handle_message, which is where the tests above use it.
+    """
+
+    def _post(self, **body):
         with mock.patch.object(app_module, "handle_message",
                                return_value={"reply": "ok"}) as handled, \
              mock.patch.object(app_module.rag, "get_status",
                                return_value={"state": "ready"}):
-            app_module.app.test_client().post("/chatbot", json={"message": "hi"})
-        self.assertIsNone(handled.call_args.kwargs["force_workflow"])
+            app_module.app.test_client().post("/chatbot",
+                                              json={"message": "hi", **body})
+        return handled
+
+    def test_a_caller_cannot_choose_a_workflow_from_the_body(self):
+        handled = self._post(force_workflow=FILLING)
+        self.assertNotIn("force_workflow", handled.call_args.kwargs)
+
+    def test_a_normal_turn_is_unaffected(self):
+        handled = self._post()
+        self.assertNotIn("force_workflow", handled.call_args.kwargs)
 
 
 if __name__ == "__main__":
