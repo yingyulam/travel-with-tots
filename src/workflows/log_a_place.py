@@ -24,14 +24,10 @@ from .. import db
 from ..components.geocode import GeocodeError, geocode
 from ..intent import matches_only
 
-# The amenities a parent can vouch for, as (field name, label). Shared by the
-# log-a-place page and the dashboard's edit form so the two cannot offer
-# different lists. The names match db.add_venue's parameters.
-AMENITY_OPTIONS = [
-    ("has_family_room", "Family room"),
-    ("has_nursing_room", "Nursing room"),
-    ("stroller_accessible", "Stroller / step-free"),
-]
+# Read from db, not defined here. The Log a Place page, the dashboard's edit
+# form, this workflow and the chat agent's tool all offer the same list, and
+# production must not import a vocabulary out of the demo layer.
+AMENITY_OPTIONS = db.AMENITY_OPTIONS
 
 # "We couldn't work out where this is", in the shape a resolved place has.
 UNRESOLVED_PLACE = {"city": "", "neighbourhood": "", "formatted_address": "",

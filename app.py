@@ -64,6 +64,7 @@ from src.data_loader import (
 )
 from src.dates import compute_age, parse_date
 from src.db import (
+    AMENITY_OPTIONS,
     PromotionError,
     TRIP_FIELDS,
     add_child,
@@ -124,7 +125,6 @@ from src.agent import handle_message
 from src.models import Plan, Trip
 from src.results import get_results, get_stats, save_result
 from src.workflows import log_a_place, workflows_by_trigger
-from src.workflows.log_a_place import AMENITY_OPTIONS
 
 app = Flask(__name__)
 

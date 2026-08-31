@@ -225,6 +225,18 @@ REPORTABLE_FIELDS = ("has_washroom", "has_family_room", "has_nursing_room",
 # not a question, and asking it is how a form loses its reader.
 CONDITIONAL_ON_CAN_EAT = ("has_highchair",)
 
+# The amenities a parent can vouch for when logging a place, as
+# (field name, label). A subset of REPORTABLE_FIELDS, and the names match
+# add_venue's parameters. Here rather than in the workflow that first needed
+# it, because the Log a Place page, the dashboard's edit form, that workflow
+# and the chat agent's tool all offer the same list, and app.py should not have
+# to import a vocabulary out of the demo layer to render a form.
+AMENITY_OPTIONS = [
+    ("has_family_room", "Family room"),
+    ("has_nursing_room", "Nursing room"),
+    ("stroller_accessible", "Stroller / step-free"),
+]
+
 # The venue columns data/venues.json owns, in the order _seed_venues supplies
 # them. Deliberately excludes source, parent_id and the provenance columns: a
 # re-seed must never demote a row or discard a citation a human added.

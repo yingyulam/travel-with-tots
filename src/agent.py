@@ -30,6 +30,7 @@ from .components.extract_form import FormExtractionError, extract_form
 from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
 from .data_loader import SUPPORTED_CITIES
+from .db import AMENITY_OPTIONS
 from .intent import CANCEL_CHOICE, classify_intent, is_cancel, log_decision
 from .interactions import SITUATION_LABELS, read_replan_request
 from .workflows import runnable_message_workflows
@@ -51,6 +52,9 @@ SYSTEM_PROMPT = (
     "- plan_trip_tool only when they explicitly ask you to build the itinerary "
     "now. Never on a first description of a day.\n"
     "- find_nearby_tool when they need somewhere nearby right now.\n"
+    "- log_place_tool when they tell you about a kid-friendly place the "
+    "site is missing and want it added. Give it the place's own name, not "
+    "their sentence about wanting to log one.\n"
     "- replan_tool when something has changed during a day already under way "
     "and the rest of it needs reshaping: a long nap, rain, a shut stop, "
     "running behind, skipping the next stop. Pass their words through "
@@ -179,8 +183,37 @@ def replan_tool(situation: str) -> tuple[str, dict]:
     return f"Collected a replan request: {label}.", {"replan_request": request}
 
 
+@tool(response_format="content_and_artifact")
+def log_place_tool(name: str, area: str = "", amenities: list[str] | None = None,
+                    notes: str = "") -> tuple[str, dict]:
+    """Collect a kid-friendly place the app is missing, so the parent can
+    submit it. name is the place's own name, never a sentence about wanting to
+    log one. area is a neighbourhood if they said one. amenities may include
+    has_family_room, has_nursing_room, stroller_accessible. notes is anything
+    else they said about it."""
+    # Collects and hands over, like replan_tool: the chat has no parent to
+    # attach a submission to and no way to drop a map pin, and a form post has
+    # both. store() stays the one writer, reached from /log-place.
+    name = (name or "").strip()
+    if not name:
+        return "I need the place's name before I can log it.", {}
+    values = {"name": name}
+    if (area or "").strip():
+        values["neighbourhood"] = area.strip()
+    # Checked against the vocabulary rather than trusted. A model naming a
+    # column that does not exist would otherwise reach the form as a field
+    # nothing renders, the same reason propose_venues guards its enums.
+    known = {key for key, _ in AMENITY_OPTIONS}
+    for key in (amenities or []):
+        if key in known:
+            values[key] = True
+    if (notes or "").strip():
+        values["notes"] = notes.strip()
+    return f"Collected a place to log: {name}.", {"place_form": values}
+
+
 TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool,
-         replan_tool]
+         replan_tool, log_place_tool]
 
 
 # Tools whose output is already the answer a parent should read, so the model
@@ -431,12 +464,16 @@ def run_agent(message: str, history: list[dict] | None = None,
     # key the workflow returns, so the widget draws the same button whichever
     # path collected it.
     replan = _artifact_of("replan_tool", tool_messages)
+    logged = _artifact_of("log_place_tool", tool_messages)
     return {
         "reply": result["messages"][-1].content,
         "sources": faq.get("sources", []),
         "places": nearby.get("places", []),
         "source": nearby.get("source"),
         "replan_request": replan.get("replan_request"),
+        # A collected place, for the widget to hand to /log-place, which
+        # is the one path that writes one. Same key the workflow returns.
+        "place_form": logged.get("place_form"),
         "model": model,
         "response_time": faq.get("response_time"),
         "input_tokens": faq.get("input_tokens"),
