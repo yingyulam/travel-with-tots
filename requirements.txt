@@ -5,12 +5,11 @@ requests>=2.31
 python-dotenv>=1.0
 gunicorn>=23.0
 
-# Retrieval for the chatbot. The vector store is local; the embeddings are not.
-# Running the model here cost 208MB resident to search 12KB of text, and never
-# finished loading inside a request on a shared CPU -- see src/rag.py. tiktoken
-# counts tokens for the model that does the embedding, at about 46MB.
+# Retrieval for the chatbot. Embeddings run on ONNX Runtime, which chromadb
+# ships and depends on, so the model is the same all-MiniLM-L6-v2 as before
+# without PyTorch's 518MB. Pinned explicitly because rag.py imports it.
 chromadb>=0.5
-tiktoken>=0.7
+onnxruntime>=1.17
 
 # The LLM calls.
 langgraph>=0.2

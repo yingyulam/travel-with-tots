@@ -31,7 +31,6 @@ from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
 from .data_loader import SUPPORTED_CITIES
 from .intent import CANCEL_CHOICE, classify_intent, is_cancel, log_decision
-from .rag import EmbeddingError
 from .workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -56,13 +55,7 @@ SYSTEM_PROMPT = (
 
 # Errors a tool must swallow: the chat route only catches KeyError and
 # OpenAIError, so anything else raised inside a tool escapes as a 500.
-#
-# EmbeddingError is here because retrieval stopped being a local call. It used
-# to be impossible for the knowledge base to fail once the model was loaded;
-# now it is one network request, and without this a blip answers a parent with
-# a 500 rather than "the knowledge base is unavailable right now".
-TOOL_ERRORS = (FormExtractionError, requests.exceptions.RequestException,
-               KeyError, EmbeddingError)
+TOOL_ERRORS = (FormExtractionError, requests.exceptions.RequestException, KeyError)
 
 
 # The model this turn was asked for. A ContextVar rather than an argument

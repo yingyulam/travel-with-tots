@@ -8,12 +8,20 @@ services:
     plan: free
     healthCheckPath: /login
 
-    # Just the dependencies. The search index is built at startup instead, which
-    # is one API call and about a second now that embedding happens over HTTP
-    # rather than by loading a 208MB model. Building it here would need
-    # OPENROUTER_API_KEY during the build, and whether Render exposes dashboard
-    # variables to a build is a question this no longer has to answer.
-    buildCommand: pip install -r requirements.txt
+    # The embedding model and the search index are both built here, not on
+    # first request. Render runs the build in the filesystem the service starts
+    # from, so this turns a 79MB download plus a full re-embed on every cold
+    # start into one at deploy time. It is also what keeps the running process
+    # under 512MB: embedding the whole knowledge base costs about 120MB more
+    # than embedding one query at a time, and this pays that during the build.
+    # The exit code is checked, not just the command run. build_index records a
+    # failure in its status and returns normally, so `python -c "...build_index()"`
+    # exits 0 whether or not an index exists -- a build that ran out of memory
+    # looked like a successful deploy, and the app then tried the same build at
+    # startup and got its worker killed.
+    buildCommand: |
+      pip install -r requirements.txt
+      python -c "from src import rag; rag.build_index(); s = rag.get_status(); print(s); raise SystemExit(0 if s['state'] == 'ready' else 1)"
 
     # One worker, because memory is the binding constraint. Threads rather than
     # workers because every slow path here is waiting on somebody else's API,
@@ -38,6 +46,13 @@ services:
       # Secure and never travel in clear.
       - key: SESSION_COOKIE_SECURE
         value: "true"
+
+      # Never build the search index at startup here. It costs ~580MB against a
+      # 512MB instance, so the attempt is killed and the replacement worker
+      # tries again: one missing index becomes a restart loop, and requests land
+      # on workers about to die. The build step above owns this instead.
+      - key: RAG_AUTOBUILD
+        value: "off"
 
       # Render sits in front of the app and sets X-Forwarded-For, so it can be
       # believed here. Off a proxy it is just a header the caller wrote, and
