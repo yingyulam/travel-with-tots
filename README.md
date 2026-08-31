@@ -231,11 +231,18 @@ rearrange what is left:
 `Nap happened here` · `Need to stay here longer` · `Skip next stop` ·
 `Finished this stop early` · `It's raining` · `Do something else`
 
-Every stop has a **Report what you found** action, loudest on the stop you are
-currently at. It opens a row of chips: tick a washroom, a nursing room, a family
-room, step-free access or a highchair. The chips arrive showing what the app
-already believes, so unticking one says "that has gone". There is also a
-one-tap "opening hours look wrong", which files a note for an admin to settle.
+Every stop asks two questions, loudest on the stop you are currently at.
+
+**"Find kid-friendly features here?"** opens a row of chips: tick a washroom, a
+nursing room, a family room, step-free access or a highchair. They arrive
+showing what the app already believes, so unticking one says "that has gone".
+
+**"Was something not as we described?"** covers the other case: we sent you
+somewhere at a particular time and the door was shut. One tap files that, with
+the time, for an admin to check against the hours we hold. It asks about a shut
+door rather than about our opening hours, because the hours are not something
+the page puts in front of you — reporting them wrong would mean auditing data
+you never saw.
 
 Nothing to type, and it works on the day you are running whether or not you
 saved it.

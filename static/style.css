@@ -403,6 +403,18 @@ textarea:focus {
   background: #1565c0;
 }
 
+/* A .cta-secondary sized to its own label rather than to its container.
+   `width: 100%` above is right for a page's primary action -- "Save this plan"
+   at the foot of a form -- and wrong for a button sitting inside a card or
+   beside text, where it stretched to the full width of the panel and dwarfed
+   everything around it. Padding and font match .tap-btn, which is what the
+   other buttons on the in-trip page are, so they line up at the same height. */
+.cta-secondary.cta-inline {
+  width: auto;
+  padding: 0.55rem 1.05rem;
+  font-size: 0.9rem;
+}
+
 /* Without this a disabled .cta-secondary still renders as confident blue, so a
    dead button looks live. Several pages disable one while a request is in
    flight, and find-nearby disables one outright when no key is set. */
@@ -1201,18 +1213,45 @@ textarea:focus {
   .stop-time { flex-basis: 64px; }
 }
 
-/* Report what you found, on a stop card. Muted until it is wanted, and loudest
-   on the stop the parent is actually standing at. The toggle is a real button
+/* Asking what a parent found, on a stop card. Muted until it is wanted, and
+   loudest on the stop they are actually standing at. The toggle is a real button
    that is always rendered and always focusable: hover changes how loud it
-   looks, never whether it can be reached, so a phone and a keyboard both work. */
-/* Wraps, so the panel below can claim a whole row instead of a column. */
+   looks, never whether it can be reached, so a phone and a keyboard both work.
+
+   **A stop is two columns at most: the time, and everything else.** Anything
+   that opens inside a stop stacks within the second column rather than starting
+   a third. This section used to break that -- the toggle and the panel each took
+   their own 21rem column on a wide screen, so one stop read as three, and the
+   opened panel looked like a separate card floating beside the thing it was
+   about. If something new needs room here, give it a row inside .stop-report. */
+/* Wraps, so .stop-report can claim a whole row instead of a column. */
 .stop {
   flex-wrap: wrap;
 }
 
+/* The questions, on their own row under the stop, indented to line up with the
+   stop's text rather than with the time column. Two of them, as siblings: one
+   asks what is at the venue, the other whether what we said about it held up.
+   Neither belongs inside the other. */
+.stop-report {
+  flex: 1 1 100%;
+  margin-left: calc(82px + 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* A question and the panel it opens. Grouped so the panel lands under its own
+   question rather than under whichever was clicked last. */
+.stop-report-block {
+  display: flex;
+  flex-direction: column;
+}
+
 .stop-report-toggle {
-  align-self: flex-start;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   border: 0;
   background: none;
   padding: 0.2rem 0;
@@ -1220,6 +1259,18 @@ textarea:focus {
   font-size: 0.85rem;
   color: #8a97a6;
   cursor: pointer;
+  text-align: left;
+}
+
+/* Turns when the panel opens. Driven off aria-expanded rather than a second
+   class, so the thing a screen reader is told and the thing an eye is shown
+   cannot drift apart. */
+.stop-report-caret {
+  transition: transform 0.15s ease;
+}
+
+.stop-report-toggle[aria-expanded="true"] .stop-report-caret {
+  transform: rotate(90deg);
 }
 
 .stop-report-toggle:hover,
@@ -1228,13 +1279,10 @@ textarea:focus {
   color: var(--blue);
 }
 
-/* A line of its own, under the stop it belongs to and aligned with its text
-   rather than with the time column. Beside the card would need about 320px on
-   top of the body's 288px, and .layout is capped at 760px, so the two only fit
-   by cramping both. */
+/* Directly under the question that opened it. The indent lives on .stop-report,
+   so this only needs its own vertical spacing. */
 .stop-report-body {
-  flex: 1 1 100%;
-  margin: 0.6rem 0 0 calc(82px + 1rem);
+  margin: 0.4rem 0 0 0;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line);
   border-left: 3px solid var(--blue);
@@ -1256,6 +1304,12 @@ textarea:focus {
   padding: 0.35rem 0.75rem;
 }
 
+/* The panels sit under their own question, so a second one following the first
+   needs air above it. */
+.stop-report-block + .stop-report-block {
+  margin-top: 0.35rem;
+}
+
 .stop-report-status:empty {
   display: none;
 }
@@ -1265,35 +1319,22 @@ textarea:focus {
 }
 
 /* On a phone the time column's indent costs more than the alignment is worth,
-   so the panel takes the full width of the card. */
+   so this takes the full width of the card. */
 @media (max-width: 600px) {
-  .stop-report-body {
+  .stop-report {
     margin-left: 0;
+  }
+
+  .stop-report-body {
     border-left-width: 1px;
     border-radius: 10px;
   }
 }
 
-/* Wide enough for the panel to sit beside the stop rather than under it.
-   Only the trip page widens: it is a timeline, and a long line of prose is
-   harder to read, which is what the 760px cap elsewhere is protecting. A phone
-   is unaffected either way, since max-width only binds above it. */
-@media (min-width: 1100px) {
-  /* Both take the same right-hand column, so the toggle sits at the top of it
-     and the panel opens directly underneath: to the right of the stop, not
-     wedged between it and the toggle. */
-  #trip-main .stop-report-toggle {
-    flex: 0 0 21rem;
-    text-align: left;
-  }
-
-  #trip-main .stop-report-body {
-    flex: 0 0 21rem;
-    margin: 0.35rem 0 0 auto;
-    border-left-width: 1px;
-    border-radius: 10px;
-  }
-}
+/* There is deliberately no wide-screen rule moving this beside the stop. One
+   existed, giving the toggle and the panel a 21rem column each, and it is what
+   made a stop render as three columns. A stop is the time and then everything
+   else; extra room goes to the stop's own text, not to a new column. */
 
 /* Review queue: how much is waiting, beside the group it is waiting in. */
 .queue-count {

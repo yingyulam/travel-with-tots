@@ -129,7 +129,7 @@
       <button type="button" class="tap-btn" id="need-other-go">Find</button>
     </div>
     <div class="chips">
-      <button type="button" class="cta-secondary" id="use-my-location">📍 Use my location</button>
+      <button type="button" class="cta-secondary cta-inline" id="use-my-location">📍 Use my location</button>
       <span id="location-status" class="field-hint">Sharing your location narrows results to where you actually are.</span>
     </div>
     <div id="need-results"></div>
@@ -320,7 +320,8 @@
       body.append(
         el("h3", null, "🍽 Lunch break" + (stop.duration ? " · ⏱ " + stop.duration : "")),
         el("p", "reason", stop.reason));
-      const findBtn = el("button", "cta-secondary", "🔎 Find lunch nearby");
+      const findBtn = el("button", "cta-secondary cta-inline",
+                          "🔎 Find lunch nearby");
       findBtn.type = "button";
       findBtn.addEventListener("click", () => {
         runNeed("restaurant");
@@ -352,24 +353,50 @@
 
   // Tick what you found. Ticking is the whole interaction: no radios to set for
   // things you did not check, and nothing to type.
-  function reportPanel(v) {
+  // A question and the panel it opens, as one block. Two of these sit side by
+  // side under a stop, because they ask different things and neither belongs
+  // inside the other.
+  //
+  // The caret is what makes a quiet grey question look like a control. It was a
+  // "＋" before, which suggested adding something rather than opening something;
+  // aria-expanded is what tells a screen reader, and the caret follows it in CSS
+  // rather than being rewritten here.
+  function disclosure(label) {
+    const toggle = el("button", "stop-report-toggle");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.append(el("span", "stop-report-caret", "▸"), el("span", null, label));
+
+    const body = el("div", "stop-report-body");
+    body.hidden = true;
+    toggle.addEventListener("click", () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+
+    const block = el("div", "stop-report-block");
+    block.append(toggle, body);
+    return { block, body };
+  }
+
+  function reportPanel(stop) {
     // Needs a venue with an id: a plan_json saved before venues carried one
     // cannot be reported against. A saved trip is *not* required, because the
     // moment worth reporting in is the day you are currently running.
+    const v = stop.venue;
     if (!v || !v.id) return null;
     const known = VENUE_REPORTS[v.id] || {};
     const offered = REPORTABLE.filter(
       // A highchair at a park is not a question.
       ([key]) => !(CONDITIONAL.includes(key) && !v.can_eat));
 
-    const toggle = el("button", "stop-report-toggle", "＋ Report what you found");
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", "false");
-
-    const body = el("div", "stop-report-body");
-    body.hidden = true;
-    body.append(el("p", "stop-report-title", `What did you find at ${v.name}?`),
-                el("p", "field-hint", "Tick what is there. Untick anything that has gone."));
+    // "Report what you found" read like something had gone wrong. Nothing has:
+    // the parent is standing somewhere and we are asking what is there.
+    const features = disclosure("Find kid-friendly features here?");
+    features.body.append(
+      el("p", "stop-report-title", `What did you find at ${v.name}?`),
+      el("p", "field-hint", "Tick what is there. Untick anything that has gone."));
 
     const chips = el("div", "chips");
     const boxes = new Map();
@@ -383,63 +410,84 @@
       boxes.set(key, input);
     });
 
-    // The "something is different" case that is not an amenity. A tick, not a
-    // text box: it files against the same queue verify_hours.py fills, where a
-    // person already settles this kind of disagreement.
-    const hours = el("label", "chip");
-    const hoursBox = document.createElement("input");
-    hoursBox.type = "checkbox";
-    hours.append(hoursBox, el("span", null, "Opening hours look wrong"));
-    chips.appendChild(hours);
-
-    const send = el("button", "cta-secondary", "Send");
+    const send = el("button", "cta-secondary cta-inline", "Send");
     send.type = "button";
     const status = el("p", "meta stop-report-status", "");
     status.setAttribute("aria-live", "polite");
-    body.append(chips, send, status);
+    features.body.append(chips, send, status);
 
-    // Present and focusable at all times, so it works by tap and by keyboard.
-    // Hover only changes how loud it looks.
-    toggle.addEventListener("click", () => {
-      const open = body.hidden;
-      body.hidden = !open;
-      toggle.setAttribute("aria-expanded", String(open));
-    });
+    // The second question, and it is deliberately not "do our opening hours look
+    // wrong". Hours are only shown inside the collapsed "Why" panel, so almost
+    // nobody has seen them -- asking a parent to check data they were never
+    // shown gets an answer about nothing.
+    //
+    // What the app *did* tell them, in the largest text on the card, is a time to
+    // be here. Whether the door was open at that time is something they can
+    // simply see. Same queue, same reviewer, an observation instead of an audit.
+    const closed = disclosure("Was something not as we described?");
+    const at = stop.time ? ` at ${stop.time}` : "";
+    closed.body.append(
+      el("p", "stop-report-title", `We sent you to ${v.name}${at}.`),
+      el("p", "field-hint",
+         "If it was shut when you got there, tell us and we will check the "
+         + "hours we hold."));
+    const closedBtn = el("button", "cta-secondary cta-inline", "It was closed");
+    closedBtn.type = "button";
+    const closedStatus = el("p", "meta stop-report-status", "");
+    closedStatus.setAttribute("aria-live", "polite");
+    closed.body.append(closedBtn, closedStatus);
 
-    send.addEventListener("click", async () => {
-      send.disabled = true;
-      status.textContent = "Saving…";
+    async function report(payload, button, into) {
+      button.disabled = true;
+      into.textContent = "Saving…";
       try {
         const res = await fetch(`/venues/${v.id}/report`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            trip_id: TRIP_ID,
-            shown: [...boxes.keys()],
-            found: [...boxes].filter(([, box]) => box.checked).map(([key]) => key),
-            hours_wrong: hoursBox.checked,
-          }),
+          body: JSON.stringify({ trip_id: TRIP_ID, ...payload }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Couldn't save that.");
-        // Keep the panel in step with what the server now holds, so a second
-        // send does not re-report what it already recorded.
+        into.textContent = data.message;
+        return true;
+      } catch (e) {
+        into.textContent = e.message;
+        return false;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    send.addEventListener("click", async () => {
+      const ok = await report({
+        shown: [...boxes.keys()],
+        found: [...boxes].filter(([, box]) => box.checked).map(([key]) => key),
+      }, send, status);
+      // Keep the panel in step with what the server now holds, so a second
+      // send does not re-report what it already recorded.
+      if (ok) {
         VENUE_REPORTS[v.id] = Object.fromEntries(
           [...boxes].map(([key, box]) => [key, box.checked]));
-        hoursBox.checked = false;
-        status.textContent = data.message;
-      } catch (e) {
-        status.textContent = e.message;
-      } finally {
-        send.disabled = false;
       }
     });
 
-    // Two elements, not one wrapper: the toggle rides beside the stop's body,
-    // and the panel takes a line of its own underneath. Wrapping them together
-    // made the panel a third column and squeezed the stop text to one word a
-    // line at the 760px the layout is capped to.
-    return [toggle, body];
+    closedBtn.addEventListener("click", () => {
+      // `closed_at` is the time we told them to be there, which is the thing a
+      // reviewer needs in order to check anything.
+      report({ hours_wrong: true, closed_at: stop.time || "" },
+             closedBtn, closedStatus);
+    });
+
+    // One wrapper taking a full row under the stop, holding the two questions as
+    // siblings. Each panel opens directly beneath its own question.
+    //
+    // The toggle and panel used to be two items in the stop's own flex row, which
+    // on a wide screen put both in a third 21rem column beside the time and the
+    // body: three columns for one stop, with the opened panel reading as a card
+    // floating beside the thing it was about.
+    const wrap = el("div", "stop-report");
+    wrap.append(features.block, closed.block);
+    return wrap;
   }
 
   function renderStop(stop, state) {
@@ -449,8 +497,10 @@
       time.appendChild(el("span", `state-tag ${state}`, state === "now" ? "Now" : "Done"));
     }
     item.append(time, stopBody(stop));
-    const report = reportPanel(stop.venue);
-    if (report) item.append(...report);
+    // The whole stop, not just its venue: the second question needs the time we
+    // told the parent to be there.
+    const report = reportPanel(stop);
+    if (report) item.append(report);
     return item;
   }
 

@@ -171,11 +171,32 @@ class ReportRouteTest(unittest.TestCase):
         self.assertEqual(body["saved"], 1)
         self.assertIn("noted 1 thing", body["message"])
 
-    def test_hours_look_wrong_files_a_check_for_an_admin(self):
+    def test_a_closed_venue_files_a_check_for_an_admin(self):
         self._post(hours_wrong=True)
         checks = db.get_pending_hours_checks()
         self.assertEqual([c["source"] for c in checks],
                          [self.app_module.PARENT_HOURS_SOURCE])
+
+    def test_the_time_they_were_sent_is_recorded(self):
+        # The point of the report. "Closed at 17:00" is something a reviewer can
+        # check against the hours we hold; "reported on the 31st" was not, and
+        # that is all this used to say.
+        self._post(hours_wrong=True, closed_at="17:00")
+        says = db.get_pending_hours_checks()[0]["source_says"]
+        self.assertIn("17:00", says)
+
+    def test_a_missing_time_still_files_the_report(self):
+        # The widget sends the stop's time, but a report is worth keeping even
+        # from a caller that did not.
+        self._post(hours_wrong=True)
+        self.assertEqual(len(db.get_pending_hours_checks()), 1)
+
+    def test_a_client_supplied_time_cannot_run_long(self):
+        # It is rendered on the review page, so it is trimmed rather than
+        # trusted.
+        self._post(hours_wrong=True, closed_at="x" * 200)
+        says = db.get_pending_hours_checks()[0]["source_says"]
+        self.assertNotIn("x" * 10, says)
 
     def test_reporting_works_without_a_saved_trip(self):
         # The day being run has not necessarily been saved, and that is exactly
@@ -195,8 +216,8 @@ class ReportRouteTest(unittest.TestCase):
                 return_value={"id": admin, "is_admin": True,
                               "name": "A", "email": "a@example.com"}):
             html = self.client.get("/venues/review").get_data(as_text=True)
-        self.assertIn("A parent at the venue said our hours look wrong", html)
-        self.assertNotIn("OSM: Reported from a trip", html)
+        self.assertIn("A parent found this closed", html)
+        self.assertNotIn("OSM:", html.split("A parent found this closed")[0][-200:])
 
     def test_a_parent_cannot_report_against_another_parents_trip(self):
         other = db.add_parent("z@example.com", "h", name="Z")

@@ -315,9 +315,12 @@
         {%- else %} {{ c.current_open or '?' }}&ndash;{{ c.current_close or '?' }}, every day
         {%- endif %}</p>
       {# Two sources reach this queue now, and they say different kinds of
-         thing: OpenStreetMap quotes hours, a parent says ours look wrong. #}
+         thing: OpenStreetMap quotes hours, a parent reports a shut door. The
+         parent is not asked to audit our hours -- they never see them -- so what
+         arrives here is an observation with a time on it, against the hours
+         above. #}
       {% if c.source == 'parent' %}
-        <p class="meta">A parent at the venue said our hours look wrong. {{ c.source_says }}</p>
+        <p class="meta">A parent found this closed. {{ c.source_says }}</p>
       {% else %}
         <p class="meta">{{ c.source|upper }}: {{ c.source_says }}</p>
       {% endif %}

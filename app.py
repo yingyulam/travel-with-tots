@@ -2287,11 +2287,18 @@ def view_trip(trip_id):
     return _render_trip(trip, saved=True, trip_id=trip_id)
 
 
-# What a parent tells us when they tick "the opening hours look wrong". It goes
-# to the same queue scripts/verify_hours.py fills, so an admin settles a parent
-# and OpenStreetMap in one place rather than two.
+# What a parent tells us when they say a venue was shut when they got there. It
+# goes to the same queue scripts/verify_hours.py fills, so an admin settles a
+# parent and OpenStreetMap in one place rather than two.
+#
+# They are no longer asked whether our *hours* look wrong. Hours appear only
+# inside the collapsed "Why" panel on a stop, so asking a parent to check them
+# was asking about data they had almost certainly never seen. What they were
+# plainly told is a time to be somewhere, and whether the door was open then is
+# something they can see -- so that is what is asked, and `closed_at` records the
+# time, which is the part a reviewer needs in order to check anything.
 PARENT_HOURS_SOURCE = "parent"
-PARENT_HOURS_FINDING = "A parent at the venue said our hours look wrong."
+PARENT_HOURS_FINDING = "A parent found this venue closed when we sent them."
 
 
 @app.route("/venues/<int:venue_id>/report", methods=["POST"])
@@ -2332,8 +2339,14 @@ def report_amenities(venue_id):
                                   reported_by=parent["id"])
 
     if data.get("hours_wrong"):
-        db.record_hours_check(venue_id, PARENT_HOURS_SOURCE,
-                              source_says=f"Reported from a trip on {date.today()}",
+        # The scheduled time, when the widget sends it. "Closed at 17:00" is
+        # checkable; "reported on the 31st" is not, and that is all this used
+        # to say. Trimmed and length-capped because it is client-supplied and
+        # ends up rendered on the review page.
+        at = str(data.get("closed_at") or "").strip()[:5]
+        says = (f"Closed at {at} on {date.today()}, when the plan sent them there"
+                if at else f"Reported closed on {date.today()}")
+        db.record_hours_check(venue_id, PARENT_HOURS_SOURCE, source_says=says,
                               finding=PARENT_HOURS_FINDING)
         written += 1
 
