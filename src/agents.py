@@ -20,12 +20,17 @@ from .itinerary import (
 load_dotenv()
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# OpenRouter's free auto-router. Free, supports structured outputs (which the
-# plan adjuster and form extractor depend on, and which gemma does not
-# advertise), and because it spreads across free models it survives the
-# upstream rate limiting that takes a single pinned free model offline.
-# Pin nvidia/nemotron-3-super-120b-a12b:free instead for reproducible output.
-DEFAULT_MODEL = "openrouter/free"
+# Paid, and cheap enough that this is not a real cost: a chat turn runs about
+# a hundredth of a cent. It used to be `openrouter/free`, and the reason for
+# changing is latency rather than quality. Free models **queue** under load,
+# for minutes at a time, and a queued call is indistinguishable from a hung
+# one from a browser's point of view: the deployed chatbot sat on "Thinking…"
+# until the proxy gave up and answered with an error page.
+#
+# It also supports structured outputs, which the plan adjuster and the form
+# extractor depend on. The free models are still selectable in the widget --
+# see ALLOWED_CHAT_MODELS -- so a free one is a choice rather than the default.
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 ALLOWED_CHAT_MODELS = {
     "openrouter/free",

@@ -12,6 +12,7 @@ otherwise JSON-stringifies a returned dict into the tool message and the
 caller can only get a blob of text back.
 """
 
+import contextvars
 import os
 
 import requests
@@ -57,13 +58,26 @@ SYSTEM_PROMPT = (
 TOOL_ERRORS = (FormExtractionError, requests.exceptions.RequestException, KeyError)
 
 
+# The model this turn was asked for. A ContextVar rather than an argument
+# because a LangGraph tool's parameters are what the model fills in, and the
+# model choice is not the model's to make. Per-context, so the eight threads in
+# the worker cannot read each other's turn.
+_TURN_MODEL = contextvars.ContextVar("turn_model", default=DEFAULT_MODEL)
+
+
 @tool(response_format="content_and_artifact")
 def answer_faq_tool(question: str) -> tuple[str, dict]:
     """Answer a question about the Travel with Tots website from its knowledge
     base, with [Source N] citations. Use for anything about how the site works,
     what it can do, or how to use a feature."""
     try:
-        result = ask_website_chatbot(question)
+        # The model the parent picked, not DEFAULT_MODEL. Omitting it meant
+        # every knowledge-base answer came from `openrouter/free` however the
+        # dropdown was set: the widget said "GPT-4o mini (paid)" and a free
+        # model answered. Free models queue, so the visible symptom was a chat
+        # turn that hung until the proxy gave up on it, while the workflows --
+        # which do pass the model through -- stayed fast.
+        result = ask_website_chatbot(question, model=_TURN_MODEL.get())
     except TOOL_ERRORS as e:
         return f"The knowledge base is unavailable right now ({type(e).__name__}).", {}
     return result["reply"], result
@@ -185,6 +199,11 @@ def handle_message(message: str, history: list[dict] | None = None,
     answers to the question just asked, not new intents, and routing them would
     derail the conversation the parent is already in.
     """
+    # Set once for the whole turn, so a tool the model chooses to call answers
+    # with the model the parent chose. Tools take their arguments from the
+    # model, and which model to use is not a decision the model should make.
+    _TURN_MODEL.set(model)
+
     offered = runnable_message_workflows()
     in_flight = (conversation or {}).get("workflow")
 
