@@ -117,8 +117,7 @@ class TheChatCarriesTheChoiceTest(unittest.TestCase):
 
     def _turn(self, tool, model=PICKED):
         """Run one turn in which the agent calls `tool`, and hand back the
-        mocks. classify_intent is stubbed to "none" so the turn reaches the
-        agent rather than a workflow, and so no real routing call is made."""
+        mocks."""
         from langchain_core.messages import ToolMessage
         from src import agent as module
 
@@ -128,7 +127,6 @@ class TheChatCarriesTheChoiceTest(unittest.TestCase):
         fake.invoke.return_value = {
             "messages": [called, mock.Mock(content="done", spec=["content"])]}
         with mock.patch.object(module, "_build_agent", return_value=fake) as built, \
-             mock.patch.object(module, "classify_intent", return_value="none"), \
              mock.patch.object(module, "ask_website_chatbot",
                                return_value={"reply": "ok"}) as faq, \
              mock.patch.object(module, "plan_trip",
@@ -187,18 +185,14 @@ class ThePinnedThreeDoNotFollowTheDropdownTest(unittest.TestCase):
         from src.workflows import propose_venues
         self.assertEqual(propose_venues.CURATOR_MODEL, PINNED)
 
-    def test_choosing_a_free_model_does_not_move_the_routing_call(self):
-        # The one that would actually break: handle_message must not pass the
-        # turn's model to the classifier, or picking the free reasoning model
-        # would put 25-75s on the critical path of every message.
+    def test_no_routing_call_is_made_at_all_now(self):
+        # There used to be a classifier here, pinned to a fast model so that
+        # picking the free reasoning one did not put 25-75s on the critical
+        # path of every message. The agent's tool selection is the routing
+        # decision now, and it runs on the parent's choice like everything
+        # else, so there is no second call left to pin.
         from src import agent as module
-        with mock.patch.object(module, "classify_intent",
-                               return_value="none") as classified, \
-             mock.patch.object(module, "_build_agent") as built:
-            built.return_value.invoke.return_value = {
-                "messages": [mock.Mock(content="hi", spec=["content"])]}
-            module.handle_message("hello", model=PICKED)
-        self.assertNotIn("model", classified.call_args.kwargs)
+        self.assertFalse(hasattr(module, "classify_intent"))
 
     def test_the_extractor_tool_does_not_take_the_turns_model(self):
         # Deliberate, and documented on the tool: the extractor keeps its own

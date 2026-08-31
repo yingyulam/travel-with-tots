@@ -478,64 +478,66 @@ class AQuestionCanBeDeclinedTest(unittest.TestCase):
 
 
 class MidFlowRoutingTest(unittest.TestCase):
-    """While a flow is running the classifier must not see the message: "yes"
-    and "she's two" are answers, not intents."""
+    """A running flow owns its next message.
+
+    "yes" and "she's two" are answers to the question just asked, not new
+    intents, so an in-flight conversation decides the turn. This is the
+    workflow route's job now: /chatbot holds no conversation at all.
+    """
 
     def setUp(self):
         self.log = mock.patch.object(agent, "log_decision")
         self.log.start()
+        self.addCleanup(self.log.stop)
 
-    def tearDown(self):
-        self.log.stop()
+    def _mid(self, stage, **state):
+        return {"workflow": WORKFLOW_NAME,
+                "state": {"stage": stage, "form": dict(DEFAULTS),
+                          "found": [], **state}}
 
-    def test_mid_flow_skips_the_classifier_and_the_agent(self):
-        conversation = {"workflow": WORKFLOW_NAME,
-                        "state": {"stage": STAGE_COLLECTING,
-                                  "form": dict(DEFAULTS), "found": []}}
-        with mock.patch.object(agent, "classify_intent") as classify, \
-             mock.patch.object(agent, "run_agent") as ran, \
+    def test_mid_flow_never_reaches_the_agent(self):
+        with mock.patch.object(agent, "run_agent") as ran, \
              mock.patch.object(plan_from_chat, "extract_form",
                                return_value=_extraction(destination="Vancouver")):
-            result = agent.handle_message("Vancouver", conversation=conversation)
-        classify.assert_not_called()
+            result = agent.run_workflow_turn(
+                WORKFLOW_NAME, "Vancouver",
+                conversation=self._mid(STAGE_COLLECTING))
         ran.assert_not_called()
         self.assertEqual(result["conversation"]["workflow"], WORKFLOW_NAME)
 
     def test_a_finished_flow_clears_the_conversation(self):
-        conversation = {"workflow": WORKFLOW_NAME,
-                        "state": {"stage": STAGE_CONFIRMING,
-                                  "form": dict(DEFAULTS), "found": ["destination"]}}
-        with mock.patch.object(agent, "classify_intent"):
-            result = agent.handle_message("yes", conversation=conversation)
+        result = agent.run_workflow_turn(
+            WORKFLOW_NAME, "yes",
+            conversation=self._mid(STAGE_CONFIRMING, found=["destination"]))
         self.assertIsNone(result["conversation"])
         self.assertIsNotNone(result["form"])
 
     def test_a_malformed_state_restarts_rather_than_crashing(self):
         # The widget echoes state back, so it is client-controlled. A non-dict
         # used to reach the workflow and raise an attribute error. The
-        # extractor is mocked because restarting now reads the message, and a
-        # test must not depend on a network call to prove it did not crash.
-        conversation = {"workflow": WORKFLOW_NAME, "state": "not a dict"}
-        with mock.patch.object(agent, "classify_intent"), \
-             mock.patch.object(plan_from_chat, "extract_form",
+        # extractor is mocked because restarting reads the message, and a test
+        # must not depend on a network call to prove it did not crash.
+        with mock.patch.object(plan_from_chat, "extract_form",
                                return_value=_extraction(destination="Vancouver")):
-            result = agent.handle_message("Vancouver", conversation=conversation)
+            result = agent.run_workflow_turn(
+                WORKFLOW_NAME, "Vancouver",
+                conversation={"workflow": WORKFLOW_NAME, "state": "not a dict"})
         self.assertTrue(result["reply"])
         self.assertEqual(result["conversation"]["state"]["form"]["destination"],
                          "Vancouver")
 
-    def test_an_unknown_workflow_name_falls_through_to_the_agent(self):
-        with mock.patch.object(agent, "run_agent",
-                               return_value={"reply": "hi"}) as ran:
-            agent.handle_message("hello", conversation={"workflow": "nope"})
-        ran.assert_called_once()
+    def test_a_workflow_nobody_offers_runs_nothing(self):
+        # None rather than an exception, so the caller decides what to say.
+        self.assertIsNone(agent.run_workflow_turn(
+            "nope", "hello", conversation={"workflow": "nope"}))
 
-    def test_no_conversation_means_the_classifier_runs_as_before(self):
-        with mock.patch.object(agent, "classify_intent",
-                               return_value="none") as classify, \
-             mock.patch.object(agent, "run_agent", return_value={"reply": "hi"}):
-            agent.handle_message("how do I save a plan?")
-        classify.assert_called_once()
+    def test_the_chat_route_holds_no_conversation_at_all(self):
+        # The agent has no flow state, so there is nothing for a message to
+        # resume and nothing to hand back.
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "hi", "tool_calls": []}):
+            result = agent.handle_message("how do I save a plan?")
+        self.assertIsNone(result["conversation"])
 
 
 class PrefillRouteTest(unittest.TestCase):

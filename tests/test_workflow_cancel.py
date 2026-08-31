@@ -71,45 +71,48 @@ class LeavingTheFormFlowTest(unittest.TestCase):
         self.addCleanup(self.log.stop)
 
     def _cancel(self, conversation, message="never mind"):
-        with mock.patch.object(agent, "classify_intent") as classify, \
-             mock.patch.object(agent, "run_agent") as ran, \
+        # Through run_workflow_turn, which is where a workflow runs now.
+        # /chatbot has no flow to leave: the agent holds no conversation, so
+        # cancelling belongs to the surface that does.
+        with mock.patch.object(agent, "run_agent") as ran, \
              mock.patch.object(plan_from_chat, "extract_form") as extract:
-            answer = agent.handle_message(message, conversation=conversation)
-        return answer, classify, ran, extract
+            answer = agent.run_workflow_turn(FILLING, message,
+                                             conversation=conversation)
+        return answer, ran, extract
 
     def test_it_ends_the_flow(self):
-        answer, _, _, _ = self._cancel(_mid_form())
+        answer, _, _ = self._cancel(_mid_form())
         self.assertIsNone(answer["conversation"])
         self.assertEqual(answer["cancelled"], FILLING)
 
     def test_it_reaches_neither_the_workflow_nor_the_agent(self):
         # Not the extractor either: a model call to be told "never mind" is a
         # call worth not making.
-        _, classify, ran, extract = self._cancel(_mid_form())
-        classify.assert_not_called()
+        _, ran, extract = self._cancel(_mid_form())
         ran.assert_not_called()
         extract.assert_not_called()
 
     def test_it_works_at_every_stage(self):
         for stage in (STAGE_COLLECTING, STAGE_CONFIRMING):
             with self.subTest(stage=stage):
-                answer, _, _, _ = self._cancel(_mid_form(stage))
+                answer, _, _ = self._cancel(_mid_form(stage))
                 self.assertIsNone(answer["conversation"])
 
     def test_no_form_is_handed_over(self):
         # Cancelling at the confirmation must not be read as confirming.
-        answer, _, _, _ = self._cancel(_mid_form(STAGE_CONFIRMING))
+        answer, _, _ = self._cancel(_mid_form(STAGE_CONFIRMING))
         self.assertIsNone(answer["form"])
         self.assertFalse(answer["open_form"])
 
-    def test_the_next_message_is_classified_again(self):
-        answer, _, _, _ = self._cancel(_mid_form())
-        with mock.patch.object(agent, "classify_intent",
-                               return_value="none") as classify, \
-             mock.patch.object(agent, "run_agent", return_value={"reply": "hi"}):
-            agent.handle_message("what's Travel with Tots?",
-                                 conversation=answer["conversation"])
-        classify.assert_called_once()
+    def test_the_abandoned_state_is_not_resumed(self):
+        # Cancelling clears the conversation, so the next message begins the
+        # flow rather than continuing the one that was walked out of.
+        answer, _, _ = self._cancel(_mid_form())
+        with mock.patch.object(plan_from_chat, "run",
+                               return_value={"reply": "r"}) as ran:
+            agent.run_workflow_turn(FILLING, "we're in Vancouver",
+                                    conversation=answer["conversation"])
+        self.assertIsNone(ran.call_args.args[1])
 
     def test_it_is_logged_against_the_workflow_that_was_open(self):
         self._cancel(_mid_form())
@@ -128,7 +131,8 @@ class LeavingAnyWorkflowTest(unittest.TestCase):
         conversation = {"workflow": NEARBY, "state": {"stage": "need"}}
         with mock.patch.object(find_nearby_place, "find_nearby") as component, \
              mock.patch.object(agent, "run_agent") as ran:
-            answer = agent.handle_message("cancel", conversation=conversation)
+            answer = agent.run_workflow_turn(conversation["workflow"], "cancel",
+                                             conversation=conversation)
         component.assert_not_called()
         ran.assert_not_called()
         self.assertIsNone(answer["conversation"])
@@ -143,10 +147,11 @@ class TheWayOutIsOfferedTest(unittest.TestCase):
     def _turn(self, message, conversation=None, classified=None):
         extraction = {"form": dict(DEFAULTS), "found": [], "model": "m",
                       "response_time": 1.0}
-        with mock.patch.object(agent, "classify_intent", return_value=classified), \
+        with \
              mock.patch.object(plan_from_chat, "extract_form",
                                return_value=extraction):
-            return agent.handle_message(message, conversation=conversation)
+            return agent.run_workflow_turn(classified, message,
+                                           conversation=conversation)
 
     def test_every_turn_that_keeps_the_flow_open_offers_it(self):
         answer = self._turn("plan a trip", classified=FILLING)

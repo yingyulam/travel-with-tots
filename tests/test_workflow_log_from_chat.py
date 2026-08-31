@@ -181,11 +181,10 @@ class ItIsRoutableNowTest(unittest.TestCase):
         self.assertIn(WORKFLOW["name"], offered)
 
     def test_a_logging_message_names_the_workflow_in_the_reply(self):
-        with mock.patch.object(agent, "classify_intent",
-                               return_value=WORKFLOW["name"]), \
+        with \
              mock.patch.object(agent, "log_decision"), \
              mock.patch.object(agent, "run_agent") as fell_through:
-            answer = agent.handle_message("Log this place")
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "Log this place")
         fell_through.assert_not_called()
         self.assertEqual(answer["workflow"], WORKFLOW["name"])
 
@@ -196,7 +195,7 @@ class ItIsRoutableNowTest(unittest.TestCase):
              mock.patch.object(agent, "run_agent",
                                side_effect=AssertionError(
                                    "fell through to the agent")):
-            answer = agent.handle_message("Mall", conversation=conversation)
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "Mall", conversation=conversation)
         self.assertTrue(answer["choose_many"])
         self.assertEqual(answer["choices"], LABELS)
 
@@ -207,7 +206,7 @@ class ItIsRoutableNowTest(unittest.TestCase):
              mock.patch.object(agent, "run_agent",
                                side_effect=AssertionError(
                                    "fell through to the agent")):
-            answer = agent.handle_message("yes", conversation=conversation)
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "yes", conversation=conversation)
         self.assertEqual(answer["place_form"]["name"], "Mall")
 
     def test_it_can_be_left_like_any_workflow(self):
@@ -216,7 +215,7 @@ class ItIsRoutableNowTest(unittest.TestCase):
              mock.patch.object(agent, "run_agent",
                                side_effect=AssertionError(
                                    "fell through to the agent")):
-            answer = agent.handle_message("never mind", conversation=conversation)
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "never mind", conversation=conversation)
         self.assertIsNone(answer["conversation"])
 
 

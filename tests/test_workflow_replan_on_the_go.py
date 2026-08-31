@@ -206,12 +206,11 @@ class ItIsRoutableTest(unittest.TestCase):
         self.assertIn(WORKFLOW["name"], offered)
 
     def test_a_replan_message_names_the_workflow(self):
-        with mock.patch.object(agent, "classify_intent",
-                               return_value=WORKFLOW["name"]), \
+        with \
              mock.patch.object(agent, "log_decision"), \
              mock.patch.object(agent, "run_agent",
                                side_effect=AssertionError("fell through")):
-            answer = agent.handle_message("she napped way too long",
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "she napped way too long",
                                           context=ON_TRIP)
         self.assertEqual(answer["workflow"], WORKFLOW["name"])
 
@@ -220,7 +219,7 @@ class ItIsRoutableTest(unittest.TestCase):
         with mock.patch.object(agent, "log_decision"), \
              mock.patch.object(agent, "run_agent",
                                side_effect=AssertionError("fell through")):
-            answer = agent.handle_message("It's raining",
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "It's raining",
                                           conversation=conversation,
                                           context=ON_TRIP)
         self.assertEqual(answer["replan_request"], {"situation": "weather_rain"})
@@ -230,7 +229,7 @@ class ItIsRoutableTest(unittest.TestCase):
         with mock.patch.object(agent, "log_decision"), \
              mock.patch.object(agent, "run_agent",
                                side_effect=AssertionError("fell through")):
-            answer = agent.handle_message("never mind", conversation=conversation)
+            answer = agent.run_workflow_turn(WORKFLOW["name"], "never mind", conversation=conversation)
         self.assertIsNone(answer["conversation"])
 
 

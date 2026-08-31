@@ -154,11 +154,7 @@ class ChatBubbleContractTest(unittest.TestCase):
         agent = mock.Mock()
         agent.invoke.return_value = _fake_result(
             "Tap Save this plan. [Source 1]", (faq,))
-        # classify_intent too: /chatbot routes through it before reaching the
-        # agent, so without this a unit test makes a real, paid model call to
-        # be told the message matches no workflow.
         with mock.patch("src.agent._build_agent", return_value=agent), \
-             mock.patch("src.agent.classify_intent", return_value="none"), \
              mock.patch("src.rag.get_status", return_value={"state": "ready"}):
             return self.client.post("/chatbot", json={"message": message,
                                                       "model": "openai/gpt-4o-mini"})

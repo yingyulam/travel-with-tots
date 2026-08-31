@@ -31,7 +31,7 @@ from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
 from .data_loader import SUPPORTED_CITIES
 from .db import AMENITY_OPTIONS
-from .intent import CANCEL_CHOICE, classify_intent, is_cancel, log_decision
+from .intent import CANCEL_CHOICE, is_cancel, log_decision
 from .interactions import (
     AMENITY_QUESTION,
     FREE_TEXT_SITUATION,
@@ -307,80 +307,47 @@ def _build_agent(model: str, stop_after_tools: bool = False):
 
 def handle_message(message: str, history: list[dict] | None = None,
                    model: str = DEFAULT_MODEL,
-                   conversation: dict | None = None,
-                   context: dict | None = None,
-                   force_workflow: str | None = None) -> dict:
-    """One turn, routed: a workflow if the message asks for one, else the agent.
+                   context: dict | None = None) -> dict:
+    """One turn, answered by the agent, which chooses the tool.
 
-    This is the entry point for any surface that carries a message. It takes a
-    plain string rather than a request, so a Telegram handler can call the same
+    The entry point for any surface that carries a message. It takes a plain
+    string rather than a request, so a Telegram handler can call the same
     function the website chat does.
 
-    Two routers coexist here, deliberately rather than accidentally. The
-    classifier owns workflows and runs first; the tool-calling agent below owns
-    everything else and is unchanged. The one message both could handle is a
-    described day, and the classifier wins because it runs first.
+    One router, and it is the agent's tool selection. A classifier used to run
+    first and hand matching messages to a workflow, which meant two routers in
+    series on every message, three of the four tools duplicating a workflow,
+    and a message answerable two ways depending on which router saw it. The
+    workflows are still here and still run, on /workflows/<name>/run, where
+    they are what a test page is testing rather than a second front door.
 
-    The reply always carries "workflow": the name that ran, or None. None rather
-    than an absent key, so a caller can tell "no workflow matched" from "this
-    response predates routing".
+    `context` is what the request knew that the message did not: the browser's
+    coordinates, and whether a started day is open on the page. Both reach the
+    tools through the ContextVars below rather than as arguments, because a
+    tool's arguments are the model's to fill in and neither of these is the
+    model's to decide.
 
-    `context` is what the request knew that the message did not, today the
-    browser's coordinates. Every workflow is handed it; most ignore it.
-
-    `force_workflow` names a workflow to run instead of asking the classifier,
-    set by an armed workflow test page. It grants nothing a parent could not do
-    by typing the right words; it only decides which workflow those words reach.
-
-    A message that asks to cancel ends whatever flow is running and answers
-    plainly, without reaching the workflow or the classifier at all.
-
-    `conversation` is {"workflow", "state"} when a workflow is mid-flow. While
-    one is, the classifier is skipped entirely: "two year old" and "yes" are
-    answers to the question just asked, not new intents, and routing them would
-    derail the conversation the parent is already in.
+    "workflow" and "conversation" are still in the reply, always None. The
+    widget reads both, and a missing key is not the same as an answered one.
     """
     # Set once for the whole turn, so a tool the model chooses to call answers
     # with the model the parent chose. Tools take their arguments from the
     # model, and which model to use is not a decision the model should make.
     _TURN_MODEL.set(model)
-    # Set for the whole turn alongside the model, and read only by replan_tool.
-    # From the request rather than the message, so "replan my day" typed on a
-    # page with no trip open is refused the same way the workflow refuses it,
-    # instead of collecting a request nothing can act on.
+    # Read only by replan_tool. From the request rather than the message, so
+    # "replan my day" typed on a page with no trip open is refused the same way
+    # the workflow refuses it, instead of collecting a request nothing can act
+    # on.
     _TURN_ON_TRIP.set(bool((context or {}).get("on_trip")))
 
-    offered = runnable_message_workflows()
-    in_flight = (conversation or {}).get("workflow")
-    forced = force_workflow if any(
-        w["name"] == force_workflow for w, _ in offered) else None
-
-    if in_flight:
-        chosen = in_flight
-    elif forced:
-        # Nothing to classify: a test page has said where this message goes.
-        # After in-flight on purpose, because mid-conversation "Vancouver" is an
-        # answer to the question just asked, and forcing would restart the flow
-        # on every turn.
-        chosen = forced
-    else:
-        chosen = classify_intent(message, [workflow for workflow, _ in offered])
-
-    reply = run_workflow_turn(chosen, message, conversation=conversation,
-                              context=context, model=model, forced=bool(forced))
-    if reply is not None:
-        return reply
-
-    # Logged as "no workflow" only when none was picked. A workflow that was
-    # picked and then raised has already logged itself, and logging again would
-    # count one message twice in the file accuracy is measured from.
-    if chosen not in {workflow["name"] for workflow, _ in offered}:
-        log_decision(message, None, ran=False)
-
-    # Falling through ends any flow: the parent has moved on, and holding stale
-    # state would silently resume it on their next message.
-    return {**run_agent(message, history=history, model=model),
-            "workflow": None, "conversation": None}
+    result = run_agent(message, history=history, model=model)
+    # What handled this message, in the file routing accuracy is measured from.
+    # The classifier used to write that line; the agent's tool choice is the
+    # same decision, made by the thing that now makes it. Logged after the turn
+    # rather than before, because the choice is only known once it is made.
+    tools = [call["name"] for call in result["tool_calls"]]
+    log_decision(message, None, ran=bool(tools), tool=tools[0] if tools else None)
+    return {**result, "workflow": None, "conversation": None}
 
 
 def _cancelled(in_flight: str, model: str) -> dict:

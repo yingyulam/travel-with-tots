@@ -199,27 +199,25 @@ class RoutingTest(unittest.TestCase):
         self.addCleanup(self.log.stop)
 
     def test_a_nearby_message_is_named_in_the_reply(self):
-        with mock.patch.object(agent, "classify_intent",
-                               return_value=WORKFLOW["name"]), \
-             mock.patch.object(find_nearby_place, "find_nearby",
+        with mock.patch.object(find_nearby_place, "find_nearby",
                                return_value=FOUND), \
              mock.patch.object(agent, "run_agent") as fell_through:
-            answer = agent.handle_message("find the nearest nursing room")
+            answer = agent.run_workflow_turn(WORKFLOW["name"],
+                                             "find the nearest nursing room")
         fell_through.assert_not_called()
         self.assertEqual(answer["workflow"], WORKFLOW["name"])
         self.assertEqual(answer["places"], FOUND["places"])
 
     def test_coordinates_travel_from_the_request_to_the_workflow(self):
-        with mock.patch.object(agent, "classify_intent",
-                               return_value=WORKFLOW["name"]), \
-             mock.patch.object(find_nearby_place, "resolve_location",
+        with mock.patch.object(find_nearby_place, "resolve_location",
                                return_value=RESOLVED), \
              mock.patch.object(find_nearby_place, "find_nearby",
                                return_value=FOUND) as component:
-            agent.handle_message("find a nursing room", context=HERE)
+            agent.run_workflow_turn(WORKFLOW["name"], "find a nursing room",
+                                    context=HERE)
         self.assertEqual(component.call_args.kwargs["lat"], HERE["lat"])
 
-    def test_it_is_offered_to_the_classifier(self):
+    def test_it_is_offered_by_name(self):
         from src.workflows import runnable_message_workflows
         offered = [w["name"] for w, _ in runnable_message_workflows()]
         self.assertIn(WORKFLOW["name"], offered)

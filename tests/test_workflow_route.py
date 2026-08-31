@@ -97,8 +97,8 @@ class WorkflowRouteTest(unittest.TestCase):
             self.assertNotEqual(self._post().status_code, 200)
 
 
-class OneImplementationTest(unittest.TestCase):
-    """The route and /chatbot must run a workflow through the same function."""
+class OneOrchestratorEachTest(unittest.TestCase):
+    """A workflow runs from the workflow route, and from nowhere else."""
 
     def test_the_route_calls_run_workflow_turn(self):
         import app as app_module
@@ -113,14 +113,18 @@ class OneImplementationTest(unittest.TestCase):
         self.assertEqual(ran.call_args.args[0], "Find a nearby place")
         self.assertIs(ran.call_args.kwargs["forced"], True)
 
-    def test_handle_message_uses_the_same_function(self):
+    def test_the_chat_route_runs_no_workflow_at_all(self):
+        # The other half of "one orchestrator each". /chatbot reached
+        # run_workflow_turn too while the classifier still routed; it does not
+        # now, and a workflow appearing there again would be the dual router
+        # coming back.
         from src import agent
-        with mock.patch.object(agent, "classify_intent",
-                               return_value="Find a nearby place"), \
-             mock.patch.object(agent, "run_workflow_turn",
-                               return_value={"reply": "ok"}) as ran:
+        with mock.patch.object(agent, "run_workflow_turn") as ran, \
+             mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "ok", "tool_calls": []}), \
+             mock.patch.object(agent, "log_decision"):
             agent.handle_message("a nursing room")
-        self.assertEqual(ran.call_args.args[0], "Find a nearby place")
+        ran.assert_not_called()
 
 
 if __name__ == "__main__":

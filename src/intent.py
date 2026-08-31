@@ -174,18 +174,25 @@ def classify_intent(message: str, workflows: list[dict],
 
 
 def log_decision(message: str, workflow: str | None, ran: bool,
-                 forced: bool = False) -> None:
+                 forced: bool = False, tool: str | None = None) -> None:
     """Append one routing decision. Never raises: losing a log line must not
     cost the parent their reply.
 
     `forced` marks a turn an admin test page directed, which never went near
-    the classifier. This file is what classifier accuracy is measured from, so
+    the classifier. This file is what routing accuracy is measured from, so
     without the flag test traffic would silently corrupt every measurement.
+
+    `tool` is the agent's answer to the same question `workflow` answers, and
+    the two are deliberately separate keys rather than one field holding either
+    kind of name. /chatbot routes by tool now and /workflows/<name>/run by
+    workflow, so a line says which router made the decision by which key is
+    filled, and a count of one never has to guess at the other.
     """
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "message": message,
         "workflow": workflow,
+        "tool": tool,
         "ran": ran,
         "forced": forced,
     }

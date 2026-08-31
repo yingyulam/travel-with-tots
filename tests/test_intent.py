@@ -141,6 +141,25 @@ class LogTest(unittest.TestCase):
         return [json.loads(line) for line in
                 self.path.read_text().splitlines() if line.strip()]
 
+    def test_the_agents_tool_lands_in_the_file(self):
+        # The requirement is the file, not the call: routing accuracy is read
+        # from data/intents.jsonl, and asserting the arguments alone let the
+        # key be dropped from the record with every test still passing.
+        log_decision("how do I save a plan?", None, ran=True,
+                     tool="answer_faq_tool")
+        entry = self._lines()[0]
+        self.assertEqual(entry["tool"], "answer_faq_tool")
+        self.assertIsNone(entry["workflow"])
+
+    def test_a_workflow_and_a_tool_are_separate_keys(self):
+        # /chatbot routes by tool and /workflows/<name>/run by workflow, so a
+        # line says which router decided it by which key is filled. One field
+        # holding either kind of name could not be counted.
+        log_decision("a nursing room", "Find a nearby place", ran=True)
+        entry = self._lines()[0]
+        self.assertEqual(entry["workflow"], "Find a nearby place")
+        self.assertIsNone(entry["tool"])
+
     def test_a_decision_is_recorded(self):
         log_decision("we're in Vancouver", FILL_THE_FORM, ran=True)
         entry = self._lines()[0]
@@ -181,66 +200,74 @@ class LogTest(unittest.TestCase):
 
 
 class HandleMessageTest(unittest.TestCase):
-    """The dispatch. A match runs the workflow and skips the agent; anything
-    else reaches the agent untouched."""
+    """What /chatbot does now: the agent, every time.
+
+    A classifier used to run first and hand matching messages to a workflow,
+    so two routers decided every turn and three of the four tools duplicated a
+    workflow. The workflows still run, on /workflows/<name>/run, which is what
+    the dispatch tests target now.
+    """
 
     def setUp(self):
         self.log = mock.patch.object(agent, "log_decision")
-        self.log.start()
+        self.logged = self.log.start()
 
     def tearDown(self):
         self.log.stop()
 
-    def test_a_match_runs_the_workflow_and_not_the_agent(self):
-        with mock.patch.object(agent, "classify_intent", return_value=FILL_THE_FORM), \
-             mock.patch.object(agent, "run_agent") as ran_agent, \
-             mock.patch("src.workflows.plan_from_chat.run",
-                        return_value={"reply": "Filled it in.", "form": {},
-                                      "found": ["destination"]}) as ran_workflow:
+    def test_every_message_reaches_the_agent(self):
+        # Including one the classifier would once have caught. Nothing about
+        # the message can route it anywhere else.
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "ok", "tool_calls": []}) as ran:
+            agent.handle_message("we're in Vancouver on Saturday")
+        ran.assert_called_once()
+
+    def test_no_workflow_runs_from_here(self):
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "ok", "tool_calls": []}), \
+             mock.patch("src.workflows.plan_from_chat.run") as workflow:
             result = agent.handle_message("we're in Vancouver on Saturday")
-        ran_workflow.assert_called_once()
-        ran_agent.assert_not_called()
-        self.assertEqual(result["reply"], "Filled it in.")
-        self.assertEqual(result["workflow"], FILL_THE_FORM)
-
-    def test_no_match_falls_through_to_the_agent(self):
-        with mock.patch.object(agent, "classify_intent", return_value=NO_WORKFLOW), \
-             mock.patch.object(agent, "run_agent",
-                               return_value={"reply": "Tap Save.", "sources": []}) as ran:
-            result = agent.handle_message("how do I save a plan?")
-        ran.assert_called_once()
-        self.assertIsNone(result["workflow"])
-        self.assertEqual(result["reply"], "Tap Save.")
-
-    def test_a_failing_workflow_falls_through_rather_than_erroring(self):
-        from src.components.extract_form import FormExtractionError
-        with mock.patch.object(agent, "classify_intent", return_value=FILL_THE_FORM), \
-             mock.patch("src.workflows.plan_from_chat.run",
-                        side_effect=FormExtractionError("bad json")), \
-             mock.patch.object(agent, "run_agent",
-                               return_value={"reply": "fallback", "sources": []}) as ran:
-            result = agent.handle_message("we're in Vancouver")
-        ran.assert_called_once()
-        self.assertEqual(result["reply"], "fallback")
+        workflow.assert_not_called()
         self.assertIsNone(result["workflow"])
 
-    def test_the_workflow_key_is_present_on_both_branches(self):
-        # None rather than absent, so a caller can tell "nothing matched" from
-        # "this response predates routing".
-        with mock.patch.object(agent, "classify_intent", return_value=NO_WORKFLOW), \
-             mock.patch.object(agent, "run_agent", return_value={"reply": "x"}):
-            self.assertIn("workflow", agent.handle_message("hi"))
+    def test_the_classifier_is_not_consulted(self):
+        # It is no longer imported here at all; this fails loudly if it returns.
+        self.assertFalse(hasattr(agent, "classify_intent"))
 
-    def test_a_workflow_reply_carries_the_keys_the_widget_needs(self):
+    def test_the_reply_carries_the_keys_the_widget_needs(self):
         # The bubble reads these positionally; a missing key renders as
-        # undefined rather than failing loudly.
-        with mock.patch.object(agent, "classify_intent", return_value=FILL_THE_FORM), \
-             mock.patch("src.workflows.plan_from_chat.run",
-                        return_value={"reply": "r", "form": {}, "found": []}):
+        # undefined rather than failing loudly. "workflow" and "conversation"
+        # stay, always None, because the widget still reads both.
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "r", "sources": [],
+                                             "model": "m", "response_time": None,
+                                             "input_tokens": None,
+                                             "output_tokens": None,
+                                             "tool_calls": []}):
             result = agent.handle_message("m")
         for key in ("reply", "sources", "model", "response_time",
-                    "input_tokens", "output_tokens", "tool_calls", "workflow"):
+                    "input_tokens", "output_tokens", "tool_calls", "workflow",
+                    "conversation"):
             self.assertIn(key, result)
+
+    def test_the_tool_the_agent_picked_is_logged(self):
+        # data/intents.jsonl is where routing accuracy is read from. The
+        # classifier used to write that line; the agent's tool choice is the
+        # same decision made by the thing that now makes it.
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "ok",
+                                             "tool_calls": [{"name": "answer_faq_tool"}]}):
+            agent.handle_message("how do I save a plan?")
+        self.assertEqual(self.logged.call_args.kwargs["tool"], "answer_faq_tool")
+        self.assertIs(self.logged.call_args.kwargs["ran"], True)
+
+    def test_a_turn_that_used_no_tool_is_logged_as_such(self):
+        with mock.patch.object(agent, "run_agent",
+                               return_value={"reply": "Hi!", "tool_calls": []}):
+            agent.handle_message("hello")
+        self.assertIsNone(self.logged.call_args.kwargs["tool"])
+        self.assertIs(self.logged.call_args.kwargs["ran"], False)
 
 
 if __name__ == "__main__":

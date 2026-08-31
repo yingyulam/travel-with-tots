@@ -112,10 +112,9 @@ class TurnContextTest(unittest.TestCase):
 
         def fake_agent(message, history=None, model=None):
             seen["on_trip"] = agent._TURN_ON_TRIP.get()
-            return {"reply": "ok"}
+            return {"reply": "ok", "tool_calls": []}
 
-        with mock.patch.object(agent, "classify_intent", return_value="none"), \
-             mock.patch.object(agent, "run_agent", side_effect=fake_agent):
+        with mock.patch.object(agent, "run_agent", side_effect=fake_agent):
             agent.handle_message("hello", context={"on_trip": True})
         self.assertIs(seen["on_trip"], True)
 
@@ -124,10 +123,9 @@ class TurnContextTest(unittest.TestCase):
 
         def fake_agent(message, history=None, model=None):
             seen["on_trip"] = agent._TURN_ON_TRIP.get()
-            return {"reply": "ok"}
+            return {"reply": "ok", "tool_calls": []}
 
-        with mock.patch.object(agent, "classify_intent", return_value="none"), \
-             mock.patch.object(agent, "run_agent", side_effect=fake_agent):
+        with mock.patch.object(agent, "run_agent", side_effect=fake_agent):
             agent.handle_message("hello")
         self.assertIs(seen["on_trip"], False)
 
