@@ -139,6 +139,53 @@ NEED_OPTIONS = [
     ("other", "Other"),
 ]
 
+# Reading a need out of what a parent typed. Here for the same reason as the
+# situation readers above: the chat agent needs the identical reading and must
+# not import from workflows/.
+NEED_CHIP_LABELS = [label for _, label in NEED_OPTIONS]
+
+# A chip click sends the button's own label, so those are matched first and
+# exactly. Everything else goes through the keywords below.
+LABEL_TO_NEED = {label.lower(): key for key, label in NEED_OPTIONS}
+
+# Read in this order, which is the whole reason it is a tuple of pairs rather
+# than a dict: "a quiet place to feed the baby" is a nursing room, not a quiet
+# spot, and only the order says so. Six fixed categories with distinctive words
+# is work code does, so there is no model call here.
+NEED_WORDS = (
+    ("nursing_room", ("nursing", "nurse", "breastfeed", "breast feed",
+                      "feed the baby", "feeding the baby", "milk")),
+    ("changing_table", ("changing table", "change table", "changing room",
+                        "nappy", "diaper", "change the baby")),
+    ("family_room", ("family room", "family washroom", "family bathroom",
+                     "family toilet")),
+    ("restaurant", ("restaurant", "somewhere to eat", "place to eat", "food",
+                    "lunch", "dinner", "breakfast", "hungry", "cafe", "snack")),
+    ("quiet_spot", ("quiet", "calm", "nap", "sleep", "rest", "meltdown",
+                    "wind down", "settle")),
+)
+
+# The three questions that go above a row of chips, kept together with the
+# vocabularies they are answered from. One home, because the chat agent and
+# the workflow ask the parent the same thing and must not word it two ways.
+NEED_QUESTION = "Sure. What do you need right now?"
+SITUATION_QUESTION = (
+    "Let's shift the rest of the day. What's happened? Pick one, or just tell "
+    "me in your own words."
+)
+AMENITY_QUESTION = "What does it offer? Pick as many as apply."
+
+
+def read_need(message: str) -> str | None:
+    """Which of the six needs the parent is asking for, or None if unreadable."""
+    said = message.strip().lower()
+    if said in LABEL_TO_NEED:
+        return LABEL_TO_NEED[said]
+    for need, words in NEED_WORDS:
+        if any(word in said for word in words):
+            return need
+    return None
+
 # What each "need" maps to in the venue data.
 #
 # "restaurant" reads `can_eat`, which is not "this is a restaurant" -- the table

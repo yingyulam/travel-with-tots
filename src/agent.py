@@ -32,7 +32,18 @@ from .components.plan_trip import plan_trip
 from .data_loader import SUPPORTED_CITIES
 from .db import AMENITY_OPTIONS
 from .intent import CANCEL_CHOICE, classify_intent, is_cancel, log_decision
-from .interactions import SITUATION_LABELS, read_replan_request
+from .interactions import (
+    AMENITY_QUESTION,
+    FREE_TEXT_SITUATION,
+    NEED_CHIP_LABELS,
+    NEED_QUESTION,
+    SITUATION_CHIP_LABELS,
+    SITUATION_LABELS,
+    SITUATION_QUESTION,
+    read_need,
+    read_replan_request,
+    read_situation,
+)
 from .workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -59,6 +70,10 @@ SYSTEM_PROMPT = (
     "and the rest of it needs reshaping: a long nap, rain, a shut stop, "
     "running behind, skipping the next stop. Pass their words through "
     "unchanged.\n"
+    "When a tool needs to know which of a fixed set of things the parent "
+    "means, call it anyway rather than asking them yourself: it answers "
+    "with the question and the buttons that go with it, and buttons beat "
+    "a typed reply for somebody holding a toddler.\n"
     "Use exactly one tool per message. Keep replies short and plain. After "
     "extract_form_tool, say which details you picked up and ask them to check "
     "the form. Never write an itinerary of your own."
@@ -119,10 +134,14 @@ def extract_form_tool(description: str) -> tuple[str, dict]:
 
 
 @tool(response_format="content_and_artifact")
-def find_nearby_tool(need: str) -> tuple[str, dict]:
+def find_nearby_tool(need: str = "") -> tuple[str, dict]:
     """Find 1-2 kid-friendly venues nearby matching an immediate need.
-    need must be one of: restaurant, family_room, changing_table,
-    nursing_room, quiet_spot, other."""
+    need should be one of: restaurant, family_room, changing_table,
+    nursing_room, quiet_spot, other.
+
+    Call this even when they have not said which they need: leave need empty
+    and it will offer them the buttons to pick from. Never ask them yourself,
+    and never guess a need they did not name."""
     # The component, not interactions.find_nearby: that one is the need-matching
     # predicate, with no location narrowing and no web fallback. This tool used
     # to call it directly, so the agent answered these from the sample venue
@@ -131,8 +150,15 @@ def find_nearby_tool(need: str) -> tuple[str, dict]:
     # This is the safety net for a phrasing the intent classifier misses; the
     # registered workflow is the main path. Both call the same component, so
     # they cannot answer the same question two different ways.
+    # Asked rather than guessed when the words match nothing, with the same six
+    # chips the workflow offers. A wrong guess sends a parent to a cafe when
+    # they needed somewhere to feed the baby, and read_need is the one reading
+    # of those words, shared with the workflow.
+    known = read_need(need)
+    if known is None:
+        return NEED_QUESTION, {"choices": NEED_CHIP_LABELS}
     try:
-        result = find_nearby_component(need=need, city=SUPPORTED_CITIES[0])
+        result = find_nearby_component(need=known, city=SUPPORTED_CITIES[0])
     except TOOL_ERRORS as e:
         return f"Couldn't look that up right now ({type(e).__name__}).", {}
     names = ", ".join(place["name"] for place in result["places"]) or "nothing"
@@ -165,7 +191,11 @@ def replan_tool(situation: str) -> tuple[str, dict]:
     """Collect a request to reshape the rest of a day already under way: a nap
     that ran long, a closed stop, rain, running behind, wanting to skip the
     next stop or do something else. Pass the parent's words through unchanged.
-    Only for a trip already started."""
+    Only for a trip already started.
+
+    Call this even when they have only said that something changed: pass their
+    words through and it will offer them the buttons to pick from. Never ask
+    them yourself."""
     # Collects, never replans, which is the same division the workflow keeps.
     # The itinerary, its versions and the current time all live on the trip
     # page, and runReplan there is the one implementation; replanning here
@@ -178,6 +208,11 @@ def replan_tool(situation: str) -> tuple[str, dict]:
         return ("I can shift a day you've already started. Open your trip from "
                 "the planning page, then ask me again and I'll replan from "
                 "where you are.", {})
+    # The same six chips the workflow offers when the words name no particular
+    # situation. Offering them is the useful thing to do for somebody who has
+    # not said yet, and a tapped label reads back exactly.
+    if read_situation(situation) == FREE_TEXT_SITUATION:
+        return SITUATION_QUESTION, {"choices": SITUATION_CHIP_LABELS}
     request = read_replan_request(situation)
     label = SITUATION_LABELS.get(request["situation"], "Something's changed")
     return f"Collected a replan request: {label}.", {"replan_request": request}
@@ -188,15 +223,27 @@ def log_place_tool(name: str, area: str = "", amenities: list[str] | None = None
                     notes: str = "") -> tuple[str, dict]:
     """Collect a kid-friendly place the app is missing, so the parent can
     submit it. name is the place's own name, never a sentence about wanting to
-    log one. area is a neighbourhood if they said one. amenities may include
-    has_family_room, has_nursing_room, stroller_accessible. notes is anything
-    else they said about it."""
+    log one. area is a neighbourhood if they said one. notes is anything else
+    they said about it.
+
+    amenities may include has_family_room, has_nursing_room,
+    stroller_accessible. Leave it out entirely if they have not said what the
+    place offers, and pass an empty list once they have said it offers none of
+    them."""
     # Collects and hands over, like replan_tool: the chat has no parent to
     # attach a submission to and no way to drop a map pin, and a form post has
     # both. store() stays the one writer, reached from /log-place.
     name = (name or "").strip()
     if not name:
         return "I need the place's name before I can log it.", {}
+    # Absent means nobody has said yet, so the amenity chips go out, the same
+    # multi-select row the workflow shows. An empty list is a real answer --
+    # "none of these" -- and must not ask again, which is the difference a
+    # missing argument can carry and a falsy one cannot.
+    if amenities is None:
+        return (AMENITY_QUESTION,
+                {"choices": [label for _, label in AMENITY_OPTIONS],
+                 "choose_many": True})
     values = {"name": name}
     if (area or "").strip():
         values["neighbourhood"] = area.strip()
@@ -458,6 +505,18 @@ def _artifact_of(name: str, tool_messages: list) -> dict:
     return {}
 
 
+def _asked_a_question(message) -> bool:
+    """Whether a tool came back asking rather than answering.
+
+    A tool that cannot proceed until the parent picks something returns the
+    question plus the chips to answer it, in the widget's own `choices` shape.
+    Its wording is then the reply: letting the model paraphrase "What do you
+    need right now?" would put different words above the same six buttons every
+    time, and those words are the label the buttons answer.
+    """
+    return bool((getattr(message, "artifact", None) or {}).get("choices"))
+
+
 def run_agent(message: str, history: list[dict] | None = None,
               model: str = DEFAULT_MODEL) -> dict:
     """Runs one turn: given a free-text message and prior turns ({"role",
@@ -484,7 +543,8 @@ def run_agent(message: str, history: list[dict] | None = None,
     result = _build_agent(model, stop_after_tools=True).invoke(
         {"messages": messages})
     last = result["messages"][-1]
-    if isinstance(last, ToolMessage) and last.name not in FINAL_ANSWER_TOOLS:
+    if (isinstance(last, ToolMessage) and last.name not in FINAL_ANSWER_TOOLS
+            and not _asked_a_question(last)):
         result = _build_agent(model).invoke({"messages": result["messages"]})
 
     tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
@@ -501,7 +561,15 @@ def run_agent(message: str, history: list[dict] | None = None,
     # path collected it.
     replan = _artifact_of("replan_tool", tool_messages)
     logged = _artifact_of("log_place_tool", tool_messages)
+    # Whichever tool asked, if one did. Chips travel in the same keys a
+    # workflow's do, so the widget draws them without knowing which side of the
+    # app produced the question.
+    asked = next((m.artifact for m in tool_messages if _asked_a_question(m)), {})
     return {
+        "choices": asked.get("choices"),
+        # Not exclusive: several amenities can be true of one place, so that
+        # row collects instead of sending on the first tap.
+        "choose_many": asked.get("choose_many", False),
         "reply": result["messages"][-1].content,
         "sources": faq.get("sources", []),
         "places": nearby.get("places", []),

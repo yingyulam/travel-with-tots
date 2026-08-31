@@ -20,7 +20,7 @@ search. Promoting it is a human decision, and the admin page for making that
 decision does not exist yet: submissions accumulate until it does.
 """
 
-from .. import db
+from .. import db, interactions
 from ..components.geocode import GeocodeError, geocode
 from ..intent import matches_only
 
@@ -142,7 +142,7 @@ STAGE_CONFIRMING = "confirming"
 NAME_QUESTION = ("Happy to log it. What's the place called? Add the area after "
                  "a comma if the name alone wouldn't find it, like \"Nourish "
                  "Kitchen, Gastown\".")
-AMENITY_QUESTION = "What does it offer? Pick as many as apply."
+AMENITY_QUESTION = interactions.AMENITY_QUESTION
 NOTES_QUESTION = "Anything else worth knowing about it?"
 
 DONE_CHOICE = "✓ Done"

@@ -25,44 +25,19 @@ STAGE_NEED = "need"
 NEED_PHRASES = {key: label.lower() for key, label in interactions.NEED_OPTIONS}
 NEED_PHRASES["other"] = "kid-friendly place"
 
-# A chip click sends the button's own label, so those are matched first and
-# exactly. Everything else goes through the keywords below.
-LABEL_TO_NEED = {label.lower(): key for key, label in interactions.NEED_OPTIONS}
+# Read from interactions, not defined here: the chat agent needs the same
+# reading and must not import from workflows/. Re-exported under the old
+# names because this module's tests and page name them.
+LABEL_TO_NEED = interactions.LABEL_TO_NEED
+NEED_WORDS = interactions.NEED_WORDS
+NEED_QUESTION = interactions.NEED_QUESTION
+read_need = interactions.read_need
 
-# Read in this order, which is the whole reason it is a tuple of pairs rather
-# than a dict: "a quiet place to feed the baby" is a nursing room, not a quiet
-# spot, and only the order says so. Six fixed categories with distinctive words
-# is work code does, so there is no model call here.
-NEED_WORDS = (
-    ("nursing_room", ("nursing", "nurse", "breastfeed", "breast feed",
-                      "feed the baby", "feeding the baby", "milk")),
-    ("changing_table", ("changing table", "change table", "changing room",
-                        "nappy", "diaper", "change the baby")),
-    ("family_room", ("family room", "family washroom", "family bathroom",
-                     "family toilet")),
-    ("restaurant", ("restaurant", "somewhere to eat", "place to eat", "food",
-                    "lunch", "dinner", "breakfast", "hungry", "cafe", "snack")),
-    ("quiet_spot", ("quiet", "calm", "nap", "sleep", "rest", "meltdown",
-                    "wind down", "settle")),
-)
-
-NEED_QUESTION = "Sure. What do you need right now?"
 LOCATION_CHOICE = "📍 Use my location"
 
 # Asked for rather than guessed when the words match nothing, but only once:
 # asking twice for the same thing is how a conversation stops being useful.
 FALLBACK_NEED = "other"
-
-
-def read_need(message: str) -> str | None:
-    """Which of the six needs the parent is asking for, or None if unreadable."""
-    said = message.strip().lower()
-    if said in LABEL_TO_NEED:
-        return LABEL_TO_NEED[said]
-    for need, words in NEED_WORDS:
-        if any(word in said for word in words):
-            return need
-    return None
 
 
 def _coords(context: dict | None) -> tuple:

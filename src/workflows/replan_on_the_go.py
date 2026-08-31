@@ -30,10 +30,7 @@ TIMED_SITUATIONS = interactions.TIMED_SITUATIONS
 read_situation = interactions.read_situation
 read_minutes = interactions.read_minutes
 
-SITUATION_QUESTION = (
-    "Let's shift the rest of the day. What's happened? Pick one, or just tell "
-    "me in your own words."
-)
+SITUATION_QUESTION = interactions.SITUATION_QUESTION
 NO_TRIP_REPLY = (
     "I can shift a day you've already started. Open your trip from the "
     "planning page, then ask me again and I'll replan from where you are."

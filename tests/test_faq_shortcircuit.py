@@ -91,6 +91,31 @@ class StopsAtTheToolTest(unittest.TestCase):
         self.assertIn("unavailable", result["reply"])
         self.assertEqual(built, [True])
 
+    def test_a_tool_that_asks_keeps_its_own_wording(self):
+        # A question and the chips that answer it are one thing. Letting the
+        # model reword "What do you need right now?" would put different words
+        # above the same six buttons every time.
+        asking = ToolMessage(content="Sure. What do you need right now?",
+                             name="find_nearby_tool", tool_call_id="1",
+                             artifact={"choices": ["Family room", "Other"]})
+        result, built = self._run([asking])
+        self.assertEqual(result["reply"], "Sure. What do you need right now?")
+        self.assertEqual(result["choices"], ["Family room", "Other"])
+        self.assertEqual(built, [True])
+
+    def test_a_multi_select_row_stays_a_multi_select_row(self):
+        asking = ToolMessage(content="What does it offer?",
+                             name="log_place_tool", tool_call_id="1",
+                             artifact={"choices": ["Family room"],
+                                       "choose_many": True})
+        result, _built = self._run([asking])
+        self.assertIs(result["choose_many"], True)
+
+    def test_a_tool_that_answers_carries_no_chips(self):
+        result, _built = self._run([_form_message(), AIMessage("Got it.")])
+        self.assertIsNone(result["choices"])
+        self.assertIs(result["choose_many"], False)
+
     def test_only_the_faq_writes_its_own_answers(self):
         # A guard on the list itself. Adding a tool here means its raw output
         # goes straight to a parent, which is only right for the FAQ.

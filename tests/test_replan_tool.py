@@ -70,7 +70,6 @@ class OneImplementationTest(unittest.TestCase):
         "we finished early",
         "running behind",
         "Nap happened here",          # a tapped chip, not typed words
-        "the ferry was cancelled",    # nothing matches: free text
     )
 
     def test_the_tool_and_the_workflow_agree_on_every_message(self):
@@ -84,6 +83,21 @@ class OneImplementationTest(unittest.TestCase):
                               "values": {}}, {"on_trip": True})
                 self.assertEqual(artifact["replan_request"],
                                  from_workflow["replan_request"])
+
+    def test_words_that_name_no_situation_get_the_chips(self):
+        """The workflow's first turn offers six chips rather than guessing, and
+        so does the tool. Collecting "the ferry was cancelled" as a note would
+        skip the useful thing to show somebody who has not said yet."""
+        token = agent._TURN_ON_TRIP.set(True)
+        self.addCleanup(agent._TURN_ON_TRIP.reset, token)
+        content, artifact = agent.replan_tool.func("the ferry was cancelled")
+        self.assertEqual(artifact["choices"], interactions.SITUATION_CHIP_LABELS)
+        self.assertNotIn("replan_request", artifact)
+        self.assertEqual(content, interactions.SITUATION_QUESTION)
+
+        # And the chip they tap comes back as a real situation.
+        _content, artifact = agent.replan_tool.func("Nap happened here")
+        self.assertEqual(artifact["replan_request"]["situation"], "nap_happened")
 
     def test_the_workflow_reads_through_interactions_now(self):
         # The readers moved so agent.py never imports from workflows/. If the
