@@ -1750,7 +1750,14 @@ def rag_status():
     still reads "ready". A boolean rather than the path, since this route is
     public.
     """
-    return jsonify({**rag.get_status(), "model_cached": rag.model_cached()})
+    return jsonify({**rag.get_status(), "model_cached": rag.model_cached(),
+                    # Temporary diagnostic scaffolding. The deployed knowledge
+                    # base fails inside a request the worker does not survive,
+                    # and the platform logs have to be fetched by hand, which
+                    # twice did not happen. The trace carries stage names,
+                    # timings and a memory figure, and no paths, so it is safe
+                    # on a public route. Remove it once the cause is settled.
+                    "trace": rag.read_trace()})
 
 
 @app.route("/chunks")

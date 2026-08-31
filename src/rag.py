@@ -16,8 +16,11 @@ import hashlib
 import json
 import os
 import re
+import resource
+import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import chromadb
@@ -69,19 +72,68 @@ _status_lock = threading.Lock()
 _index_lock = threading.Lock()
 
 
-def _log(stage, since=None):
-    """One line of the retrieval path, timed, and **flushed**.
+# Where the stage trace is kept, and how much of it. A file rather than memory
+# because the failure this exists for ends in the worker being killed, and an
+# in-process ring buffer dies with it. The container outlives the worker, so the
+# file is still there to be read afterwards -- which is the whole point: it says
+# how far a killed request got.
+TRACE_PATH = DATA_DIR / "rag_trace.log"
+TRACE_LINES = 40
 
-    Flushed because the failure this exists for ends in the worker being killed:
-    anything still sitting in a stdout buffer dies with it, which is how a 120s
-    request left no trace of which step spent the time. Cheap enough to leave
-    on -- a handful of lines per chat turn -- and the alternative was four
-    deploys spent guessing from outside.
+
+def _rss_mb():
+    """This process's resident memory. The number an out-of-memory kill acts on.
+
+    ru_maxrss is the peak rather than the current figure, which is the one that
+    matters: ONNX allocates hard during session init and gives most of it back,
+    so a reading taken afterwards misses the spike entirely.
     """
-    if since is None:
-        print(f"[rag] {stage}", flush=True)
-    else:
-        print(f"[rag] {stage} +{time.monotonic() - since:.2f}s", flush=True)
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # macOS reports bytes, Linux kilobytes. Deployment is Linux; the branch is
+    # so a local measurement is comparable rather than a thousand times out.
+    return peak / (1024 * 1024) if sys.platform == "darwin" else peak / 1024
+
+
+def _trace(line):
+    """Append one line, keeping only the last TRACE_LINES.
+
+    Never raises. A trace that costs a parent their reply would be worse than
+    no trace, and this runs on the request path.
+    """
+    try:
+        TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(TRACE_PATH, "a") as f:
+            f.write(line + "\n")
+        kept = TRACE_PATH.read_text().splitlines()[-TRACE_LINES:]
+        TRACE_PATH.write_text("\n".join(kept) + "\n")
+    except OSError:
+        pass
+
+
+def read_trace():
+    """The last few stage lines, for /rag/status to hand back.
+
+    Deliberately carries no paths: that route is public, and stage names,
+    timings and a memory figure say nothing a caller could use.
+    """
+    try:
+        return TRACE_PATH.read_text().splitlines()[-TRACE_LINES:]
+    except OSError:
+        return []
+
+
+def _log(stage, since=None):
+    """One line of the retrieval path, timed, flushed, and kept on disk.
+
+    Flushed because the worker is killed at 120s and anything still in a stdout
+    buffer dies with it. Written to a file for the same reason and one more: the
+    deployed logs have to be fetched by hand, and two attempts at that failed,
+    so the instance reports its own trace instead.
+    """
+    elapsed = "" if since is None else f" +{time.monotonic() - since:.2f}s"
+    line = f"{datetime.now(timezone.utc).strftime('%H:%M:%S')} {stage}{elapsed} rss={_rss_mb():.0f}MB"
+    print(f"[rag] {line}", flush=True)
+    _trace(line)
     return time.monotonic()
 
 
@@ -97,8 +149,8 @@ def _get_embedder():
         # The expensive branch, and only the first caller in a process takes it.
         # model_on_disk is the whole question: False means this is about to
         # download 79MB, and on a deployment that is what the 120s went on.
-        started = _log(f"embedder: building, model_on_disk={model_cached()}, "
-                       f"path={ONNXMiniLM_L6_V2.DOWNLOAD_PATH}")
+        # No path in the line: read_trace is served on a public route.
+        started = _log(f"embedder: building, model_on_disk={model_cached()}")
         embedder = ONNXMiniLM_L6_V2()
         _log("embedder: constructed", started)
         embedder([""])

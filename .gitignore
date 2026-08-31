@@ -26,6 +26,8 @@ data/rag_config.json
 # in $HOME so a deployment's build can hand it to the running service, which
 # only inherits the project directory.
 data/onnx_models/
+# Stage trace for diagnosing the deployed knowledge base. Written at runtime.
+data/rag_trace.log
 # Which backend /settings is set to. Generated, and local to one install.
 data/data_source.json
 # Generated from the live schema by supabase_sync.postgres_ddl(); it would
