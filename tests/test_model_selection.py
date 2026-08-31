@@ -173,9 +173,13 @@ class ThePinnedThreeDoNotFollowTheDropdownTest(unittest.TestCase):
     a non-reasoning model -- measured at ~2s against 25-75s in commit a853b6c.
     """
 
-    def test_intent_routing_stays_pinned(self):
+    def test_routing_no_longer_costs_a_pinned_model_call(self):
+        # There was a classifier here, pinned so that picking the free
+        # reasoning model did not put 25-75s on the critical path of every
+        # message. Routing is the agent's tool selection now, on the parent's
+        # own choice like everything else, so there is no second call to pin.
         from src import intent
-        self.assertEqual(intent.INTENT_MODEL, PINNED)
+        self.assertFalse(hasattr(intent, "INTENT_MODEL"))
 
     def test_form_extraction_stays_pinned(self):
         from src.components import extract_form
@@ -195,13 +199,18 @@ class ThePinnedThreeDoNotFollowTheDropdownTest(unittest.TestCase):
         self.assertFalse(hasattr(module, "classify_intent"))
 
     def test_the_extractor_tool_does_not_take_the_turns_model(self):
-        # Deliberate, and documented on the tool: the extractor keeps its own
-        # known-good model because its failure mode is "no form at all".
-        from src import agent as module
-        with mock.patch.object(module, "extract_form",
-                               return_value={"found": [], "form": {}}) as extracted:
-            module._TURN_MODEL.set(PICKED)
-            module.extract_form_tool.func("a day out with a toddler")
+        # Deliberate: the extractor keeps its own known-good model because it
+        # needs structured outputs and its failure mode is "no form at all".
+        # It is the workflow's call now rather than a tool's, and the rule is
+        # the same.
+        from src.workflows import plan_from_chat
+        with mock.patch.object(plan_from_chat, "extract_form",
+                               return_value={"found": [], "form": {},
+                                             "model": "m",
+                                             "response_time": 1.0}) as extracted:
+            plan_from_chat.run("a day out with a toddler",
+                               {"stage": plan_from_chat.STAGE_COLLECTING,
+                                "form": {}, "found": []}, None)
         self.assertNotIn("model", extracted.call_args.kwargs)
 
 

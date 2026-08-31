@@ -8,7 +8,6 @@ from src.components.extract_form import FormExtractionError
 from src.agent import (
     TOOLS,
     answer_faq_tool,
-    extract_form_tool,
     run_agent,
 )
 
@@ -24,17 +23,6 @@ class ToolArtifactTest(unittest.TestCase):
     JSON-stringified onto ToolMessage.content by LangGraph, so the caller can
     only recover text. These tools return (text, dict) so the dict survives on
     .artifact, which is what carries the form and the FAQ's citations back."""
-
-    def test_extractor_result_survives_as_a_dict(self):
-        extracted = {"form": {"destination": "Vancouver"}, "found": ["destination"]}
-        with mock.patch("src.agent.extract_form", return_value=extracted):
-            message = extract_form_tool.invoke(
-                {"args": {"description": "a day in Vancouver"}, "id": "1",
-                 "name": "extract_form_tool", "type": "tool_call"})
-        self.assertIsInstance(message, ToolMessage)
-        self.assertEqual(message.artifact, extracted)
-        self.assertIsInstance(message.content, str)
-        self.assertIn("destination", message.content)  # the model-facing summary
 
     def test_faq_result_survives_with_its_sources(self):
         answer = {"reply": "Tap Save this plan.", "sources": [{"index": 1}],
@@ -52,21 +40,6 @@ class ToolErrorHandlingTest(unittest.TestCase):
     """The chat route catches only KeyError and OpenAIError, so anything else
     raised inside a tool escapes as a 500. extract_form does raise, unlike the
     older tools, so each tool has to swallow its own failures."""
-
-    def _invoke_extractor(self):
-        return extract_form_tool.invoke(
-            {"args": {"description": "x"}, "id": "1",
-             "name": "extract_form_tool", "type": "tool_call"})
-
-    def test_extraction_failure_becomes_a_readable_result(self):
-        for error in (FormExtractionError("bad json"),
-                      requests.exceptions.RequestException("down"),
-                      KeyError("OPENROUTER_API_KEY")):
-            with self.subTest(error=type(error).__name__):
-                with mock.patch("src.agent.extract_form", side_effect=error):
-                    message = self._invoke_extractor()
-                self.assertIn("Couldn't read a form", message.content)
-                self.assertEqual(message.artifact, {})
 
     def test_faq_failure_becomes_a_readable_result(self):
         with mock.patch("src.agent.ask_website_chatbot",
@@ -112,12 +85,12 @@ class RunAgentContractTest(unittest.TestCase):
 
     def test_tool_calls_carry_name_text_and_data(self):
         extraction = ToolMessage(content="Filled in: destination.",
-                                 name="extract_form_tool", tool_call_id="1",
+                                 name="find_a_nearby_place", tool_call_id="1",
                                  artifact={"form": {"destination": "Vancouver"},
                                            "found": ["destination"]})
         result, _ = self._run(tool_messages=(extraction,))
         call = result["tool_calls"][0]
-        self.assertEqual(call["name"], "extract_form_tool")
+        self.assertEqual(call["name"], "find_a_nearby_place")
         self.assertIn("Filled in", call["output"])
         self.assertEqual(call["data"]["form"]["destination"], "Vancouver")
 
@@ -184,7 +157,7 @@ class ToolRegistrationTest(unittest.TestCase):
         # moment it started talking to the agent instead.
         names = {t.name for t in TOOLS}
         self.assertIn("answer_faq_tool", names)
-        self.assertIn("extract_form_tool", names)
+        self.assertIn("fill_the_form_from_a_chat_message", names)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from unittest import mock
 import requests
 
 from src import agent, intent
-from src.intent import NO_WORKFLOW, classify_intent, log_decision
+from src.intent import log_decision
 from src import workflows as workflows_module
 from src.workflows import WORKFLOWS, runnable_message_workflows
 
@@ -28,99 +28,6 @@ def _classify(reply, workflows=None, **kwargs):
     with mock.patch.object(intent, "call_openrouter",
                            return_value=(reply, {}, 1.0), **kwargs) as call:
         return classify_intent("some message", offered), call
-
-
-class ClassifyTest(unittest.TestCase):
-    def test_a_matching_message_returns_the_name(self):
-        chosen, _ = _classify(_reply(FILL_THE_FORM))
-        self.assertEqual(chosen, FILL_THE_FORM)
-
-    def test_no_match_returns_none(self):
-        chosen, _ = _classify(_reply(NO_WORKFLOW))
-        self.assertEqual(chosen, NO_WORKFLOW)
-
-    def test_a_name_that_was_never_offered_is_refused(self):
-        # Not a routing decision, a hallucination. Dispatching on it would run
-        # something the parent never asked for.
-        chosen, _ = _classify(_reply("Summarize Interac Spending"))
-        self.assertEqual(chosen, NO_WORKFLOW)
-
-    def test_the_offered_names_constrain_the_schema(self):
-        _, call = _classify(_reply(FILL_THE_FORM))
-        schema = call.call_args[0][2]["json_schema"]["schema"]
-        self.assertEqual(schema["properties"]["workflow"]["enum"],
-                         [FILL_THE_FORM, NO_WORKFLOW])
-        self.assertTrue(call.call_args[0][2]["json_schema"]["strict"])
-
-    def test_the_workflow_menu_reaches_the_prompt(self):
-        _, call = _classify(_reply(NO_WORKFLOW))
-        prompt = call.call_args[0][0][0]["content"]
-        self.assertIn(FILL_THE_FORM, prompt)
-        self.assertIn("Turns a described day into the form.", prompt)
-
-    def test_nothing_offered_means_no_model_call_at_all(self):
-        with mock.patch.object(intent, "call_openrouter") as call:
-            self.assertEqual(classify_intent("hello", []), NO_WORKFLOW)
-        call.assert_not_called()
-
-    def test_an_unreachable_model_falls_through_rather_than_raising(self):
-        # A routing hint is not worth failing the parent's message for.
-        with mock.patch.object(intent, "call_openrouter",
-                               side_effect=requests.exceptions.RequestException("down")):
-            self.assertEqual(classify_intent("hi", [{"name": FILL_THE_FORM,
-                                                     "description": "d"}]),
-                             NO_WORKFLOW)
-
-    def test_an_unparseable_answer_falls_through(self):
-        chosen, _ = _classify("not json at all")
-        self.assertEqual(chosen, NO_WORKFLOW)
-
-
-class OfferedWorkflowsTest(unittest.TestCase):
-    """What the classifier is allowed to pick from. Offering a workflow with
-    nothing behind it means it gets picked and then cannot run."""
-
-    def test_only_message_triggered_workflows_are_offered(self):
-        for workflow, _ in runnable_message_workflows():
-            with self.subTest(workflow=workflow["name"]):
-                self.assertEqual(workflow["trigger"], "message")
-
-    def test_every_offered_workflow_can_actually_run(self):
-        for workflow, run in runnable_message_workflows():
-            with self.subTest(workflow=workflow["name"]):
-                self.assertTrue(callable(run))
-
-    def test_a_workflow_with_nothing_behind_it_is_excluded(self):
-        # Tested against a stub rather than a real module, because every
-        # workflow is runnable now. The guard still matters: offering the
-        # classifier a name with no run means it confidently picks something
-        # that cannot then be executed, which is worse than the chatbot.
-        stub = types.SimpleNamespace(
-            WORKFLOW={"name": "Not built yet", "emoji": "🚧",
-                      "trigger": "message", "description": "One sentence.",
-                      "steps": [{"component": "Nothing", "built": False}]})
-        with mock.patch.object(workflows_module, "_MODULES",
-                               (*workflows_module._MODULES, stub)):
-            offered = {w["name"] for w, _ in runnable_message_workflows()}
-        self.assertNotIn("Not built yet", offered)
-
-    def test_a_non_message_workflow_is_excluded_even_with_a_run(self):
-        stub = types.SimpleNamespace(
-            WORKFLOW={"name": "Started by something else", "emoji": "🔁",
-                      "trigger": "event", "description": "One sentence.",
-                      "steps": [{"component": "Thing", "built": True}]},
-            run=lambda *a, **k: {"reply": "hi"})
-        with mock.patch.object(workflows_module, "_MODULES",
-                               (*workflows_module._MODULES, stub)):
-            offered = {w["name"] for w, _ in runnable_message_workflows()}
-        self.assertNotIn("Started by something else", offered)
-
-    def test_the_registry_still_lists_every_workflow(self):
-        # runnable_message_workflows filters; WORKFLOWS must not. Asserted
-        # against the module list rather than a fixed count, so adding a
-        # workflow does not fail a test that is about filtering.
-        self.assertEqual(len(WORKFLOWS), len(workflows_module._MODULES))
-        self.assertGreater(len(WORKFLOWS), len(list(runnable_message_workflows())))
 
 
 class LogTest(unittest.TestCase):

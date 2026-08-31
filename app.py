@@ -2529,13 +2529,21 @@ def chatbot_route():
     if rag.get_status()["state"] == "indexing":
         return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
 
+    # The widget echoes back whatever workflow state it was given, so this is
+    # client-controlled: anything that is not a dict is dropped rather than
+    # handed to a workflow, which would reach it as an attribute error.
+    conversation = data.get("conversation")
+    if not isinstance(conversation, dict):
+        conversation = None
+
     try:
-        # No conversation and no force_workflow. Both belonged to workflow
-        # dispatch, which this route no longer does: the agent is the only
-        # orchestrator here, and a test page that wants a named workflow posts
-        # to /workflows/<name>/run behind an admin login.
+        # No force_workflow: that let any caller pick which workflow their
+        # message ran, on a route open to everyone, and the test pages post to
+        # /workflows/<name>/run behind an admin login instead. `conversation` is
+        # different -- it is how a workflow the agent started keeps the turn.
         result = handle_message(message, history=_capped_history(data.get("history")),
-                                model=model, context=_chat_context(data))
+                                model=model, conversation=conversation,
+                                context=_chat_context(data))
     except KeyError:
         return jsonify({"error": "The chatbot isn't configured yet."}), 500
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:

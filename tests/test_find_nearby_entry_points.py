@@ -22,31 +22,52 @@ FOUND = {"places": [{"name": "Science World", "neighbourhood": "False Creek",
          "neighbourhood": "", "maps_search_url": None}
 
 
-class TheAgentToolUsesTheComponentTest(unittest.TestCase):
-    def test_it_calls_the_component_with_the_supported_city(self):
-        with mock.patch.object(agent, "find_nearby_component",
-                               return_value=FOUND) as component:
-            content, artifact = agent.find_nearby_tool.func("nursing_room")
-        self.assertEqual(component.call_args.kwargs,
-                         {"need": "nursing_room", "city": SUPPORTED_CITIES[0]})
-        self.assertIn("Science World", content)
-        self.assertEqual(artifact["places"], FOUND["places"])
+class TheAgentStartsTheWorkflowTest(unittest.TestCase):
+    """The agent's tool starts the workflow; the workflow calls the component.
 
-    def test_the_places_survive_as_an_artifact(self):
-        # A plain dict return is JSON-stringified into the tool message, so the
-        # caller could not render links from it. content_and_artifact is why
-        # the agent path shows the same cards the workflow does.
-        self.assertEqual(agent.find_nearby_tool.response_format,
-                         "content_and_artifact")
+    It used to call the component itself, which is why the agent path had no
+    coordinates -- it passed only a need and a city, where the workflow passes
+    lat, lng and the resolved place name. Starting the workflow instead means
+    one implementation reaches the component, and the browser's location
+    reaches it too.
+    """
 
-    def test_a_failure_is_answered_not_raised(self):
-        # The chat route only catches KeyError and OpenAIError, so anything
-        # escaping a tool is a 500.
-        with mock.patch.object(agent, "find_nearby_component",
-                               side_effect=KeyError("TAVILY_API_KEY")):
-            content, artifact = agent.find_nearby_tool.func("nursing_room")
-        self.assertIn("Couldn't look that up", content)
-        self.assertEqual(artifact, {})
+    def _tool(self):
+        name = agent._slug("Find a nearby place")
+        return next(t for t in agent.TOOLS if t.name == name)
+
+    def test_the_workflow_has_a_tool(self):
+        self.assertIsNotNone(self._tool())
+
+    def test_the_tool_takes_no_arguments(self):
+        # The whole point. A tool that needed a `need` could not be called
+        # before the parent had named one, so a bare "I need something nearby"
+        # started nothing at all.
+        self.assertEqual(self._tool().args, {})
+
+    def test_it_runs_the_workflow_on_the_parents_own_words(self):
+        with mock.patch.object(agent, "run_workflow_turn",
+                               return_value={"reply": "ok"}) as ran:
+            token = agent._TURN_MESSAGE.set("I need a nursing room")
+            try:
+                self._tool().func()
+            finally:
+                agent._TURN_MESSAGE.reset(token)
+        self.assertEqual(ran.call_args.args,
+                         ("Find a nearby place", "I need a nursing room"))
+
+    def test_the_request_context_reaches_the_workflow(self):
+        # Coordinates live here. Without them the component cannot rank by
+        # distance, which is what the old tool silently lost.
+        here = {"lat": 49.2, "lng": -123.1}
+        with mock.patch.object(agent, "run_workflow_turn",
+                               return_value={"reply": "ok"}) as ran:
+            token = agent._TURN_CONTEXT.set(here)
+            try:
+                self._tool().func()
+            finally:
+                agent._TURN_CONTEXT.reset(token)
+        self.assertEqual(ran.call_args.kwargs["context"], here)
 
 
 class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):

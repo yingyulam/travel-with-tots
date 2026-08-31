@@ -28,64 +28,38 @@ from .agents import (
     ask_website_chatbot,
 )
 from . import rag
-from .components.extract_form import FormExtractionError, extract_form
-from .components.find_nearby import find_nearby as find_nearby_component
+# The vocabularies and readers these tools used to need are gone with them:
+# collecting a need, a situation or a place's amenities is the workflow's job,
+# and the workflow reads them from interactions and db directly.
+from .components.extract_form import FormExtractionError
 from .components.plan_trip import plan_trip
-from .data_loader import SUPPORTED_CITIES
-from .db import AMENITY_OPTIONS
 from .intent import CANCEL_CHOICE, is_cancel, log_decision
-from .interactions import (
-    AMENITY_QUESTION,
-    FREE_TEXT_SITUATION,
-    NEED_CHIP_LABELS,
-    NEED_QUESTION,
-    SITUATION_CHIP_LABELS,
-    SITUATION_LABELS,
-    SITUATION_QUESTION,
-    read_need,
-    read_replan_request,
-    read_situation,
-)
 from .workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 SYSTEM_PROMPT = (
     "You are Travel with Tots' assistant, answering in the chat bubble on the "
-    "site. Use your tools rather than your own knowledge:\n"
-    # No instruction about what to do with the answer, because the model never
-    # sees it: this tool's reply goes straight to the parent (FINAL_ANSWER_TOOLS)
-    # and the turn ends there.
-    "- answer_faq_tool for any question about how the site works or what it "
-    "can do. Pass the parent's question through unchanged. Call it every time, "
-    "including when an earlier answer in this conversation looks like it "
-    "covers the question: answers come from the knowledge base, never from "
-    "memory or from what you said before.\n"
-    "- Asking to plan a day without saying anything about it is not a question "
-    "about the site: ask them for the details, and do not reach for the "
-    "knowledge base.\n"
-    "- extract_form_tool whenever a parent describes a day out they want, so "
-    "their words become the planning form. Pass their whole description. This "
-    "is the tool for a description even when it sounds like a request for a "
-    "plan: the form is filled in first so the parent can check it.\n"
-    "- find_nearby_tool when they need somewhere nearby right now.\n"
-    "- log_place_tool when they tell you about a kid-friendly place the "
-    "site is missing and want it added. Give it the place's own name, not "
-    "their sentence about wanting to log one.\n"
-    "- replan_tool when something has changed during a day already under way "
-    "and the rest of it needs reshaping: a long nap, rain, a shut stop, "
-    "running behind, skipping the next stop. Pass their words through "
-    "unchanged.\n"
-    "When a tool needs to know which of a fixed set of things the parent "
-    "means, call it anyway rather than asking them yourself: it answers "
-    "with the question and the buttons that go with it, and buttons beat "
-    "a typed reply for somebody holding a toddler.\n"
+    "site. Every message is one of three things, and your only job is to tell "
+    "them apart:\n"
+    "1. A question about the site, how it works or what it can do: "
+    "answer_faq_tool, with their question passed through unchanged. Call it "
+    "every time, including when an earlier answer in this conversation looks "
+    "like it covers the question -- answers come from the knowledge base, "
+    "never from memory or from what you said before.\n"
+    "2. A parent wanting the site to do something for them: call the tool for "
+    "that task. Call it on the intent alone, before they have given any "
+    "details: the tool takes no arguments and asks for what it needs, and it "
+    "asks better than you can, with buttons to tap. \"I want to add a place\" "
+    "and \"I want to plan a day\" are both this.\n"
+    "3. Anything else -- a greeting, a thank you: answer in a sentence and "
+    "call nothing.\n"
     "Use exactly one tool per message. Keep replies short and plain, with no "
     "markdown: no **bold**, no #headings, no backticks. The chat shows text "
     "exactly as you write it, so those characters appear on screen. Never "
-    "write an itinerary yourself: filling the form is how a day gets planned, "
-    "and the planning page builds it."
+    "write an itinerary yourself: the planning page builds those."
 )
+
 
 # Errors a tool must swallow: the chat route only catches KeyError and
 # OpenAIError, so anything else raised inside a tool escapes as a 500.
@@ -98,12 +72,18 @@ TOOL_ERRORS = (FormExtractionError, requests.exceptions.RequestException, KeyErr
 # the worker cannot read each other's turn.
 _TURN_MODEL = contextvars.ContextVar("turn_model", default=DEFAULT_MODEL)
 
-# Whether a started day is open on the page this turn came from, set from the
-# request's context. A ContextVar for the same reason as the model above: a
-# tool's arguments are what the model fills in, and whether the parent has a
-# trip open is a fact about the request, not something to let the model decide
-# or a caller's message assert.
-_TURN_ON_TRIP = contextvars.ContextVar("turn_on_trip", default=False)
+# What the request knew that the message did not: the browser's coordinates,
+# whether a started day is open on the page, and which parent is signed in.
+# Every workflow reads some of it -- find_nearby the coordinates, replan
+# on_trip, plan_from_chat parent_id -- and none of it is the model's to decide
+# or a caller's message to assert.
+_TURN_CONTEXT = contextvars.ContextVar("turn_context", default=None)
+
+# The parent's own words, handed to a workflow unchanged. A workflow tool takes
+# no arguments at all, so this is how the message reaches it: selecting the tool
+# is the only decision the model makes, and a paraphrase of the message is not
+# one of them. read_situation and split_name both read the raw sentence.
+_TURN_MESSAGE = contextvars.ContextVar("turn_message", default="")
 
 
 @tool(response_format="content_and_artifact")
@@ -124,63 +104,6 @@ def answer_faq_tool(question: str) -> tuple[str, dict]:
     return result["reply"], result
 
 
-@tool(response_format="content_and_artifact")
-def extract_form_tool(description: str) -> tuple[str, dict]:
-    """Turn a parent's description of a day out into the planning form. Use
-    when they describe what they want rather than asking a question: times,
-    a child's age, naps, a destination, how many places, preferences. Pass
-    their description through whole, in their own words."""
-    try:
-        # Deliberately not passing the agent's model through: the extractor
-        # needs structured-output support, which not every model offered in the
-        # chat widget advertises, so it keeps its own known-good default.
-        result = extract_form(description)
-    except TOOL_ERRORS as e:
-        return f"Couldn't read a form from that ({type(e).__name__}).", {}
-    # Parent-facing, because this tool answers for itself (FINAL_ANSWER_TOOLS).
-    # Underscores out: these are form field names, and "wake up" reads where
-    # "wake_up" looks like code.
-    found = ", ".join(f.replace("_", " ") for f in result["found"])
-    picked = f"I've filled in {found}. " if found else ""
-    return (f"{picked}Open the form to check it and add anything missing, then "
-            "plan your day from there."), result
-
-
-@tool(response_format="content_and_artifact")
-def find_nearby_tool(need: str = "") -> tuple[str, dict]:
-    """Find 1-2 kid-friendly venues nearby matching an immediate need.
-    need should be one of: restaurant, family_room, changing_table,
-    nursing_room, quiet_spot, other.
-
-    Call this even when they have not said which they need: leave need empty
-    and it will offer them the buttons to pick from. Never ask them yourself,
-    and never guess a need they did not name."""
-    # The component, not interactions.find_nearby: that one is the need-matching
-    # predicate, with no location narrowing and no web fallback. This tool used
-    # to call it directly, so the agent answered these from the sample venue
-    # list while the real chain sat unused.
-    #
-    # This is the safety net for a phrasing the intent classifier misses; the
-    # registered workflow is the main path. Both call the same component, so
-    # they cannot answer the same question two different ways.
-    # Asked rather than guessed when the words match nothing, with the same six
-    # chips the workflow offers. A wrong guess sends a parent to a cafe when
-    # they needed somewhere to feed the baby, and read_need is the one reading
-    # of those words, shared with the workflow.
-    known = read_need(need)
-    if known is None:
-        return NEED_QUESTION, {"choices": NEED_CHIP_LABELS}
-    try:
-        result = find_nearby_component(need=known, city=SUPPORTED_CITIES[0])
-    except TOOL_ERRORS as e:
-        return f"Couldn't look that up right now ({type(e).__name__}).", {}
-    names = ", ".join(place["name"] for place in result["places"]) or "nothing"
-    # The artifact carries the places so the caller can render real links from
-    # them. Returned as content_and_artifact for exactly that reason: a plain
-    # dict would be JSON-stringified into the tool message and lost.
-    return f"Found {names} ({result['source']}).", result
-
-
 @tool
 def plan_trip_tool(destination: str, age_months: int, wake_up: str = "07:00",
                     bedtime: str = "20:00", stop_count: int = 3,
@@ -199,86 +122,55 @@ def plan_trip_tool(destination: str, age_months: int, wake_up: str = "07:00",
                       dining=dining, model=_TURN_MODEL.get())
 
 
-@tool(response_format="content_and_artifact")
-def replan_tool(situation: str) -> tuple[str, dict]:
-    """Collect a request to reshape the rest of a day already under way: a nap
-    that ran long, a closed stop, rain, running behind, wanting to skip the
-    next stop or do something else. Pass the parent's words through unchanged.
-    Only for a trip already started.
-
-    Call this even when they have only said that something changed: pass their
-    words through and it will offer them the buttons to pick from. Never ask
-    them yourself."""
-    # Collects, never replans, which is the same division the workflow keeps.
-    # The itinerary, its versions and the current time all live on the trip
-    # page, and runReplan there is the one implementation; replanning here
-    # would be a second one, producing a version the page's switcher never
-    # sees. So the request is handed over for one button, exactly as the
-    # workflow hands it over.
-    if not _TURN_ON_TRIP.get():
-        # Nothing to replan without a started day, and collecting a situation
-        # nobody can act on would waste the parent's turn.
-        return ("I can shift a day you've already started. Open your trip from "
-                "the planning page, then ask me again and I'll replan from "
-                "where you are.", {})
-    # The same six chips the workflow offers when the words name no particular
-    # situation. Offering them is the useful thing to do for somebody who has
-    # not said yet, and a tapped label reads back exactly.
-    if read_situation(situation) == FREE_TEXT_SITUATION:
-        return SITUATION_QUESTION, {"choices": SITUATION_CHIP_LABELS}
-    request = read_replan_request(situation)
-    label = SITUATION_LABELS.get(request["situation"], "Something's changed")
-    return f"Collected a replan request: {label}.", {"replan_request": request}
+def _slug(name: str) -> str:
+    """A workflow name as a tool name. LangChain allows [a-zA-Z0-9_-] only."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
-@tool(response_format="content_and_artifact")
-def log_place_tool(name: str, area: str = "", amenities: list[str] | None = None,
-                    notes: str = "") -> tuple[str, dict]:
-    """Collect a kid-friendly place the app is missing, so the parent can
-    submit it. name is the place's own name, never a sentence about wanting to
-    log one. area is a neighbourhood if they said one. notes is anything else
-    they said about it.
+def _workflow_tool(workflow: dict, _run):
+    """One tool that starts one workflow, and does nothing else.
 
-    amenities may include has_family_room, has_nursing_room,
-    stroller_accessible. Leave it out entirely if they have not said what the
-    place offers, and pass an empty list once they have said it offers none of
-    them."""
-    # Collects and hands over, like replan_tool: the chat has no parent to
-    # attach a submission to and no way to drop a map pin, and a form post has
-    # both. store() stays the one writer, reached from /log-place.
-    name = (name or "").strip()
-    if not name:
-        return "I need the place's name before I can log it.", {}
-    # Absent means nobody has said yet, so the amenity chips go out, the same
-    # multi-select row the workflow shows. An empty list is a real answer --
-    # "none of these" -- and must not ask again, which is the difference a
-    # missing argument can carry and a falsy one cannot.
-    if amenities is None:
-        return (AMENITY_QUESTION,
-                {"choices": [label for _, label in AMENITY_OPTIONS],
-                 "choose_many": True})
-    values = {"name": name}
-    if (area or "").strip():
-        values["neighbourhood"] = area.strip()
-    # Checked against the vocabulary rather than trusted. A model naming a
-    # column that does not exist would otherwise reach the form as a field
-    # nothing renders, the same reason propose_venues guards its enums.
-    known = {key for key, _ in AMENITY_OPTIONS}
-    for key in (amenities or []):
-        if key in known:
-            values[key] = True
-    if (notes or "").strip():
-        values["notes"] = notes.strip()
-    return f"Collected a place to log: {name}.", {"place_form": values}
+    It takes no arguments. Selecting it is the only decision the model makes:
+    which task this message is. Everything after that -- the questions, the
+    chips, the state, the cancelling, the completion -- belongs to the workflow,
+    which is what those four are built to do and what a tool cannot do at all.
+
+    That last part is the bug this exists to fix. A tool needs arguments and a
+    conversation starts with none, so log_place_tool(name) could not be called
+    before a name existed: measured, three of four bare intents ("I want to add
+    a place", "I want to log a place we're missing", "I want to plan a day")
+    called no tool and were answered as conversation instead of starting
+    anything.
+
+    The message and the request context arrive by ContextVar rather than as
+    parameters, so the model cannot paraphrase either.
+    """
+    name = workflow["name"]
+
+    @tool(_slug(name), description=workflow["description"],
+          response_format="content_and_artifact")
+    def start() -> tuple[str, dict]:
+        result = run_workflow_turn(name, _TURN_MESSAGE.get(),
+                                   context=_TURN_CONTEXT.get())
+        if result is None:
+            return f"{name} could not run that.", {}
+        return result["reply"], result
+
+    return start
 
 
-# plan_trip_tool is deliberately not here. A day built in the chat is a day
-# outside the planner: no version switcher, no situation buttons, no replanning,
-# and a second itinerary for the same trip the moment the parent presses Plan my
-# day. The chat fills the form and hands it over; /plan builds the day. The tool
-# is kept for the component test page it was written for.
-TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool,
-         replan_tool, log_place_tool]
+# The agent's capabilities: the knowledge base, and one starter per workflow.
+# Generated from the registry rather than listed, so the tools and the
+# workflows are the same set and cannot drift -- adding a workflow adds the
+# capability. Choosing among these *is* the intent identification step; there
+# is no second classifier, and no second vocabulary for one to disagree with.
+#
+# plan_trip_tool is deliberately absent. A day built in the chat is a day
+# outside the planner: no version switcher, no situation buttons, no
+# replanning, and a second itinerary the moment the parent presses Plan my day.
+TOOLS = [answer_faq_tool] + [
+    _workflow_tool(workflow, run) for workflow, run in runnable_message_workflows()
+]
 
 
 # Tools whose output is already the answer a parent should read, so the model
@@ -291,12 +183,12 @@ TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool,
 # Rewriting the FAQ answer cost a whole round trip and put the citations at the
 # mercy of a prompt asking the model to leave them alone. Returning it verbatim
 # is both cheaper and the only way the markers are guaranteed intact.
-# extract_form_tool is here for a different reason from the FAQ's. Left to word
-# its own reply, the model wrote the itinerary out in the chat instead: a day
-# with no version switcher, no situation buttons and no replanning, and a second
-# one generated the moment the parent pressed Plan my day. Asking it not to did
-# not hold. Not writing the reply is the only way it cannot.
-FINAL_ANSWER_TOOLS = frozenset({"answer_faq_tool", "extract_form_tool"})
+# A workflow's reply is its own too, and for a stronger reason than the FAQ's:
+# the workflow wrote the question, and the chips underneath answer that exact
+# wording. Letting the model reword "What do you need right now?" would put
+# different words above the same six buttons every turn.
+FINAL_ANSWER_TOOLS = frozenset(
+    {"answer_faq_tool"} | {_slug(w["name"]) for w, _ in runnable_message_workflows()})
 
 
 def _build_agent(model: str, stop_after_tools: bool = False):
@@ -330,47 +222,60 @@ def _build_agent(model: str, stop_after_tools: bool = False):
 
 def handle_message(message: str, history: list[dict] | None = None,
                    model: str = DEFAULT_MODEL,
+                   conversation: dict | None = None,
                    context: dict | None = None) -> dict:
-    """One turn, answered by the agent, which chooses the tool.
+    """One turn. A running workflow owns it; otherwise the agent decides.
 
     The entry point for any surface that carries a message. It takes a plain
     string rather than a request, so a Telegram handler can call the same
     function the website chat does.
 
-    One router, and it is the agent's tool selection. A classifier used to run
-    first and hand matching messages to a workflow, which meant two routers in
-    series on every message, three of the four tools duplicating a workflow,
-    and a message answerable two ways depending on which router saw it. The
-    workflows are still here and still run, on /workflows/<name>/run, where
-    they are what a test page is testing rather than a second front door.
+    Two paths, and which one is taken costs nothing to decide:
 
-    `context` is what the request knew that the message did not: the browser's
-    coordinates, and whether a started day is open on the page. Both reach the
-    tools through the ContextVars below rather than as arguments, because a
-    tool's arguments are the model's to fill in and neither of these is the
-    model's to decide.
+    A workflow that is mid-conversation owns every message until it finishes or
+    the parent cancels. That check is first and it is not a model call: "yes"
+    and "Vancouver" are answers to the question just asked, and asking a model
+    to re-classify them is how a flow gets derailed.
 
-    "workflow" and "conversation" are still in the reply, always None. The
-    widget reads both, and a missing key is not the same as an answered one.
+    Otherwise the agent runs, once, and its tool selection *is* the intent
+    decision -- there is no separate classifier, and its tools are generated
+    from the workflow registry, so the two cannot disagree about what exists.
+    A workflow tool starts a workflow and does nothing else; the workflow then
+    owns the conversation by the paragraph above.
+
+    `context` is what the request knew that the message did not: coordinates,
+    whether a day is open on the page, which parent is signed in. It reaches
+    workflows through a ContextVar rather than as tool arguments, because a
+    tool's arguments are the model's to fill in and none of this is.
     """
+    if (conversation or {}).get("workflow"):
+        # The workflow is the source of truth while it is running. No agent, no
+        # classifier, no model call to decide anything.
+        reply = run_workflow_turn(conversation["workflow"], message,
+                                  conversation=conversation, context=context,
+                                  model=model)
+        if reply is not None:
+            return reply
+        # Only reachable if the workflow was unregistered mid-conversation or
+        # raised. The flow is over either way, so the agent answers afresh
+        # rather than the parent losing their turn.
+
     # Set once for the whole turn, so a tool the model chooses to call answers
-    # with the model the parent chose. Tools take their arguments from the
-    # model, and which model to use is not a decision the model should make.
+    # with the model the parent chose, on the parent's own words, with what the
+    # request knew. None of the three is the model's to decide.
     _TURN_MODEL.set(model)
-    # Read only by replan_tool. From the request rather than the message, so
-    # "replan my day" typed on a page with no trip open is refused the same way
-    # the workflow refuses it, instead of collecting a request nothing can act
-    # on.
-    _TURN_ON_TRIP.set(bool((context or {}).get("on_trip")))
+    _TURN_MESSAGE.set(message)
+    _TURN_CONTEXT.set(context)
 
     result = run_agent(message, history=history, model=model)
     # What handled this message, in the file routing accuracy is measured from.
-    # The classifier used to write that line; the agent's tool choice is the
-    # same decision, made by the thing that now makes it. Logged after the turn
-    # rather than before, because the choice is only known once it is made.
+    # A workflow tool has already logged its own name from run_workflow_turn, so
+    # logging here too would count one message twice.
     tools = [call["name"] for call in result["tool_calls"]]
-    log_decision(message, None, ran=bool(tools), tool=tools[0] if tools else None)
-    return {**result, "workflow": None, "conversation": None}
+    if not result.get("workflow"):
+        log_decision(message, None, ran=bool(tools),
+                     tool=tools[0] if tools else None)
+    return {"workflow": None, "conversation": None, **result}
 
 
 def _cancelled(in_flight: str, model: str) -> dict:
@@ -615,21 +520,14 @@ def run_agent(message: str, history: list[dict] | None = None,
     # The FAQ tool wraps ask_website_chatbot, so when it ran its result already
     # carries the citations and usage numbers the widget expects.
     faq = _artifact_of("answer_faq_tool", tool_messages)
-    # When the classifier missed and the agent answered a nearby question with
-    # the tool, the places are still real records. Surfaced here so they render
-    # as links exactly as the workflow's do.
-    nearby = _artifact_of("find_nearby_tool", tool_messages)
-    # A collected replan, for the in-trip page to act on with one button. Same
-    # key the workflow returns, so the widget draws the same button whichever
-    # path collected it.
-    replan = _artifact_of("replan_tool", tool_messages)
-    logged = _artifact_of("log_place_tool", tool_messages)
-    # The planning form the extractor read out of their words. Surfaced under
-    # the same key the workflow used, so the widget draws the same handoff card
-    # it always did. Without this the form was extracted and then dropped: the
-    # parent got a paragraph describing their day back instead of a form to
-    # check, which is the one thing this tool exists to avoid.
-    extracted = _artifact_of("extract_form_tool", tool_messages)
+    # A workflow tool's artifact is the workflow's own reply, already in the
+    # widget's shape. Passed through whole so the conversation, the chips, the
+    # form and the cancel option all survive, and so the next turn comes back
+    # in flight and never reaches the agent again.
+    started = next((m.artifact for m in tool_messages
+                    if (getattr(m, "artifact", None) or {}).get("workflow")), {})
+    if started:
+        return {**started, "reply": started["reply"]}
     # Whichever tool asked, if one did. Chips travel in the same keys a
     # workflow's do, so the widget draws them without knowing which side of the
     # app produced the question.
@@ -642,13 +540,6 @@ def run_agent(message: str, history: list[dict] | None = None,
         "reply": _only_earned_citations(result["messages"][-1].content,
                                         faq.get("sources", [])),
         "sources": faq.get("sources", []),
-        "places": nearby.get("places", []),
-        "source": nearby.get("source"),
-        "replan_request": replan.get("replan_request"),
-        "form": extracted.get("form"),
-        # A collected place, for the widget to hand to /log-place, which
-        # is the one path that writes one. Same key the workflow returns.
-        "place_form": logged.get("place_form"),
         "model": model,
         "response_time": faq.get("response_time"),
         "input_tokens": faq.get("input_tokens"),

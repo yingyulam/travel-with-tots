@@ -25,11 +25,17 @@ def _faq_message(content="Tap Save on the plan page. [Source 1]"):
                                  "input_tokens": 5, "output_tokens": 2})
 
 
-def _form_message():
-    return ToolMessage(content="I've filled in destination. Open the form…",
-                       name="extract_form_tool", tool_call_id="1",
-                       artifact={"form": {"destination": "Vancouver"},
-                                 "found": ["destination"]})
+def _workflow_message():
+    """A workflow tool's message: the workflow's own reply, in the widget's
+    shape. Passed through whole, so the model never gets a turn to reword the
+    question the chips sit under."""
+    return ToolMessage(content="Happy to log it. What's the place called?",
+                       name="log_a_place_we_don_t_have", tool_call_id="1",
+                       artifact={"reply": "Happy to log it. What's the place called?",
+                                 "workflow": "Log a place we don't have",
+                                 "conversation": {"workflow": "Log a place we don't have",
+                                                  "state": {"stage": "name"}},
+                                 "choices": None, "form": None})
 
 
 def _nearby_message():
@@ -124,35 +130,42 @@ class StopsAtTheToolTest(unittest.TestCase):
         self.assertIsNone(result["choices"])
         self.assertIs(result["choose_many"], False)
 
-    def test_the_extractor_writes_its_own_reply(self):
-        # Left a turn to word this, the model wrote the itinerary out in the
-        # chat: a day with no version switcher and no replanning, and a second
-        # one built the moment the parent pressed Plan my day. Asking it not to
-        # did not hold, so it does not get the turn.
-        form = _form_message()
-        result, built = self._run([form])
-        self.assertEqual(result["reply"], form.content)
+    def test_a_workflow_keeps_its_own_wording(self):
+        # The workflow wrote the question and its chips answer that exact
+        # wording, so the model does not get a turn to reword it.
+        started = _workflow_message()
+        result, built = self._run([started])
+        self.assertEqual(result["reply"], started.content)
         self.assertEqual(built, [True])
 
-    def test_the_extracted_form_reaches_the_widget(self):
+    def test_the_conversation_reaches_the_widget(self):
         """The bug this closes: the extractor ran, read the day correctly, and
         the form was dropped on the floor. The widget draws its handoff card
         from data.form, so the parent got a paragraph describing their own day
         back instead of a form to check."""
-        result, _built = self._run([_form_message()])
-        self.assertEqual(result["form"], {"destination": "Vancouver"})
+        # Without this the next turn would not be in flight and the agent
+        # would re-decide a message the workflow already owns.
+        result, _built = self._run([_workflow_message()])
+        self.assertEqual(result["conversation"]["workflow"],
+                         "Log a place we don't have")
 
-    def test_no_extraction_means_no_form(self):
+    def test_a_faq_answer_starts_no_conversation(self):
+        # run_agent carries the key only when a workflow started; the default
+        # is handle_message's, which is where the widget's contract is met.
         result, _built = self._run([_faq_message()])
-        self.assertIsNone(result["form"])
+        self.assertFalse(result.get("conversation"))
 
     def test_which_tools_write_their_own_answers(self):
         # A guard on the list itself. A tool here has its raw output shown to a
         # parent and denies the model a turn, which is right for the FAQ (its
         # answer is already written and cited) and for the extractor (a turn
         # there is a turn to write an itinerary in).
-        self.assertEqual(set(FINAL_ANSWER_TOOLS),
-                         {"answer_faq_tool", "extract_form_tool"})
+        from src.workflows import runnable_message_workflows
+        from src.agent import _slug
+        self.assertEqual(
+            set(FINAL_ANSWER_TOOLS),
+            {"answer_faq_tool"} | {_slug(w["name"])
+                                   for w, _ in runnable_message_workflows()})
 
 
 if __name__ == "__main__":
