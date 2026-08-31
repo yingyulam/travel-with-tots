@@ -71,6 +71,37 @@ class StartupWithNoIndexTest(unittest.TestCase):
             rag.init_index_async()
         built.assert_called_once()
 
+    def test_a_hung_build_is_given_up_on_rather_than_indexing_forever(self):
+        # "indexing" was a state with no way out: a blocked build held the
+        # lock, so nothing could retry, the status never moved, and the widget
+        # showed "Preparing knowledge base" indefinitely. A deployment sat like
+        # that while three separate theories about the cause were wrong.
+        import time
+        with mock.patch.object(rag, "BUILD_DEADLINE_SECONDS", 0.2), \
+             mock.patch.object(rag, "chunk_markdown",
+                               side_effect=lambda *a, **k: time.sleep(5)):
+            rag.rebuild_index()
+            time.sleep(0.6)
+            status = rag.get_status()
+        self.assertEqual(status["state"], "error")
+        # Names the stage, so the log says where rather than only that.
+        self.assertIn("chunking", status["error"])
+
+    def test_a_finished_build_is_not_given_up_on(self):
+        import time
+        with mock.patch.object(rag, "BUILD_DEADLINE_SECONDS", 0.2), \
+             mock.patch.object(rag, "build_index") as built:
+            rag.rebuild_index()
+            time.sleep(0.6)
+        built.assert_called_once()
+        self.assertNotEqual(rag.get_status()["state"], "error")
+
+    def test_each_stage_is_printed_and_recorded(self):
+        # The whole point: on a host the log is the only window in, and this
+        # module used to write nothing to it.
+        rag._stage("doing a thing")
+        self.assertEqual(rag.get_status()["stage"], "doing a thing")
+
     def _post(self, state):
         import app as app_module
         app_module.app.config["TESTING"] = True

@@ -189,6 +189,17 @@ def _set_status(**kwargs):
         _status.update(kwargs)
 
 
+def _stage(what):
+    """Record and print where a build has got to.
+
+    Printed, because on a host the only window into this is the log, and this
+    module used to write nothing there at all. Also kept on the status, so the
+    watchdog can name the stage a hung build died on.
+    """
+    print(f"RAG index: {what}", flush=True)
+    _set_status(stage=what)
+
+
 def get_status():
     with _status_lock:
         return dict(_status)
@@ -241,9 +252,19 @@ def build_index(chunk_size=None):
     chunk_size = chunk_size or DEFAULT_CHUNK_SIZE
     _set_status(state="indexing", chunk_size=chunk_size, error=None)
     try:
+        # Named stages, because this printed nothing at all and a deployment
+        # then sat on "indexing" forever with no way to tell which step was
+        # blocked. Three plausible causes were investigated and ruled out from
+        # the outside before it became obvious that the answer was to make the
+        # thing observable rather than to keep guessing.
+        _stage("reading the knowledge base")
         text = KNOWLEDGE_BASE_PATH.read_text()
-        chunks = chunk_markdown(text, chunk_size)
 
+        _stage("chunking")
+        chunks = chunk_markdown(text, chunk_size)
+        _stage(f"chunked into {len(chunks)}")
+
+        _stage("opening the vector store")
         client = _get_client()
         try:
             client.delete_collection(COLLECTION_NAME)
@@ -254,11 +275,14 @@ def build_index(chunk_size=None):
             # catching only ValueError left the index unbuilt and the chatbot
             # with no knowledge base at all.
             pass
+        _stage("creating the collection")
         collection = client.get_or_create_collection(
             COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
 
         if chunks:
+            _stage(f"embedding {len(chunks)} chunks")
             embeddings = _embed([c["text"] for c in chunks])
+            _stage("storing")
             collection.add(
                 ids=[f"chunk-{i}" for i in range(len(chunks))],
                 embeddings=embeddings,
@@ -270,24 +294,54 @@ def build_index(chunk_size=None):
             "chunk_size": chunk_size,
             "kb_hash": hashlib.sha256(text.encode()).hexdigest(),
         }))
+        _stage("ready")
         _set_status(state="ready", chunk_size=chunk_size, error=None)
     except Exception as e:
-        _set_status(state="error", error=str(e))
+        _stage(f"failed: {type(e).__name__}: {e}")
+        _set_status(state="error", error=f"{type(e).__name__}: {e}")
+
+
+# How long a build may take before it is called failed. A local build is about
+# a second, so a minute is generous. It exists because "indexing" was a state
+# with no way out: a blocked build held the lock, so nothing could retry, the
+# status never moved, and the widget showed "Preparing knowledge base" forever
+# with no clue anywhere as to why.
+BUILD_DEADLINE_SECONDS = 60
 
 
 def rebuild_index(chunk_size=None):
     """Rebuild the index in a background thread. No-op if a rebuild is
-    already running -- no queueing needed for this scope."""
+    already running -- no queueing needed for this scope.
+
+    A watchdog marks the build failed if it outlives BUILD_DEADLINE_SECONDS.
+    It cannot stop the thread -- Python has no way to interrupt one blocked in
+    a C call -- so the point is honesty rather than rescue: the status becomes
+    `error` with a message naming the stage it died on, the chat degrades
+    instead of hanging, and `retrieve` is then allowed to try again.
+    """
     if not _index_lock.acquire(blocking=False):
         return
+
+    done = threading.Event()
 
     def _run():
         try:
             build_index(chunk_size)
         finally:
+            done.set()
             _index_lock.release()
 
+    def _watch():
+        if done.wait(BUILD_DEADLINE_SECONDS):
+            return
+        stage = _status.get("stage") or "an unknown stage"
+        message = (f"the index build passed {BUILD_DEADLINE_SECONDS}s at "
+                   f"'{stage}' and was given up on")
+        _stage(message)
+        _set_status(state="error", error=message)
+
     threading.Thread(target=_run, daemon=True).start()
+    threading.Thread(target=_watch, daemon=True).start()
 
 
 def autobuild_allowed():
