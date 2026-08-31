@@ -5,6 +5,7 @@ they are kept small and self-contained so they can later become real AI /
 location calls without changing their signatures or the UI that calls them.
 """
 
+import re
 from datetime import datetime
 
 from .form_helpers import clamp_int
@@ -33,6 +34,101 @@ SITUATION_OPTIONS = [
 NOTE_ONLY_SITUATION = ("something_else", "Anything else")
 
 SITUATION_LABELS = dict(SITUATION_OPTIONS + [NOTE_ONLY_SITUATION])
+
+# Reading a situation out of what a parent typed. Here rather than in the
+# workflow that first needed it, because the chat agent needs the same reading
+# and must not import from workflows/: the workflow layer is a demo surface and
+# production cannot depend on it. One implementation, beside the vocabulary it
+# reads.
+SITUATION_CHIP_LABELS = [label for _, label in SITUATION_OPTIONS]
+LABEL_TO_SITUATION = {label.lower(): key for key, label in SITUATION_OPTIONS}
+
+# Anything the words below do not match becomes this, carrying what they typed
+# as the note. The trip page's own free-text box does exactly the same, so an
+# unrecognised situation is still a real replan rather than a dead end.
+FREE_TEXT_SITUATION = NOTE_ONLY_SITUATION[0]
+
+# Read in this order, which is why it is a tuple of pairs. A nap that ran long
+# usually also means running behind, and the nap is the thing that happened.
+SITUATION_WORDS = (
+    ("nap_happened", ("nap", "napped", "napping", "slept", "asleep",
+                      "sleeping", "went down")),
+    ("weather_rain", ("rain", "raining", "pouring", "wet", "downpour",
+                      "drizzl")),
+    ("skip_next", ("skip", "drop the next", "miss the next", "cut a stop")),
+    ("finished_early", ("finished early", "done early", "early", "ahead of",
+                        "quicker than")),
+    ("running_behind", ("longer", "running behind", "behind", "late",
+                        "delayed", "stay here", "stay put", "overran")),
+    # "indoors instead" is deliberately not here: rain is its own situation
+    # above, and shelter is read from each venue's setting rather than asked
+    # for as a category.
+    ("change_interest", ("something different", "change the day",
+                         "something else", "rather do")),
+)
+
+# Situations the day's shape depends on a number for. The trip page asks with a
+# preset or a typed number; here the number is read out of the sentence, and
+# the server's own default stands when there isn't one.
+TIMED_SITUATIONS = ("nap_happened", "running_behind")
+
+# "an hour and a half" is not worth parsing; a number with a unit is. The unit
+# is required, so "3 stops left" is not three minutes. Plurals are optional and
+# the longer spellings come first, or "minutes" would fail the word boundary
+# after "minute" and read as nothing at all.
+_MINUTES = re.compile(r"(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m)\b", re.I)
+
+
+def read_situation(message: str) -> str:
+    """Which of the trip page's situations this message describes.
+
+    Falls back to the free-text situation rather than None: every message is a
+    replan request of some kind once the parent is in this conversation, and
+    the component treats an unnamed situation as "re-time what's left, and read
+    my note".
+    """
+    said = message.strip().lower()
+    if said in LABEL_TO_SITUATION:
+        return LABEL_TO_SITUATION[said]
+    for situation, words in SITUATION_WORDS:
+        if any(word in said for word in words):
+            return situation
+    return FREE_TEXT_SITUATION
+
+
+def read_minutes(message: str) -> int | None:
+    """How long, in minutes, if they said. None leaves the server's default.
+
+    Clamped by _replan_minutes downstream either way, so this only has to read
+    the number, not police it.
+    """
+    match = _MINUTES.search(message)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    return amount * 60 if match.group(2).lower().startswith(("hour", "hr", "h")) \
+        else amount
+
+
+def read_replan_request(message: str) -> dict:
+    """A message to {"situation", "minutes"?, "note"?}, ready for the trip page.
+
+    The one place that reading lives, so the chat agent and the workflow cannot
+    collect the same request two different ways.
+    """
+    situation = read_situation(message)
+    values = {"situation": situation}
+    if situation in TIMED_SITUATIONS:
+        minutes = read_minutes(message)
+        if minutes:
+            values["minutes"] = minutes
+    # Their own words ride along whenever they typed rather than tapped: the
+    # replan prompt reads the note, and a tapped label adds nothing a label
+    # does not already say.
+    if message.strip().lower() not in LABEL_TO_SITUATION:
+        values["note"] = message.strip()
+    return values
+
 
 # "Need something now?" buttons: (key, label). "other" reveals a text box.
 NEED_OPTIONS = [

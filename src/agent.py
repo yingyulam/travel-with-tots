@@ -31,6 +31,7 @@ from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
 from .data_loader import SUPPORTED_CITIES
 from .intent import CANCEL_CHOICE, classify_intent, is_cancel, log_decision
+from .interactions import SITUATION_LABELS, read_replan_request
 from .workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -48,6 +49,10 @@ SYSTEM_PROMPT = (
     "- plan_trip_tool only when they explicitly ask you to build the itinerary "
     "now. Never on a first description of a day.\n"
     "- find_nearby_tool when they need somewhere nearby right now.\n"
+    "- replan_tool when something has changed during a day already under way "
+    "and the rest of it needs reshaping: a long nap, rain, a shut stop, "
+    "running behind, skipping the next stop. Pass their words through "
+    "unchanged.\n"
     "Use exactly one tool per message. Keep replies short and plain. After "
     "extract_form_tool, say which details you picked up and ask them to check "
     "the form. Never write an itinerary of your own."
@@ -63,6 +68,13 @@ TOOL_ERRORS = (FormExtractionError, requests.exceptions.RequestException, KeyErr
 # model choice is not the model's to make. Per-context, so the eight threads in
 # the worker cannot read each other's turn.
 _TURN_MODEL = contextvars.ContextVar("turn_model", default=DEFAULT_MODEL)
+
+# Whether a started day is open on the page this turn came from, set from the
+# request's context. A ContextVar for the same reason as the model above: a
+# tool's arguments are what the model fills in, and whether the parent has a
+# trip open is a fact about the request, not something to let the model decide
+# or a caller's message assert.
+_TURN_ON_TRIP = contextvars.ContextVar("turn_on_trip", default=False)
 
 
 @tool(response_format="content_and_artifact")
@@ -142,7 +154,31 @@ def plan_trip_tool(destination: str, age_months: int, wake_up: str = "07:00",
                       dining=dining, model=_TURN_MODEL.get())
 
 
-TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool]
+@tool(response_format="content_and_artifact")
+def replan_tool(situation: str) -> tuple[str, dict]:
+    """Collect a request to reshape the rest of a day already under way: a nap
+    that ran long, a closed stop, rain, running behind, wanting to skip the
+    next stop or do something else. Pass the parent's words through unchanged.
+    Only for a trip already started."""
+    # Collects, never replans, which is the same division the workflow keeps.
+    # The itinerary, its versions and the current time all live on the trip
+    # page, and runReplan there is the one implementation; replanning here
+    # would be a second one, producing a version the page's switcher never
+    # sees. So the request is handed over for one button, exactly as the
+    # workflow hands it over.
+    if not _TURN_ON_TRIP.get():
+        # Nothing to replan without a started day, and collecting a situation
+        # nobody can act on would waste the parent's turn.
+        return ("I can shift a day you've already started. Open your trip from "
+                "the planning page, then ask me again and I'll replan from "
+                "where you are.", {})
+    request = read_replan_request(situation)
+    label = SITUATION_LABELS.get(request["situation"], "Something's changed")
+    return f"Collected a replan request: {label}.", {"replan_request": request}
+
+
+TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool,
+         replan_tool]
 
 
 def _build_agent(model: str):
@@ -207,6 +243,11 @@ def handle_message(message: str, history: list[dict] | None = None,
     # with the model the parent chose. Tools take their arguments from the
     # model, and which model to use is not a decision the model should make.
     _TURN_MODEL.set(model)
+    # Set for the whole turn alongside the model, and read only by replan_tool.
+    # From the request rather than the message, so "replan my day" typed on a
+    # page with no trip open is refused the same way the workflow refuses it,
+    # instead of collecting a request nothing can act on.
+    _TURN_ON_TRIP.set(bool((context or {}).get("on_trip")))
 
     offered = runnable_message_workflows()
     in_flight = (conversation or {}).get("workflow")
@@ -355,11 +396,16 @@ def run_agent(message: str, history: list[dict] | None = None,
     # the tool, the places are still real records. Surfaced here so they render
     # as links exactly as the workflow's do.
     nearby = _artifact_of("find_nearby_tool", tool_messages)
+    # A collected replan, for the in-trip page to act on with one button. Same
+    # key the workflow returns, so the widget draws the same button whichever
+    # path collected it.
+    replan = _artifact_of("replan_tool", tool_messages)
     return {
         "reply": result["messages"][-1].content,
         "sources": faq.get("sources", []),
         "places": nearby.get("places", []),
         "source": nearby.get("source"),
+        "replan_request": replan.get("replan_request"),
         "model": model,
         "response_time": faq.get("response_time"),
         "input_tokens": faq.get("input_tokens"),
