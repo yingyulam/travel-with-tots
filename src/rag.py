@@ -225,10 +225,25 @@ def _get_client():
 
 
 def _get_collection():
-    """Always fetched fresh (not cached) -- a rebuild deletes and recreates
-    the collection, so a cached handle would go stale."""
-    return _get_client().get_or_create_collection(
-        COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+    """The existing collection, or None when there is not one yet.
+
+    get_collection, not get_or_create_collection. This is the read path: the
+    index is built in build_index, and "or create" is a write, which wants
+    SQLite's write lock. On the deployed instance that lock never arrived --
+    measured twice, the call returns in 0.00s at startup on MainThread and then
+    never returns on a gunicorn worker thread, taking the request to gunicorn's
+    120s timeout while the client itself costs nothing. Locally it is instant
+    across the same thread boundary, which is why it never showed up here.
+
+    Still fetched fresh rather than cached: a rebuild deletes and recreates the
+    collection, so a held handle would go stale.
+    """
+    try:
+        return _get_client().get_collection(COLLECTION_NAME)
+    except (ValueError, NotFoundError):
+        # Not built yet. None rather than raising, because every caller here
+        # already has an "empty index" path and none of them can build one.
+        return None
 
 
 def _set_status(**kwargs):
@@ -375,7 +390,8 @@ def init_index_async():
             current_hash = hashlib.sha256(text.encode()).hexdigest()
             if config.get("kb_hash") == current_hash:
                 collection = _get_collection()
-                if collection.count() > 0 or not text.strip():
+                if (collection is not None and collection.count() > 0) \
+                        or not text.strip():
                     # Which branch this took answers whether the index came from
                     # the deploy or from this process, and therefore whether the
                     # model was ever downloaded here.
@@ -420,8 +436,8 @@ def retrieve(query, top_k=TOP_K):
     client = _get_client()
     _log(f"retrieve: client ready (new={client is not None})", started)
     collection = _get_collection()
-    _log("retrieve: collection handle", started)
-    count = collection.count()
+    _log(f"retrieve: collection handle (found={collection is not None})", started)
+    count = collection.count() if collection is not None else 0
     _log(f"retrieve: counted {count}", started)
     if count == 0:
         _log("retrieve: empty collection, nothing to search", started)
@@ -453,7 +469,7 @@ def retrieve(query, top_k=TOP_K):
 def list_chunks():
     """Every current chunk, in knowledge-base order, for the Chunks page."""
     collection = _get_collection()
-    if collection.count() == 0:
+    if collection is None or collection.count() == 0:
         return []
     data = collection.get()
 
