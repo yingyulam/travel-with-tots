@@ -17,6 +17,7 @@ import json
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 import chromadb
@@ -68,6 +69,22 @@ _status_lock = threading.Lock()
 _index_lock = threading.Lock()
 
 
+def _log(stage, since=None):
+    """One line of the retrieval path, timed, and **flushed**.
+
+    Flushed because the failure this exists for ends in the worker being killed:
+    anything still sitting in a stdout buffer dies with it, which is how a 120s
+    request left no trace of which step spent the time. Cheap enough to leave
+    on -- a handful of lines per chat turn -- and the alternative was four
+    deploys spent guessing from outside.
+    """
+    if since is None:
+        print(f"[rag] {stage}", flush=True)
+    else:
+        print(f"[rag] {stage} +{time.monotonic() - since:.2f}s", flush=True)
+    return time.monotonic()
+
+
 def _get_embedder():
     """The ONNX embedder, warmed so its tokenizer exists.
 
@@ -77,8 +94,15 @@ def _get_embedder():
     """
     global _embedder
     if _embedder is None:
+        # The expensive branch, and only the first caller in a process takes it.
+        # model_on_disk is the whole question: False means this is about to
+        # download 79MB, and on a deployment that is what the 120s went on.
+        started = _log(f"embedder: building, model_on_disk={model_cached()}, "
+                       f"path={ONNXMiniLM_L6_V2.DOWNLOAD_PATH}")
         embedder = ONNXMiniLM_L6_V2()
+        _log("embedder: constructed", started)
         embedder([""])
+        _log("embedder: warmed", started)
         _embedder = embedder
     return _embedder
 
@@ -210,9 +234,14 @@ def build_index(chunk_size=None):
     rebuild_index() from request handlers so it runs in the background."""
     chunk_size = chunk_size or DEFAULT_CHUNK_SIZE
     _set_status(state="indexing", chunk_size=chunk_size, error=None)
+    started = _log("build: start")
     try:
         text = KNOWLEDGE_BASE_PATH.read_text()
+        # Chunking needs the tokenizer, so this line is where a build first
+        # touches the model. The last deployed hang was inside here and looked
+        # from outside like a build that never finished.
         chunks = chunk_markdown(text, chunk_size)
+        _log(f"build: chunked into {len(chunks)}", started)
 
         client = _get_client()
         try:
@@ -229,6 +258,7 @@ def build_index(chunk_size=None):
 
         if chunks:
             embeddings = _embed([c["text"] for c in chunks])
+            _log("build: embedded", started)
             collection.add(
                 ids=[f"chunk-{i}" for i in range(len(chunks))],
                 embeddings=embeddings,
@@ -240,8 +270,12 @@ def build_index(chunk_size=None):
             "chunk_size": chunk_size,
             "kb_hash": hashlib.sha256(text.encode()).hexdigest(),
         }))
+        _log("build: ready", started)
         _set_status(state="ready", chunk_size=chunk_size, error=None)
     except Exception as e:
+        # The bare except is why a failed build reads as a status rather than a
+        # traceback, so the reason has to be printed or it is lost entirely.
+        _log(f"build: FAILED {type(e).__name__}: {e}", started)
         _set_status(state="error", error=str(e))
 
 
@@ -289,6 +323,12 @@ def init_index_async():
             if config.get("kb_hash") == current_hash:
                 collection = _get_collection()
                 if collection.count() > 0 or not text.strip():
+                    # Which branch this took answers whether the index came from
+                    # the deploy or from this process, and therefore whether the
+                    # model was ever downloaded here.
+                    _log(f"startup: reusing the index from disk "
+                         f"({collection.count()} chunks), "
+                         f"model_on_disk={model_cached()}")
                     _set_status(
                         state="ready",
                         chunk_size=config.get("chunk_size", DEFAULT_CHUNK_SIZE),
@@ -305,6 +345,10 @@ def init_index_async():
         print("No search index. Build it during deploy, or unset RAG_AUTOBUILD "
               "to build it at startup.")
         return
+    # Reached only when autobuild is allowed, which on a deployment means
+    # RAG_AUTOBUILD never arrived: the index is then this process's work, not the
+    # deploy's, and the 79MB download happens here rather than at build time.
+    _log("startup: no reusable index, building one in this process")
     rebuild_index()
 
 
@@ -314,13 +358,18 @@ def retrieve(query, top_k=TOP_K):
     (1..top_k), not the chunk's absolute position in the knowledge base."""
     if get_status()["state"] != "ready":
         return []
+    started = _log("retrieve: start")
     collection = _get_collection()
     if collection.count() == 0:
+        _log("retrieve: empty collection, nothing to search", started)
         return []
+    _log("retrieve: collection opened", started)
 
     query_embedding = _embed([query])
+    _log("retrieve: query embedded", started)
     results = collection.query(
         query_embeddings=query_embedding, n_results=min(top_k, collection.count()))
+    _log("retrieve: search done", started)
 
     sources = []
     for i, (doc, meta, dist) in enumerate(zip(
