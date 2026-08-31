@@ -20,7 +20,11 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
-from .agents import DEFAULT_MODEL, ask_website_chatbot
+from .agents import (
+    DEFAULT_MODEL,
+    REQUEST_TIMEOUT_SECONDS,
+    ask_website_chatbot,
+)
 from .components.extract_form import FormExtractionError, extract_form
 from .components.find_nearby import find_nearby as find_nearby_component
 from .components.plan_trip import plan_trip
@@ -124,10 +128,24 @@ TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool]
 
 
 def _build_agent(model: str):
+    """The tool-calling agent, with a bound on how long it may wait.
+
+    `timeout` and `max_retries` are the point. Left alone, langchain hands the
+    OpenAI SDK its defaults -- 600 seconds and two retries -- so a stalled call
+    can occupy a worker for far longer than any web request should, and the
+    caller never learns why: gunicorn kills the worker first and the proxy
+    answers with its own error page. That is exactly how this surfaced in
+    production, as a 502 after two minutes with an empty body.
+
+    The same 60 seconds `agents.ask_openrouter` already uses, so both paths to a
+    model give up at the same point rather than one of them hanging.
+    """
     chat = ChatOpenAI(
         base_url=OPENROUTER_BASE_URL,
         api_key=os.environ["OPENROUTER_API_KEY"],
         model=model,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+        max_retries=1,
     )
     return create_react_agent(chat, TOOLS, prompt=SYSTEM_PROMPT)
 
