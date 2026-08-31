@@ -14,6 +14,7 @@ caller can only get a blob of text back.
 
 import contextvars
 import os
+import re
 
 import requests
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -490,6 +491,31 @@ def _artifact_of(name: str, tool_messages: list) -> dict:
     return {}
 
 
+# One [Source N] marker, with any space in front of it so removing the marker
+# does not leave a gap before the full stop.
+_CITATION = re.compile(r"\s*\[Source (\d+)\]")
+
+
+def _only_earned_citations(reply: str, sources: list) -> str:
+    """Drop any [Source N] the retrieved sources do not actually contain.
+
+    The widget renders every marker as a button and looks the number up in
+    `sources`, so a marker with nothing behind it is a dead chip reading
+    "Source details unavailable". Worse than dead: it presents a claim as
+    cited when nothing was retrieved to support it, which is the one thing
+    this whole retrieval path exists to prevent.
+
+    It happens when the model answers a follow-up from the conversation rather
+    than calling the FAQ tool, and copies a marker out of its own earlier
+    answer. Rare -- four reproductions of the reported exchange all retrieved
+    properly -- and a prompt cannot rule it out, so the markers are checked
+    against the sources instead of the model being asked again.
+    """
+    real = {str(source["index"]) for source in (sources or [])}
+    return _CITATION.sub(
+        lambda m: m.group(0) if m.group(1) in real else "", reply)
+
+
 def _asked_a_question(message) -> bool:
     """Whether a tool came back asking rather than answering.
 
@@ -561,7 +587,8 @@ def run_agent(message: str, history: list[dict] | None = None,
         # Not exclusive: several amenities can be true of one place, so that
         # row collects instead of sending on the first tap.
         "choose_many": asked.get("choose_many", False),
-        "reply": result["messages"][-1].content,
+        "reply": _only_earned_citations(result["messages"][-1].content,
+                                        faq.get("sources", [])),
         "sources": faq.get("sources", []),
         "places": nearby.get("places", []),
         "source": nearby.get("source"),
