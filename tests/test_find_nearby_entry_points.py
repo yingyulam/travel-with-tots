@@ -19,7 +19,7 @@ FOUND = {"places": [{"name": "Science World", "neighbourhood": "False Creek",
                      "type": "attraction", "distance_km": None,
                      "maps_url": "https://maps.example/sw"}],
          "source": "search", "need": "nursing_room", "city": "Vancouver",
-         "neighbourhood": ""}
+         "neighbourhood": "", "maps_search_url": None}
 
 
 class TheAgentToolUsesTheComponentTest(unittest.TestCase):
@@ -64,7 +64,10 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
         self.assertEqual(component.call_args.kwargs,
                          {"need": "nursing_room", "city": SUPPORTED_CITIES[0],
                           "neighbourhood": "", "place_name": "",
-                          "lat": None, "lng": None})
+                          "lat": None, "lng": None,
+                          # Both only matter to lunch, but they are passed for
+                          # every need rather than branching in the route.
+                          "transit": "", "near_place": ""})
         body = response.get_json()
         self.assertEqual(body["source"], "search")
         self.assertEqual(body["venues"], FOUND["places"])
@@ -74,7 +77,20 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
                                return_value=FOUND):
             body = self.client.post("/find_nearby",
                                     json={"need": "nursing_room"}).get_json()
-        self.assertEqual(set(body), {"need", "venues", "source", "location"})
+        self.assertEqual(set(body),
+                         {"need", "venues", "source", "location",
+                          "maps_search_url"})
+
+    def test_the_trip_page_can_anchor_the_lunch_handoff_on_a_stop(self):
+        # Sent by the trip page as the stop the parent is standing at, so a
+        # Maps search has somewhere to sit when the browser shared no location.
+        with mock.patch.object(app_module, "find_nearby_component",
+                               return_value=FOUND) as component:
+            self.client.post("/find_nearby",
+                             json={"need": "restaurant", "transit": "walk",
+                                   "near_place": "Science World"})
+        self.assertEqual(component.call_args.kwargs["near_place"], "Science World")
+        self.assertEqual(component.call_args.kwargs["transit"], "walk")
 
 
 class NothingKnownMeansTheCityWeCoverTest(unittest.TestCase):

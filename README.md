@@ -240,6 +240,17 @@ one-tap "opening hours look wrong", which files a note for an admin to settle.
 Nothing to type, and it works on the day you are running whether or not you
 saved it.
 
+**Lunch is answered in three tiers**, best first:
+
+1. **The stop you are standing at**, if it serves food. No travel at all.
+2. **Curated places within reach** — as far as your transport mode reasonably
+   goes, so a walk is 1.5km and a car is 8km.
+3. **A Google Maps link**, centred on where you are.
+
+The venue directory holds attractions, so it can tell you the aquarium has a
+cafe but not what else is on the street. That last part is Google's job, and
+handing it over beats doing it badly.
+
 ---
 
 ## Where the venues come from
@@ -308,7 +319,7 @@ it in isolation.
 | `extract_form`   | AI-backed     | A sentence into the planning form         |
 | `validate_hours` | Deterministic | Every stop against that venue's hours     |
 | `find_nearby`    | Deterministic | Ranks real places by distance, then need  |
-| `search_web`     | API-backed    | Tavily, when the database has nothing     |
+| `search_web`     | API-backed    | Tavily, when the database has nothing (not for lunch) |
 | `place_search`   | API-backed    | Google Places, "which one did you mean?"  |
 | `geocode`        | API-backed    | An address into coordinates               |
 

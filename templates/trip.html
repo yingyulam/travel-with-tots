@@ -161,6 +161,10 @@
   const tripData = JSON.parse(document.getElementById("trip-data").textContent);
   const FEATURES = JSON.parse(document.getElementById("features-data").textContent);
   const TRIP_ID = {{ trip_id|tojson }};
+  // How the family gets between stops. Sent with a lunch lookup, because it is
+  // what decides how far a lunch stop may reasonably be: a walk is not eight
+  // kilometres, whatever they drove earlier.
+  const TRANSIT = {{ trip.transit|tojson }};
   const REPORTABLE = {{ reportable_flags|tojson }};
   const CONDITIONAL = {{ conditional_flags|tojson }};
   // What we already hold about each venue, so the panel opens showing it and
@@ -783,27 +787,77 @@
     return card;
   }
 
+  // The stop the parent is at *now*, which is not always the one the plan
+  // assumed when it placed lunch: a replan or a slow morning moves it. The
+  // planner already checks this at plan time, so a lunch block naming a venue
+  // means it found one; this is the same question asked again, later.
+  function eatHereNow() {
+    const stop = PLANS[active].stops[nowIndex(PLANS[active].stops)];
+    return stop && stop.venue && stop.venue.can_eat ? stop.venue : null;
+  }
+
+  // Where the parent is standing, in words, for a Maps search to sit on when
+  // the browser shared no coordinates. The current stop if there is one, else
+  // the last one they were at -- a lunch block itself names nowhere, so
+  // "current stop" alone would often be blank exactly when this is needed.
+  function anchorPlaceName() {
+    const stops = PLANS[active].stops;
+    for (let i = nowIndex(stops); i >= 0; i--) {
+      if (stops[i].venue) return stops[i].venue.name;
+    }
+    return "";
+  }
+
+  function mapsHandoff(url) {
+    const wrap = el("div", "need-handoff");
+    wrap.append(el("p", "meta", "Want more choice? Google Maps has live hours "
+      + "and reviews for everywhere else nearby."));
+    const link = mapsLink(url, "🗺 Search restaurants in Google Maps");
+    if (link) wrap.appendChild(link);
+    return wrap;
+  }
+
   async function runNeed(need) {
     needResults.replaceChildren(el("p", "need-loading", "Finding…"));
     try {
       const res = await fetch("/find_nearby", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ need, ...(coords || {}) }),
+        body: JSON.stringify({
+          need, transit: TRANSIT, near_place: anchorPlaceName(),
+          ...(coords || {}),
+        }),
       });
       const data = await res.json();
       const when = nowDisplay();
-      if (!data.venues.length) {
-        needResults.replaceChildren(
-          el("p", "need-when", `Requested at ${when}`),
-          el("p", "empty-body", "No match found nearby."));
-        return;
-      }
       const where = data.location && data.location.formatted_address
         ? ` near ${data.location.formatted_address}` : "";
-      needResults.replaceChildren(
-        el("p", "need-when", `Requested at ${when}${where}`),
-        ...data.venues.map((v) => needCard(v, data.source)));
+      const parts = [el("p", "need-when", `Requested at ${when}${where}`)];
+
+      // Tier 1: somewhere with food that they are already standing in. No
+      // travel at all beats anything else this panel can offer.
+      const here = need === "restaurant" ? eatHereNow() : null;
+      if (here) {
+        parts.push(el("p", "need-group", "You're already somewhere with food"),
+                   needCard(here, "curated"));
+      }
+
+      // Tier 2: what the curated table knows, capped to what is reachable.
+      const others = data.venues.filter((v) => !here || v.name !== here.name);
+      if (others.length) {
+        if (here) parts.push(el("p", "need-group", "Also nearby"));
+        others.forEach((v) => parts.push(needCard(v, data.source)));
+      } else if (!here) {
+        parts.push(el("p", "empty-body", data.maps_search_url
+          ? "Nothing we know of within reach."
+          : "No match found nearby."));
+      }
+
+      // Tier 3: everything we cannot hold. Always offered for lunch, so it
+      // reads as somewhere to look rather than an apology for finding nothing.
+      if (data.maps_search_url) parts.push(mapsHandoff(data.maps_search_url));
+
+      needResults.replaceChildren(...parts);
     } catch (e) {
       needResults.replaceChildren(el("p", "empty-body", "Couldn't search right now."));
     }

@@ -45,16 +45,22 @@ NEED_OPTIONS = [
 
 # What each "need" maps to in the venue data.
 #
-# No "restaurant" entry: the venue table holds attractions, so a curated match
-# is impossible and find_nearby falls through to web search, which has live
-# hours and current reviews. No "quiet_spot" either: nobody can reliably report
-# quiet, and it changes with the hour and the weather, so a soft guess in answer
-# to a specific request is worse than not offering it.
+# "restaurant" reads `can_eat`, which is not "this is a restaurant" -- the table
+# still holds attractions -- but "you can get food here". An aquarium cafe and a
+# mall food court are both real answers to a hungry toddler at noon, and both
+# come with hours we already know and a venue somebody has vouched for. What we
+# cannot do is enumerate the restaurants of Vancouver, so anything beyond this
+# is handed to Google Maps rather than searched for badly.
+#
+# No "quiet_spot": nobody can reliably report quiet, and it changes with the
+# hour and the weather, so a soft guess in answer to a specific request is
+# worse than not offering it.
 # Read with .get(), because an amenity nobody has reported on is **absent**
 # rather than False. That distinction is the whole point of venue_reports, and
 # a need filter is where it matters most: a parent asking for a nursing room
 # right now wants the ones somebody has actually seen.
 NEED_FILTERS = {
+    "restaurant": lambda v: bool(v.get("can_eat")),
     "family_room": lambda v: bool(v.get("has_family_room")),
     "changing_table": lambda v: bool(v.get("has_family_room")
                                      or v.get("has_nursing_room")),

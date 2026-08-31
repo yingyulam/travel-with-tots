@@ -91,36 +91,37 @@ class FindNearbyCuratedTest(unittest.TestCase):
         result = find_nearby(need="nursing_room", city="Vancouver")
         self.assertEqual([p["name"] for p in result["places"]], ["Has Nursing"])
 
-    def test_a_restaurant_need_is_never_answered_from_the_table(self):
-        # The venue table holds attractions, so there is no curated answer to
-        # give. Falling through to web search is the right outcome: it has live
-        # hours and current reviews, which a curated row cannot.
+    def test_a_restaurant_need_is_answered_from_the_table(self):
+        # This used to assert the opposite. The table still holds attractions
+        # rather than restaurants, but `can_eat` says which of them serve food,
+        # and a mall food court is a real answer to a hungry toddler. What the
+        # table cannot do -- enumerate the restaurants of a city -- goes to
+        # Google Maps rather than to a web search that returns pages, not
+        # places. See tests/test_lunch_nearby.py.
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "A Mall", can_eat=1)
             _insert_venue(conn, "A Park")
-        # Stubbed like its sibling below: escalating is the point, and a real
-        # call would make the suite hit the network.
-        with mock.patch("src.components.find_nearby.search_web", return_value=[]):
+        with mock.patch("src.components.find_nearby.search_web") as searched:
             result = find_nearby(need="restaurant", city="Vancouver")
-        self.assertNotEqual(result["source"], "curated")
+        self.assertEqual(result["source"], "curated")
+        self.assertEqual([p["name"] for p in result["places"]], ["A Mall"])
+        searched.assert_not_called()
 
     def test_a_need_the_table_cannot_answer_escalates(self):
-        # "other" is free text and "restaurant" is a kind of place the table no
-        # longer holds. Returning an arbitrary nearby venue in answer to either
-        # is worse than admitting the table does not know, so both fall through
-        # to web search.
+        # "other" is free text, so the table has no filter for it: returning an
+        # arbitrary nearby venue is worse than admitting it does not know, and
+        # the web is the only place left to look. "restaurant" used to be here
+        # too and is now answered above.
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "A Park")
             _insert_venue(conn, "A Mall", can_eat=1)
         # search_web is mocked: escalating is the point of the test, and a real
         # call would make the suite hit the network.
-        for need in ("other", "restaurant"):
-            with self.subTest(need=need), \
-                 mock.patch("src.components.find_nearby.search_web",
-                            return_value=[]) as searched:
-                result = find_nearby(need=need, city="Vancouver")
-                self.assertNotEqual(result["source"], "curated")
-                searched.assert_called_once()
+        with mock.patch("src.components.find_nearby.search_web",
+                        return_value=[]) as searched:
+            result = find_nearby(need="other", city="Vancouver")
+        self.assertNotEqual(result["source"], "curated")
+        searched.assert_called_once()
 
     def test_matching_neighbourhood_wins_when_no_coordinates(self):
         # The fallback path: no venue has coordinates, so neighbourhood is the

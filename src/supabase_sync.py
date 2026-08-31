@@ -56,7 +56,12 @@ _NOW = "to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')"
 # Which backend the app is set to use. A file rather than an env var so the
 # dropdown can change it without a restart, and beside the other generated
 # state in data/.
-SOURCE_PATH = db.DB_PATH.parent / "data_source.json"
+#
+# Wrapped in Path() because this runs at import, and `db.connect()` imports this
+# module lazily -- so it can now run at any moment, including while a test has
+# `db.DB_PATH` patched to a plain string. It used to work only because something
+# else had already imported this module first, which is not a guarantee.
+SOURCE_PATH = Path(db.DB_PATH).parent / "data_source.json"
 LOCAL, SUPABASE = "local", "supabase"
 SOURCES = (LOCAL, SUPABASE)
 

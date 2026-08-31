@@ -183,6 +183,33 @@ def maps_url(name, city=SUPPORTED_CITIES[0]):
     return f"https://www.google.com/maps/search/?api=1&query={quote_plus(name + ', ' + city)}"
 
 
+# Where a search should sit on the map. 15 is roughly a neighbourhood: close
+# enough that the results are walkable, wide enough not to look empty.
+MAPS_SEARCH_ZOOM = 15
+
+
+def maps_search_url(query, lat=None, lng=None, near=""):
+    """A Google Maps link that *searches* near somewhere, rather than naming a
+    place we already know.
+
+    This is the handoff for what the venue table cannot answer. It holds
+    attractions, so it can say "the aquarium has a cafe" but never "here are
+    the restaurants on this street" -- and Google already does that, with live
+    hours and reviews we will never have.
+
+    With coordinates, the `/@lat,lng,zoom` form centres the map on the parent.
+    That is not the documented `api=1` shape and is not promised to keep
+    working, which is why the no-coordinates path below uses the documented one:
+    if Google ever changes this, the fallback is already the supported form and
+    the only loss is the centring.
+    """
+    if lat is not None and lng is not None:
+        return (f"https://www.google.com/maps/search/{quote_plus(query)}/"
+                f"@{lat},{lng},{MAPS_SEARCH_ZOOM}z")
+    terms = f"{query} near {near}" if near else query
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(terms)}"
+
+
 def _as_venue(row, reported=None, day_type="weekday", weekday=0, per_day=None):
     """One database row as the venue dict the planners expect.
 

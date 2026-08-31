@@ -923,6 +923,29 @@ textarea:focus {
   margin-bottom: 0.6rem;
 }
 
+/* Lunch answers arrive in tiers -- where you already are, then what we know
+   nearby -- and without a heading between them the first card looks like just
+   another result rather than the best one. */
+.need-group {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0.9rem 0 0.4rem;
+}
+
+/* The handoff to Google Maps. Set apart above the fold of the results rather
+   than styled as a card, because it is not a place -- it is where to go
+   looking for the ones we cannot hold. */
+.need-handoff {
+  border-top: 1px dashed var(--line);
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+}
+
+.need-handoff .meta {
+  margin: 0 0 0.5rem;
+}
+
 /* The workflow test pages' side-by-side comparison: what a workflow collected
    next to what it would hand over. Admin-only and used on a desktop, so two
    columns is the intent rather than a wide-screen bonus. auto-fit with a floor

@@ -2419,9 +2419,20 @@ def find_nearby_route():
     result = find_nearby_component(
         need=need, city=where["city"], neighbourhood=where["neighbourhood"],
         place_name=where["formatted_address"],
-        lat=where["lat"], lng=where["lng"])
+        lat=where["lat"], lng=where["lng"],
+        # How the family gets between stops, which is what decides how far a
+        # lunch stop may reasonably be. Absent for every other need, which
+        # ignores it.
+        transit=data.get("transit") or "",
+        # The stop they are standing at, so a Maps handoff can be anchored on
+        # it when the browser shared no location. Without it the only fallback
+        # left is the city, which is not a place anyone eats lunch.
+        near_place=data.get("near_place") or "")
     return jsonify({"need": need, "venues": result["places"],
                     "source": result["source"],
+                    # Set only for lunch: where to look for what the venue table
+                    # cannot hold. None for every other need.
+                    "maps_search_url": result["maps_search_url"],
                     "location": location if location["lat"] is not None
                     or location["city"] else None})
 
