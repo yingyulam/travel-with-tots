@@ -80,6 +80,9 @@ _index_lock = threading.Lock()
 TRACE_PATH = DATA_DIR / "rag_trace.log"
 TRACE_LINES = 40
 
+# Named in the startup trace so a deployed instance says which read path it has.
+READ_STRATEGY = "get_collection"
+
 
 def _rss_mb():
     """This process's resident memory. The number an out-of-memory kill acts on.
@@ -395,9 +398,14 @@ def init_index_async():
                     # Which branch this took answers whether the index came from
                     # the deploy or from this process, and therefore whether the
                     # model was ever downloaded here.
+                    # READ_STRATEGY is in this line so the trace says which
+                    # code is running even when a request dies before logging
+                    # anything of its own. Without it, "the fix is not deployed"
+                    # and "the fix is deployed and still hangs in the same call"
+                    # look identical from outside, which cost a round trip.
                     _log(f"startup: reusing the index from disk "
                          f"({collection.count()} chunks), "
-                         f"model_on_disk={model_cached()}")
+                         f"model_on_disk={model_cached()}, read={READ_STRATEGY}")
                     _set_status(
                         state="ready",
                         chunk_size=config.get("chunk_size", DEFAULT_CHUNK_SIZE),
