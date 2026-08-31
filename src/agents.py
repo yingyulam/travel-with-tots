@@ -32,12 +32,19 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # see ALLOWED_CHAT_MODELS -- so a free one is a choice rather than the default.
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 
+# One free and one paid, and the set is short on purpose. `/chatbot` is public
+# and does not ask who is calling before honouring a model, so this set is the
+# ceiling on what an anonymous caller can spend: at the rate limit, gpt-4o-mini
+# costs about $0.37 an hour to abuse where claude-sonnet-5 cost $5.40, which is
+# why the expensive model is not offered rather than merely not default.
+#
+# `openrouter/free` is gone for a different reason: it is a router, so a
+# different model answers each time and a rating against it cannot be
+# attributed -- which defeats the point of pairing this with /results. It also
+# queued for minutes under load, which read as a hung chat.
 ALLOWED_CHAT_MODELS = {
-    "openrouter/free",
     "nvidia/nemotron-3-super-120b-a12b:free",
-    "google/gemma-4-26b-a4b-it:free",
     "openai/gpt-4o-mini",
-    "anthropic/claude-sonnet-5",
 }
 
 # Fail fast rather than hang if OpenRouter (or a queued free-tier model)

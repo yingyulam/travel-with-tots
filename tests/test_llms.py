@@ -143,7 +143,7 @@ class ChatBubbleContractTest(unittest.TestCase):
             artifact={"reply": "Tap Save this plan. [Source 1]",
                       "sources": [{"index": 1, "section": "Saving",
                                    "score": 0.9, "text": "..."}],
-                      "model": "openrouter/free", "response_time": 2.1,
+                      "model": "openai/gpt-4o-mini", "response_time": 2.1,
                       "input_tokens": 120, "output_tokens": 18})
         agent = mock.Mock()
         agent.invoke.return_value = _fake_result(
@@ -155,7 +155,7 @@ class ChatBubbleContractTest(unittest.TestCase):
              mock.patch("src.agent.classify_intent", return_value="none"), \
              mock.patch("src.rag.get_status", return_value={"state": "ready"}):
             return self.client.post("/chatbot", json={"message": message,
-                                                      "model": "openrouter/free"})
+                                                      "model": "openai/gpt-4o-mini"})
 
     def test_a_question_still_returns_everything_the_widget_renders(self):
         resp = self._ask()

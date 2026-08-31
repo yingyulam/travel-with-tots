@@ -12,12 +12,15 @@
     </div>
 
     <div class="twt-chatbot-model-row">
+      {# Rendered from the server's own list rather than written out here, so
+         the two cannot drift. They did: this defaulted to Auto (free) after
+         the server default had moved to gpt-4o-mini, so every page load
+         quietly selected a queue-prone free router. #}
       <select>
-        <option value="openrouter/free" selected>Auto (free)</option>
-        <option value="nvidia/nemotron-3-super-120b-a12b:free">Nemotron 3 Super (free)</option>
-        <option value="google/gemma-4-26b-a4b-it:free">Gemma 4 26B (free)</option>
-        <option value="openai/gpt-4o-mini">GPT-4o mini (paid)</option>
-        <option value="anthropic/claude-sonnet-5">Claude Sonnet 5 (paid)</option>
+        {% for model in chat_models %}
+        <option value="{{ model }}" {{ 'selected' if model == default_chat_model }}>
+          {{ chat_model_labels[model] }}</option>
+        {% endfor %}
       </select>
       <a href="https://openrouter.ai/models" target="_blank" rel="noopener">More models ↗</a>
     </div>

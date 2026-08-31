@@ -11,9 +11,23 @@
 // uses, rather than each page keeping a default nobody can see.
 const TWT_MODEL_STORAGE_KEY = "twt_chatbot_model";
 
+// Empty means "no preference", which the server reads as its own default. The
+// live <select> wins over storage, and storage is only trusted when the widget
+// still offers it: shortening the model list leaves old choices behind in
+// browsers, and a page that sends one the widget no longer shows would report a
+// model that did not answer. /results attributes ratings by model, so that is a
+// wrong record rather than a cosmetic mismatch.
 function twtSelectedModel() {
-  return localStorage.getItem(TWT_MODEL_STORAGE_KEY) || "";
+  const select = document.querySelector(".twt-chatbot-model-row select");
+  if (select) return select.value;
+  const saved = localStorage.getItem(TWT_MODEL_STORAGE_KEY) || "";
+  return TWT_OFFERED_MODELS.includes(saved) ? saved : "";
 }
+
+// What the widget offers, filled in when it initialises. Pages without the
+// widget fall back to an empty list, so a stored model is not trusted there
+// either -- they cannot know whether it is still on offer.
+let TWT_OFFERED_MODELS = [];
 
 // The collected form as the field names /plan's own form uses, which is exactly
 // what a hand-off posts. A true global because the workflow test page shows it
@@ -223,10 +237,17 @@ document.addEventListener("click", (e) => {
 
     restoreSize();
 
+    TWT_OFFERED_MODELS = [...modelSelect.options].map((o) => o.value);
+
     const savedModel = localStorage.getItem(TWT_MODEL_STORAGE_KEY);
-    if (savedModel && [...modelSelect.options].some((o) => o.value === savedModel)) {
+    if (savedModel && TWT_OFFERED_MODELS.includes(savedModel)) {
       modelSelect.value = savedModel;
     }
+    // Written back whether or not the stored value survived, so a model that is
+    // no longer offered does not linger in storage and get sent by a page that
+    // has no widget to check it against.
+    localStorage.setItem(TWT_MODEL_STORAGE_KEY, modelSelect.value);
+
     modelSelect.addEventListener("change", () => {
       localStorage.setItem(TWT_MODEL_STORAGE_KEY, modelSelect.value);
     });

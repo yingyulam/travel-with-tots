@@ -40,9 +40,13 @@ _READ_HOURS_TEMPLATE = None
 # A realistic sitting for one reviewer. The first run is invoked with more.
 DEFAULT_BATCH_SIZE = 10
 
-# Pinned rather than agents.DEFAULT_MODEL for the reason extract_form documents
-# at length: the free auto-router advertises structured outputs but picks a
-# different model per request, and honoured the schema about half the time.
+# Pinned: it does not follow the chat widget's dropdown. Nothing here has a
+# parent in the loop to have a preference -- this is an unattended admin batch,
+# and its whole output is a JSON schema a reviewer then reads, so the
+# structured-output reliability extract_form documents at length matters more
+# here than anywhere. The free model on offer (nemotron) is a reasoning model,
+# measured at 25-75s a call against about 2s for this one; across a batch that
+# is the difference between a job and an afternoon.
 CURATOR_MODEL = "openai/gpt-4o-mini"
 
 CITY = "Vancouver"

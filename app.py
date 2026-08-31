@@ -430,6 +430,29 @@ def inject_current_parent():
     return {"current_parent": parent, "current_parent_children": children}
 
 
+# What the chat widget's dropdown offers. Free first, then the default, so the
+# order reads cheapest-first and the checked one is the one that answers.
+CHAT_MODEL_LABELS = {
+    "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron 3 Super (free)",
+    "openai/gpt-4o-mini": "GPT-4o mini (paid)",
+}
+
+
+@app.context_processor
+def inject_chat_models():
+    """The models the widget may offer, from the server's own allowed set.
+
+    The dropdown used to be a hand-written list in the template, and it drifted:
+    it still defaulted to `openrouter/free` after the server default had moved,
+    so every page load selected a model nobody had chosen. Rendering it from
+    ALLOWED_CHAT_MODELS means adding or removing one is a single edit.
+    """
+    offered = [m for m in CHAT_MODEL_LABELS if m in ALLOWED_CHAT_MODELS]
+    return {"chat_models": offered,
+            "chat_model_labels": CHAT_MODEL_LABELS,
+            "default_chat_model": DEFAULT_MODEL}
+
+
 @app.route("/")
 def home():
     """Marketing landing page."""

@@ -28,10 +28,13 @@ _INTENT_TEMPLATE = None
 # only when someone clicks a rating, and it rewrites the whole file with no lock.
 INTENT_LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "intents.jsonl"
 
-# Pinned, and deliberately not the free auto-router. This call sits on the
-# critical path of every single message, so latency here is latency a parent
-# feels on every turn. Measured in this project: a free reasoning model took
+# Pinned: it does not follow the chat widget's dropdown, and that is the point.
+# This call sits on the critical path of every single message, so latency here
+# is latency a parent feels on every turn, and routing should not change because
+# somebody picked a different model -- a misrouted message is a worse answer
+# than a slower one. Measured in this project: a free reasoning model took
 # 25-75s, this one about 2s. The answer is one word, so the cost is negligible.
+# The free model still on offer (nemotron) is one of those reasoning models.
 INTENT_MODEL = "openai/gpt-4o-mini"
 
 NO_WORKFLOW = "none"

@@ -133,9 +133,13 @@ def plan_trip_tool(destination: str, age_months: int, wake_up: str = "07:00",
     destination is a city name. age_months is the child's age in months.
     stop_count is how many places to visit, 2-5 is typical. dining is
     "dine_out" or "on_the_go"."""
+    # The model the parent picked, same as answer_faq_tool. Without it, planning
+    # a day *through the chat* fell back to DEFAULT_MODEL while planning the
+    # same day from the form honoured the dropdown: one feature, two answers,
+    # and nothing said which had happened.
     return plan_trip(destination=destination, age_months=age_months,
                       wake_up=wake_up, bedtime=bedtime, stop_count=stop_count,
-                      dining=dining)
+                      dining=dining, model=_TURN_MODEL.get())
 
 
 TOOLS = [answer_faq_tool, extract_form_tool, find_nearby_tool, plan_trip_tool]
