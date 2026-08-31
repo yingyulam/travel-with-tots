@@ -68,18 +68,40 @@ class StartupWithNoIndexTest(unittest.TestCase):
             rag.init_index_async()
         built.assert_called_once()
 
-    def test_the_chatbot_reports_the_state_rather_than_failing(self):
-        # A missing index must not become an HTML error page: the widget parses
-        # every reply, and the route already answers 503 JSON for this.
+    def _chat_with_status(self, state):
+        """One chat turn with the index in `state`, the agent stubbed out.
+
+        Stubbed because the point is which turns the *gate* lets through, and a
+        real one would reach OpenRouter.
+        """
         import app as app_module
+        app_module.app.config["TESTING"] = True
         with mock.patch.object(rag, "get_status",
-                               return_value={"state": "error", "error": "no index",
-                                             "chunk_size": 128}):
-            app_module.app.config["TESTING"] = True
-            reply = app_module.app.test_client().post(
+                               return_value={"state": state, "error": None,
+                                             "chunk_size": 128}), \
+             mock.patch.object(app_module, "handle_message",
+                               return_value={"reply": "ok", "workflow": None}):
+            return app_module.app.test_client().post(
                 "/chatbot", json={"message": "hello"})
+
+    def test_a_build_in_progress_asks_the_parent_to_wait(self):
+        # The only state worth refusing on, and only because it lasts seconds.
+        reply = self._chat_with_status("indexing")
         self.assertEqual(reply.status_code, 503)
         self.assertIn("error", reply.get_json())
+
+    def test_a_broken_index_costs_the_faq_and_nothing_else(self):
+        # The whole bubble used to 503 on this. Workflows and the three tools
+        # that never retrieve were taken down by a fault in the one that does,
+        # so a parent replanning a day was refused because the FAQ was broken.
+        # Retrieval degrades by itself: rag.retrieve returns nothing unless the
+        # index is ready, and the prompt then says so.
+        reply = self._chat_with_status("error")
+        self.assertEqual(reply.status_code, 200)
+
+    def test_an_index_that_never_started_does_not_block_a_turn_either(self):
+        reply = self._chat_with_status("not_started")
+        self.assertEqual(reply.status_code, 200)
 
 
 class ModelCacheLocationTest(unittest.TestCase):

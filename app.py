@@ -2512,9 +2512,14 @@ def chatbot_route():
     if model not in ALLOWED_CHAT_MODELS:
         model = DEFAULT_MODEL
 
-    # The FAQ tool reads from the index, so the agent is only fully useful once
-    # it's built. Kept as a hard gate rather than a warning, same as before.
-    if rag.get_status()["state"] != "ready":
+    # Only a build in progress blocks a turn, and only because it finishes in
+    # seconds. Every other state degrades on its own: rag.retrieve returns
+    # nothing unless the index is ready, and the prompt then says the knowledge
+    # base holds no answer. Refusing on "error" instead took the whole bubble
+    # down for a fault in one tool -- the workflows and the other three tools
+    # never touch retrieval, and a parent replanning a day got a 503 because the
+    # FAQ was broken.
+    if rag.get_status()["state"] == "indexing":
         return jsonify({"error": "The knowledge base is still indexing. Please try again shortly."}), 503
 
     # The widget echoes back whatever workflow state it was given, so this is
