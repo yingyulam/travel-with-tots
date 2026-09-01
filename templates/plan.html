@@ -238,11 +238,24 @@
       <input type="time" name="preferred_lunch_time" value="{{ form.preferred_lunch_time }}">
     </label>
 
-    <fieldset class="group">
-      <legend>Any particular kind of place? <em>(optional)</em></legend>
-      <p class="field-hint">Leave it blank for a mix, which is usually the best
-        answer. Picking some just brings them forward.</p>
-      <div class="chips">
+    <fieldset class="group" id="interest-group">
+      <legend>Which kinds of place would you like?</legend>
+      {# Every box starts ticked, so the question is "untick what you'd rather
+         not do" rather than "leave it blank and trust us". Blank used to mean
+         "a mix", a rule the form never showed anybody. #}
+      <p class="field-hint">All ticked to start. Untick anything you'd rather
+        skip, and we'll bring the rest forward. This is a preference, not a
+        rule: an unticked kind can still appear if it fits your day better.
+        <button type="button" class="link-toggle" id="interest-toggle">Clear all</button>
+      </p>
+      {# Rendered either way. The server sets it when a post arrives with
+         nothing ticked; the script below reveals it when the browser refuses
+         the submit, because the checkboxes are visually hidden behind their
+         chips and a validation bubble pointed at one is easy to miss. #}
+      <p class="revise-result revise-error" id="interest-error"
+         {% if not interest_error %}hidden{% endif %}>Pick at least one kind of
+        place, or tick them all for a mix.</p>
+      <div class="chips" id="interest-chips">
         {% for kind in interest_options|sort %}
         <label class="chip">
           <input type="checkbox" name="interest" value="{{ kind }}"
@@ -251,6 +264,10 @@
         </label>
         {% endfor %}
       </div>
+      {# Tells the server this post came from a form that showed the boxes, so
+         no ticks means the parent cleared them rather than the field never
+         being offered (the chat hand-off posts no `interest` at all). #}
+      <input type="hidden" name="interest_offered" value="1">
     </fieldset>
 
     <label class="field field-full">
@@ -434,6 +451,37 @@
   if (years && months) {
     years.addEventListener("input", syncAgeCap);
     syncAgeCap();
+  }
+
+  // Select all / clear all, and at least one before the form will submit.
+  // The button's label is the action it performs, so it reads as a switch
+  // rather than a state: "Clear all" while everything is ticked.
+  const interestChips = document.getElementById("interest-chips");
+  const interestToggle = document.getElementById("interest-toggle");
+  const interestError = document.getElementById("interest-error");
+  const interestBoxes = interestChips
+    ? [...interestChips.querySelectorAll("input[name='interest']")] : [];
+  if (interestToggle && interestBoxes.length) {
+    const first = interestBoxes[0];
+
+    // setCustomValidity on the first box, so the browser refuses the submit
+    // rather than posting a question with no answer. The server refuses it
+    // too; this is the half that explains it without a page load.
+    function syncInterest() {
+      const ticked = interestBoxes.filter((box) => box.checked);
+      interestToggle.textContent = ticked.length ? "Clear all" : "Select all";
+      first.setCustomValidity(ticked.length ? ""
+        : "Pick at least one kind of place, or tick them all for a mix.");
+      if (ticked.length) interestError.hidden = true;
+    }
+    first.addEventListener("invalid", () => { interestError.hidden = false; });
+    interestToggle.addEventListener("click", () => {
+      const selecting = !interestBoxes.some((box) => box.checked);
+      interestBoxes.forEach((box) => { box.checked = selecting; });
+      syncInterest();
+    });
+    interestBoxes.forEach((box) => box.addEventListener("change", syncInterest));
+    syncInterest();
   }
 
   // Dynamic "Add a nap" rows, capped at data-max-naps. Existing (server-

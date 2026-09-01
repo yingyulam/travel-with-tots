@@ -184,7 +184,8 @@ A five-minute tour, roughly in the order a parent would meet it.
 A day is built in four steps, and only one of them is AI.
 
 1. **The form** collects the shape of your day: wake-up, bedtime, naps,
-   transport, how many stops, lunch, any interests, and where you are staying.
+   transport, how far you will travel, how many stops, lunch, which kinds of
+   place, and where you are staying.
 2. **The planner** (`src/itinerary.py`) lays out the times, anchors the naps,
    and picks a venue for each slot.
 3. **The hours check** (`src/components/validate_hours.py`) tests every stop
@@ -230,11 +231,21 @@ you wake up, the last from somewhere you can get home from. Skip it and the day
 still plans on the legs between stops, and says the journey there and back could
 not be checked.
 
-**Other preferences nudge, they never exclude.** Interests, shelter and
+**Other preferences nudge, they never exclude.** Kinds of place, shelter and
 nap-friendliness reorder the options rather than narrowing them, so a preference
 can never leave you with an empty day. Travel time is the exception, and it is
 deliberate: staying in Richmond with no car, the old ranking handed back Stanley
 Park, four hours away on foot, as the first stop of the morning.
+
+**The kinds of place start fully ticked.** Untick what you would rather skip and
+the rest come forward; the plan says which kinds it pushed down, and that they
+can still turn up if they fit your day better. Ticking everything and ticking
+nothing plan the same day, which is why "all ticked" is a safe default and why
+clearing the whole list is refused rather than guessed at.
+
+The question used to be "any particular kind of place? (optional)", where blank
+meant a mix. That hid the rule behind the common answer, and made ticking two
+look like a filter when it was a sort.
 
 **A place with unknown hours is never scheduled.** If the app cannot tell
 whether somewhere is open on your date, it stays out. On statutory holidays,

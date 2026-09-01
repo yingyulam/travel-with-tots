@@ -7,7 +7,7 @@ from datetime import date
 from .dates import parse_date, compute_age
 from .geo import (DEFAULT_WALK_BUDGET_MIN, WALK_BUDGET_OPTIONS, as_point,
                   walk_budget_min)
-from .data_loader import SUPPORTED_CITIES, VENUE_TYPES
+from .data_loader import SUPPORTED_CITIES, VENUE_TYPES, interest_options
 from .db import get_children
 
 # Age is capped at this many years, 0 months.
@@ -131,6 +131,8 @@ DEFAULTS = {
     "revise_feedback": "",
     "strict_schedule": False,
     "features": [],
+    # Filled in by default_form(), which asks the data what kinds of place
+    # exist. Every one starts ticked: see all_interests().
     "interest": [],
     "child_ids": [],
     "plan_child_id": "",
@@ -161,12 +163,27 @@ def _total_months(date_of_birth):
     return years * 12 + months
 
 
+def all_interests():
+    """Every kind of place the form offers, which is how it starts out.
+
+    Ticking all of them and ticking none of them plan the same day -- a lean
+    towards everything is not a lean -- so this is a change of question rather
+    than of behaviour. The old form asked "any particular kind of place?" and
+    treated blank as "a mix", which meant a parent who answered nothing got a
+    rule they were never shown, and a parent who ticked two got the other eight
+    anyway with nothing saying so.
+    """
+    return list(interest_options())
+
+
 def default_form():
     """A blank planning form. Separate from DEFAULTS because the trip date has
     to be today at request time, not at import time: a long-running server would
-    otherwise keep offering the day it booted."""
+    otherwise keep offering the day it booted. Same for the kinds of place,
+    which come from the venues that exist."""
     values = dict(DEFAULTS)
     values["trip_date"] = date.today().isoformat()
+    values["interest"] = all_interests()
     return values
 
 
@@ -222,14 +239,33 @@ def read_form(form):
         "revise_feedback": form.get("revise_feedback", ""),
         "strict_schedule": form.get("strict_schedule") == "on",
         "features": form.getlist("features"),
-        # Only kinds of place the app knows. An unrecognised value is
-        # dropped rather than carried, so a stale form or a hand-made
-        # post cannot ask for something nothing can satisfy.
-        "interest": [k for k in form.getlist("interest") if k in VENUE_TYPES],
+        # An unrecognised kind is dropped rather than carried, so a stale form
+        # or a hand-made post cannot ask for something nothing can satisfy.
+        "interest": _read_interest(form),
         "child_ids": form.getlist("child_ids"),
         "plan_child_id": form.get("plan_child_id", ""),
     }
     return values
+
+
+# The rendered form carries this so an empty `interest` can be read correctly.
+# Unticked checkboxes are not submitted, so "the parent cleared every box" and
+# "this post never had the field" arrive identically; only the form that showed
+# the boxes can tell them apart.
+INTEREST_OFFERED_FIELD = "interest_offered"
+
+
+def _read_interest(form):
+    """The kinds of place asked for, from a post that may not have asked.
+
+    Empty only when the parent actively cleared every box. A post that never
+    showed them -- the chat hand-off, a component call, a test -- gets all of
+    them, which is what the form itself would have shown.
+    """
+    picked = [k for k in form.getlist("interest") if k in VENUE_TYPES]
+    if picked or form.get(INTEREST_OFFERED_FIELD):
+        return picked
+    return all_interests()
 
 
 def _accommodation_point(form):

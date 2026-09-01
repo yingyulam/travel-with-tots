@@ -83,6 +83,15 @@ stops (car or ride-share, public transit, on foot) and how long they're
 willing to spend getting to any one stop: 20, 30 or 40 minutes, with 20
 as the default.
 
+The trip form also asks which kinds of place the family would like, as a
+list of every kind the app has venues for, all ticked to begin with.
+Unticking a kind is a preference rather than a rule: the ticked kinds
+come forward in the ordering, and an unticked one can still appear if it
+fits the day better, which the plan says in its description. Ticking
+every kind and ticking none produce the same day, so the fully ticked
+list is just the question asked plainly. Clearing every box is refused:
+the form asks for at least one kind before it will build a day.
+
 That travel time is a hard limit, not a preference. It applies to each
 leg on its own rather than to the day's total, and to every leg
 including the journey back to the accommodation at the end, so the last
@@ -184,6 +193,7 @@ what's needed.
 - Navigation: hands off to Google Maps, no in-app turn-by-turn
 - Dining styles: "dine out" (a midday food stop of about 1.5 hours, at a preferred time if given) or "on the go" (no dedicated food stop)
 - Getting around: car or ride-share, public transit, or on foot
+- Kinds of place: every kind starts ticked, and unticking one moves it down the list rather than removing it; at least one must stay ticked
 - Travel time between stops: 20, 30 or 40 minutes, default 20, applied to each leg including the journey home
 - Accommodation: optional, and pinnable on a map; the day is anchored to it when given
 - Ways to reach a task: the planning form, the in-trip buttons, or the chat

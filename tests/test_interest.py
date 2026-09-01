@@ -14,13 +14,26 @@ The faults this locks out, all measured on the old system:
    sets, which deprioritised 10 of 14 types. "No preference" was a preference.
 3. A garden is outdoor *and* cultural and matched no theme at all, so an
    outdoor cultural day was inexpressible.
+
+The form asks it as a fully ticked list now. "Any particular kind of place?
+(optional)", answered by leaving it blank, hid the rule that blank meant a mix,
+and made ticking two look like a filter when it was a sort. Ticking everything
+and ticking nothing plan the same day, so the new question is the same
+behaviour asked in a way a parent can see -- which is what the last class here
+pins.
 """
 
 import unittest
 from datetime import date
+from unittest import mock
 
+from werkzeug.datastructures import MultiDict
+
+import app as app_module
 from src import data_loader, itinerary
+from src.components import plan_trip as plan_module
 from src.data_loader import VENUE_TYPES
+from src.form_helpers import all_interests, default_form, read_form
 
 ON = date(2026, 9, 15)
 INPUTS = {"wake_up": "07:00", "bedtime": "19:30", "naps": [],
@@ -130,6 +143,138 @@ class LabellingTest(unittest.TestCase):
         self.assertEqual(itinerary.interest_label(["museum"]), "Museum")
         self.assertEqual(itinerary.interest_label(["museum", "garden"]),
                          "Museum and garden")
+
+    def test_a_long_answer_gets_a_short_title(self):
+        # The form starts fully ticked, so unticking two still asks for eight,
+        # and eight names joined by "and" is not a title.
+        kinds = ["park", "garden", "beach", "seawall"]
+        self.assertEqual(itinerary.interest_label(kinds), "A day out")
+
+    def test_the_blurb_says_a_lean_is_only_a_lean(self):
+        # The parent has to be told, or an unticked kind turning up reads as
+        # the form having been ignored.
+        blurb = itinerary.interest_blurb(["museum"])
+        self.assertIn("Other kinds of place can still appear", blurb)
+
+    def test_a_mostly_ticked_answer_is_described_by_what_is_missing(self):
+        blurb = itinerary.interest_blurb(["park", "garden", "beach"],
+                                         skipped=["mall"])
+        self.assertIn("with mall further down the list", blurb)
+        self.assertNotIn("Leaning towards", blurb)
+
+    def test_three_or_more_names_are_listed_not_chained(self):
+        self.assertEqual(itinerary._and(["a", "b", "c"]), "a, b and c")
+        self.assertEqual(itinerary._and(["a", "b"]), "a and b")
+
+
+class TickingEverythingIsTickingNothingTest(unittest.TestCase):
+    """The claim the whole redesign rests on.
+
+    If these two ever plan different days, the form's default silently became a
+    preference nobody chose -- which is the exact fault the themes had.
+    """
+
+    POOL = [_venue("A Pool", "pool"), _venue("A Museum", "museum"),
+            _venue("A Garden", "garden")]
+
+    def test_the_same_day_comes_back_either_way(self):
+        every = sorted({v["type"] for v in self.POOL})
+        self.assertEqual([v["name"] for v in _chosen(self.POOL, every, "3")],
+                         [v["name"] for v in _chosen(self.POOL, [], "3")])
+
+    def test_and_it_is_not_titled_after_all_of_them(self):
+        every = sorted({v["type"] for v in self.POOL})
+        plan = itinerary.generate_plans(
+            self.POOL, {**INPUTS, "interest": every, "stop_count": "3"})[0]
+        self.assertEqual(plan.label, "A day out")
+        self.assertIn("A mix of places", plan.blurb)
+
+    def test_effective_interest_drops_a_lean_that_leans_nowhere(self):
+        self.assertEqual(
+            itinerary.effective_interest(["park", "museum"], {"park", "museum"}),
+            [])
+
+    def test_and_keeps_a_real_one(self):
+        self.assertEqual(
+            itinerary.effective_interest(["museum"], {"park", "museum"}),
+            ["museum"])
+
+
+class TheFormStartsFullyTickedTest(unittest.TestCase):
+    def test_a_blank_form_has_every_kind_ticked(self):
+        self.assertEqual(default_form()["interest"], all_interests())
+
+    def test_all_interests_is_what_the_form_offers(self):
+        self.assertEqual(all_interests(), data_loader.interest_options())
+
+    def test_a_post_that_never_showed_the_boxes_gets_them_all(self):
+        # The chat hand-off posts the fields it collected and nothing else, so
+        # an absent `interest` means "not asked", not "cleared".
+        self.assertEqual(read_form(MultiDict())["interest"], all_interests())
+
+    def test_a_post_from_the_form_can_be_empty(self):
+        # Unticked checkboxes are not submitted, so only the marker the form
+        # carries can tell "cleared every box" from "never offered".
+        self.assertEqual(
+            read_form(MultiDict([("interest_offered", "1")]))["interest"], [])
+
+    def test_what_was_ticked_is_what_arrives(self):
+        posted = MultiDict([("interest_offered", "1"), ("interest", "museum"),
+                            ("interest", "garden")])
+        self.assertEqual(read_form(posted)["interest"], ["museum", "garden"])
+
+
+class TheFormRefusesAnEmptyPickTest(unittest.TestCase):
+    """Nothing ticked is not a question we can answer, so it is not planned."""
+
+    def setUp(self):
+        self.client = app_module.app.test_client()
+
+    def _post(self, **extra):
+        with mock.patch.object(plan_module, "PlanningAgent") as agent:
+            agent.return_value.adjust_plan.side_effect = \
+                plan_module.PlanningAgentError("skipped")
+            page = self.client.post("/plan", data={
+                "generate": "1", "destination": "Vancouver", "age_years": "3",
+                "age_months": "0", **extra})
+        return page.get_data(as_text=True)
+
+    def test_clearing_every_box_plans_nothing(self):
+        html = self._post(interest_offered="1")
+        self.assertNotIn('id="plan-results"', html)
+
+    def _error_tag(self, html):
+        # The message is always in the markup and hidden until it applies, so
+        # asserting the text alone would pass whatever the server decided.
+        return html.split('id="interest-error"')[1].split(">")[0]
+
+    def test_and_says_why(self):
+        self.assertNotIn("hidden", self._error_tag(self._post(interest_offered="1")))
+
+    def test_and_keeps_quiet_when_it_does_not_apply(self):
+        self.assertIn("hidden", self._error_tag(self._post()))
+
+    def test_one_kind_is_enough(self):
+        html = self._post(interest_offered="1", interest="park")
+        self.assertIn('id="plan-results"', html)
+
+    def test_a_post_without_the_marker_still_plans(self):
+        # Guards the test above from passing for the wrong reason: /plan is
+        # posted to by more than the rendered form.
+        self.assertIn('id="plan-results"', self._post())
+
+    def test_the_page_offers_a_select_all_and_the_marker(self):
+        html = self.client.get("/plan").get_data(as_text=True)
+        self.assertIn('id="interest-toggle"', html)
+        self.assertIn('name="interest_offered"', html)
+
+    def test_every_offered_kind_starts_ticked(self):
+        html = self.client.get("/plan").get_data(as_text=True)
+        chips = html.split('id="interest-chips"')[1].split("</div>")[0]
+        for kind in all_interests():
+            with self.subTest(kind=kind):
+                after = chips.split(f'value="{kind}"')[1][:40]
+                self.assertIn("checked", after)
 
 
 class OptionsComeFromTheDataTest(unittest.TestCase):

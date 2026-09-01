@@ -2164,6 +2164,13 @@ def plan():
 
     resolve_plan_child(form, _current_parent())
 
+    # Every kind of place unticked. The form itself blocks this, so getting
+    # here means a hand-made post or a page whose script did not run: say so
+    # rather than guessing which of the ten kinds they meant, and rather than
+    # quietly planning as though they had ticked them all.
+    interest_error = should_generate and not form["interest"]
+    should_generate = should_generate and not interest_error
+
     hours_report = None
     adjustment = None
     revise_count = clamp_int(request.form.get("revise_count"), 0, MAX_REVISE_ROUNDS, 0)
@@ -2233,6 +2240,7 @@ def plan():
         hours_report=hours_report,
         adjustment=adjustment,
         out_of_range=out_of_range,
+        interest_error=interest_error,
         trip_context=trip_context,
         supported_cities=SUPPORTED_CITIES,
         transit_options=TRANSIT_OPTIONS,

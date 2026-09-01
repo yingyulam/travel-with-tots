@@ -144,20 +144,62 @@ MAX_MEAL_STOPS = 1
 #   Culture     -> `interest` below.
 
 
+# How many kinds a plan's title will name before it stops trying. The form
+# starts with every kind ticked, so a parent who unticks two has still asked
+# for eight, and "Park and garden and beach and seawall and market and museum
+# and aquarium and attraction" is not a title.
+MAX_LABELLED_KINDS = 3
+
+
+def effective_interest(interest, available):
+    """What the parent asked for, minus a lean that leans nowhere.
+
+    Ticking every kind the day could use is the same as ticking none: the sort
+    below gives every venue the same key either way, so the plan is identical.
+    Saying so once here is what keeps the label and the blurb honest about it,
+    rather than naming ten kinds and calling it a preference.
+
+    `available` is the kinds actually in the pool, so this is exactly the
+    question "would this preference change anything".
+    """
+    kinds = [k for k in (interest or []) if k]
+    return [] if set(kinds) >= set(available) else kinds
+
+
 def interest_label(interest):
     """A plan's name, from what the parent asked for. "A day out" when they
-    asked for nothing in particular, which is the common case."""
+    asked for nothing in particular, or for more kinds than a title can hold."""
     kinds = [k for k in (interest or []) if k]
-    if not kinds:
+    if not kinds or len(kinds) > MAX_LABELLED_KINDS:
         return "A day out"
     return " and ".join(kinds).capitalize()
 
 
-def interest_blurb(interest):
+def interest_blurb(interest, skipped=()):
+    """What the day leans towards, said as the preference it is.
+
+    A lean never excludes anything -- it sorts -- and the parent has to be told
+    that, or an unticked kind turning up in their day reads as the form having
+    been ignored. `skipped` is what they unticked, named when there is less of
+    it than of what they kept: "everything but malls" is the shape of most
+    answers to a form that starts fully ticked.
+    """
     kinds = [k for k in (interest or []) if k]
     if not kinds:
         return "A mix of places, paced around your child's day."
-    return f"Leaning towards {' and '.join(kinds)}, paced around your child's day."
+    dropped = [k for k in skipped if k]
+    if dropped and len(dropped) < len(kinds):
+        return (f"A mix of places, with {_and(dropped)} further down the list, "
+                "paced around your child's day.")
+    return (f"Leaning towards {_and(kinds)}, paced around your child's day. "
+            "Other kinds of place can still appear if they fit the day better.")
+
+
+def _and(kinds):
+    """"a, b and c". A plain join reads as one long name past two items."""
+    if len(kinds) < 3:
+        return " and ".join(kinds)
+    return f"{', '.join(kinds[:-1])} and {kinds[-1]}"
 
 
 def _parse(t):
@@ -658,7 +700,12 @@ def generate_plans(venues, inputs, out_of_range=None):
     preferred_lunch_time = inputs.get("preferred_lunch_time") or ""
     preferred_lunch_min = hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
-    wanted = set(inputs.get("interest") or ())
+    # What the parent asked for, and what they left out. Both are needed: the
+    # blurb describes a mostly-ticked answer by what is missing from it.
+    available = {venue["type"] for venue in matches}
+    interest = effective_interest(inputs.get("interest"), available)
+    skipped = [k for k in sorted(available) if k not in set(interest)] if interest else []
+    wanted = set(interest)
     unreachable = out_of_range if out_of_range is not None else []
     stops = _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                         preferred_lunch_min, nap_minutes,
@@ -672,7 +719,7 @@ def generate_plans(venues, inputs, out_of_range=None):
     leave = _leave_stop(accommodation, stops, home, mode)
     if leave:
         stops = [leave] + stops
-    blurb = interest_blurb(inputs.get("interest"))
+    blurb = interest_blurb(interest, skipped)
     if count != requested_count:
         blurb += (f" You asked for {requested_count} stops; we planned {count} "
                   "instead, a more realistic pace for this age.")
@@ -690,5 +737,5 @@ def generate_plans(venues, inputs, out_of_range=None):
                   "little is within your travel limit of it.")
     blurb += _range_note(unreachable, budget_min, mode, beyond_budget,
                          empty=not stops)
-    return [Plan(label=interest_label(inputs.get("interest")),
+    return [Plan(label=interest_label(interest),
                  blurb=blurb, stops=stops)]
