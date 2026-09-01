@@ -9,17 +9,21 @@ notes yet.
 
 from datetime import datetime, timedelta
 
-from .geo import (DEFAULT_REACH_KM, as_point, haversine_km, reach_km,
-                  within_reach)
+from .geo import (DEFAULT_WALK_BUDGET_MIN, as_point, in_metro_vancouver,
+                  leg_minutes, route_km, walk_budget_min, within_budget)
+from .form_helpers import normalise_transit
 from .models import Plan
+
+# How each mode is described to a parent, in the leg notes and in the note that
+# explains a stop left out for being too far.
+MODE_WORD = {"walk": "on foot", "transit": "on transit", "car": "by car"}
 
 # A buffer after wake-up before the first stop (breakfast, getting out).
 MORNING_BUFFER = timedelta(hours=2)
-# How long before the first stop to set off. A flat buffer, not a travel-time
-# estimate: the accommodation's coordinates make the *distance* knowable, but
-# turning a distance into a duration needs routes, schedules and transfers,
-# which this app deliberately does not model. So the note reports the distance
-# and lets the parent judge the time.
+# How long before the first stop to set off: getting a small child out of a
+# door, on top of the journey. Flat, and deliberately separate from the travel
+# estimate the note carries beside it -- that part is now measured (see
+# geo.estimate_minutes), this part is not the kind of thing a route knows.
 LEAVE_BUFFER = timedelta(minutes=30)
 # Default lunch block for a "dine out" meal: a well-paced 1.5 hours. Lunch is
 # placed so the whole block fits before the next stop, with a short lead after
@@ -183,7 +187,7 @@ def min_to_display(minutes):
     return _format(datetime(1900, 1, 1, minutes // 60, minutes % 60))
 
 
-def _leave_stop(accommodation, stops, home=None):
+def _leave_stop(accommodation, stops, home=None, mode="walk"):
     """A 'leave by' note before the first stop.
 
     Sets off a fixed ``LEAVE_BUFFER`` ahead, and reports how far the first stop
@@ -202,7 +206,7 @@ def _leave_stop(accommodation, stops, home=None):
         "venue": None,
         "reason": (f"Leave {accommodation or 'your accommodation'} by "
                    f"{_format(leave)} to reach your first stop on time."
-                   + _how_far(stops[0]["venue"], home, "away")),
+                   + _how_far(stops[0]["venue"], home, "away", mode)),
     }
 
 
@@ -233,39 +237,46 @@ def _plan_times(wake, bedtime, count):
     return [_round_to(start + span * (i / count)) for i in range(count)]
 
 
-def _pick(pool, used, start_min=None, duration_min=0, anchor=None, reach=None,
-          home=None):
-    """Take the next unused venue that's open for the slot (swapping past ones
-    that don't fit). Returns None if nothing fits, so the slot is skipped.
+def _pick(pool, used, start_min=None, duration_min=0, anchor=None,
+          budget_min=None, mode="walk", home=None, beyond_budget=False):
+    """The next unused venue that is open for the slot and close enough to reach.
 
-    `anchor` is the previous stop's venue and `reach` how far the family can
-    reasonably travel from it, so a day does not zig-zag across the city. Stops
-    used to be chosen entirely independently, which is how a family on foot got
-    an 8.8km day with a 4.1km leg between two of its stops.
+    Returns None when nothing qualifies, so the slot is skipped rather than
+    filled with something unreachable.
 
-    Proximity **sorts** the pool, it does not filter it: a far venue drops to
-    the back and stays reachable when nothing nearer is open. This project has
-    twice been bitten by a filter whose fallback only fired when *nothing*
-    qualified, and a sort cannot empty a day. Python's sort is stable, so the
-    order already established -- what the parent asked for, then the curator's
-    ranking -- decides within each group.
+    Proximity **filters** here; it used to sort. A sort cannot empty a day,
+    which was the argument for it, but it also cannot refuse one: staying at
+    Richmond Centre on foot, no venue was within 1.5km, every candidate tied at
+    "out of reach", and the stable sort handed back the curator's ranking --
+    Stanley Park Seawall, 14.3km away, about three hours' walk, presented as the
+    first stop of the morning. An empty slot the parent can see is a better
+    answer than a full one they cannot walk.
 
-    `home` is the accommodation, and is passed for the **last** slot only, so
-    the day ends somewhere the family can get back from. It is the second tier,
-    not the first: the leg from the previous stop is walked during the day with
-    a tired child, so it still decides, and nearness to home only separates
-    venues that are equally reachable. Passing None makes it inert, since
-    within_reach() reads a missing anchor as "no opinion".
+    `anchor` is where this leg starts: the previous stop, or the accommodation
+    for the first. `budget_min` is how long the parent said they are willing to
+    travel between stops, and `mode` how they are getting around.
+
+    `home` is passed for the **last** slot, where it is a second constraint
+    rather than a preference: the family has to get back, so the return leg is
+    held to the same budget as every other leg.
+
+    `beyond_budget` relaxes the budget, and is only ever set because the parent
+    asked for it after being told what was in range. Nothing sets it on their
+    behalf.
     """
-    if anchor is not None and reach is not None:
-        pool = sorted(pool, key=lambda v: (
-            0 if within_reach(v, anchor, reach) else 1,
-            0 if within_reach(v, home, reach) else 1))
     for venue in pool:
         if venue["name"] in used:
             continue
         if start_min is not None and not venue_open_for(venue, start_min, duration_min):
             continue
+        if not beyond_budget and budget_min is not None:
+            if anchor is not None and not within_budget(anchor, venue, budget_min, mode):
+                continue
+            # The leg home, for the stop that ends the day. Held to the same
+            # budget: a family that can walk to the last stop but not back from
+            # it has been sent somewhere they are stranded.
+            if home is not None and not within_budget(venue, home, budget_min, mode):
+                continue
         used.add(venue["name"])
         return venue
     return None
@@ -290,21 +301,27 @@ def _reason(venue, kind, wanted):
     return f"A {venue['type']} in {place}." if place else f"A {venue['type']}."
 
 
-def _how_far(venue, anchor, label="from your last stop"):
-    """"1.2 km from your last stop", or "" when it cannot be measured.
+def _how_far(venue, anchor, label="from your last stop", mode="walk"):
+    """"About 15 min on foot (1.2 km) from your last stop", or "" if unmeasurable.
 
     The only thing a parent can actually see that proves the transport mode was
-    read. It is also how they judge whether a day is walkable, which no label on
-    a form can tell them. `label` names what the distance is measured from, so
-    the same helper can report the leg out from the accommodation and the leg
-    back to it.
+    read, and now the same number the planner filtered on, so a day cannot claim
+    a limit it did not keep. `label` names what the leg is measured from, so the
+    same helper reports the leg out from the accommodation and the leg back.
+
+    Minutes lead, because minutes are what the parent chose. The kilometres stay
+    because they are checkable against a map; both are estimates from a straight
+    line (see geo.route_km) and neither is a route.
     """
-    if anchor is None or venue is None:
+    minutes = leg_minutes(anchor, venue, mode)
+    if minutes is None:
         return ""
-    if venue.get("lat") is None or anchor.get("lat") is None:
-        return ""
-    km = haversine_km(anchor["lat"], anchor["lng"], venue["lat"], venue["lng"])
-    return f" {km:.1f} km {label}." if km >= 0.1 else " Right next door."
+    km = route_km(anchor["lat"], anchor["lng"], venue["lat"], venue["lng"])
+    # One shape for every leg, including the trivial ones. A short leg used to
+    # read "Right next door", which is friendlier and drops the one thing the
+    # sentence is for: which end of the day this is measured from.
+    return (f" About {max(1, round(minutes))} min {MODE_WORD.get(mode, mode)} "
+            f"({km:.1f} km) {label}.")
 
 
 def _lunch_time(stops, naps, preferred_lunch_min=None):
@@ -408,7 +425,8 @@ def _nap_minutes(naps):
 
 def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                 preferred_lunch_min=None, nap_minutes=None,
-                reach=DEFAULT_REACH_KM, home=None):
+                budget_min=DEFAULT_WALK_BUDGET_MIN, mode="walk", home=None,
+                beyond_budget=False, unreachable=None):
     """Build one day plan: an ordered list of timed stops.
 
     ``wanted`` is the set of venue types the parent asked for, empty when they
@@ -417,10 +435,10 @@ def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
     ``dining`` is "dine_out" (a midday food stop) or "on_the_go" (no dedicated
     food stop -- the family eats during transit or at an activity).
 
-    ``home`` is the accommodation's coordinates, when the parent picked it on
-    the map. It anchors both ends of the day: the first stop is chosen from
-    where the family wakes up rather than from nowhere, and the last is chosen
-    knowing they have to get back. Without it the day plans exactly as before.
+    ``home`` anchors both ends of the day: the first stop is chosen from where
+    the family wakes up rather than from nowhere, and the last is chosen knowing
+    they have to get back. None when the parent never pinned it, and then the
+    day is judged only on the legs between stops.
     """
     def _wanted(venue):
         return bool(wanted) and venue["type"] in wanted
@@ -487,20 +505,25 @@ def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
         # identically, and a museum closing at two could host either.
         venue = _pick(pools[slot["kind"]], used, start_min,
                       slot.get("minutes") or stop_duration(slot["kind"]),
-                      anchor=anchor, reach=reach,
+                      anchor=anchor, budget_min=budget_min, mode=mode,
+                      beyond_budget=beyond_budget,
                       # Only the last slot has to be somewhere they can get
                       # home from. Every earlier one is judged on the leg into
                       # it, which is the one they walk.
                       home=home if index == last_index else None)
         if venue is None:
-            continue  # nothing open fits this slot -> skip it
+            # Skipped, and counted. A shorter day with an explanation beats a
+            # full one containing somewhere the family cannot reach.
+            if unreachable is not None:
+                unreachable.append(slot["kind"])
+            continue
         stops.append({
             "time": _format(slot["time"]),
             "kind": slot["kind"],
             "venue": venue,
             "reason": _reason(venue, slot["kind"], wanted)
                       + _how_far(venue, anchor, "from your accommodation"
-                                 if from_home else "from your last stop"),
+                                 if from_home else "from your last stop", mode),
         })
         # Measured from the stop before it, so this is set *after* the reason.
         # If a slot found nothing, from_home stays true and the next stop is
@@ -520,12 +543,84 @@ def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
         for stop in reversed(stops):
             if stop["venue"] is not None:
                 stop["reason"] += _how_far(stop["venue"], home,
-                                           "back to your accommodation")
+                                           "back to your accommodation", mode)
                 break
     return stops
 
 
-def generate_plans(venues, inputs):
+def travel_rules(inputs):
+    """(home, mode, budget_min, beyond_budget) from a set of planning inputs.
+
+    One reading, because two would drift: the draft filters on these and the
+    check that guards the AI pass has to apply exactly the same rule, or the
+    guard passes a day the planner would have refused.
+
+    `home` is None when the accommodation was never pinned, and nothing is
+    invented in its place. The day is then judged on the legs between stops,
+    which is every leg that can honestly be measured: a made-up anchor would
+    rule out venues over a distance from somewhere the family is not staying.
+    """
+    return (as_point(inputs.get("accommodation_lat"), inputs.get("accommodation_lng")),
+            normalise_transit(inputs.get("transit")),
+            walk_budget_min(inputs.get("walk_budget")),
+            bool(inputs.get("beyond_budget")))
+
+
+def over_budget(stops, inputs):
+    """How many legs of a finished day exceed the parent's travel limit.
+
+    For checking a plan somebody else touched. The draft cannot produce one of
+    these, but the AI adjuster reorders and swaps stops with no way to measure a
+    leg, so a day that reads better can put a venue an hour's walk from the one
+    before it.
+
+    Counts the whole chain, accommodation at both ends, and counts a leg it
+    cannot measure -- the same rule as within_budget, for the same reason: a
+    venue with no coordinates is not a venue known to be close.
+    """
+    home, mode, budget_min, beyond = travel_rules(inputs)
+    if beyond:
+        return 0
+    placed = [stop["venue"] for stop in stops if stop.get("venue")]
+    if not placed:
+        return 0
+    chain = placed if home is None else [home] + placed + [home]
+    return sum(1 for a, b in zip(chain, chain[1:])
+               if not within_budget(a, b, budget_min, mode))
+
+
+def _range_note(unreachable, budget_min, mode, beyond_budget, empty=False):
+    """What to tell the parent when the budget left slots empty.
+
+    Named rather than filled. The parent chose a limit, so a day that cannot be
+    built inside it is information they are owed, and the decision to go further
+    is theirs: some families are done at ten minutes and some are fine at forty.
+    """
+    if not unreachable:
+        return ""
+    n = len(unreachable)
+    plural = "s" if n > 1 else ""
+    # The limit is only the explanation when the limit was in force. Blaming it
+    # for an empty day the parent has already opted out of would send them to
+    # press a button they have pressed.
+    if beyond_budget:
+        if empty:
+            return (" We could not build a day at all, even with no distance "
+                    "limit: nothing suitable was open at those times.")
+        return (f" We still could not fill {n} stop{plural}, even with no "
+                "distance limit: nothing else was open at that time.")
+    if empty:
+        return (f" We could not build a day at all: nothing suitable was within "
+                f"{budget_min} minutes {MODE_WORD.get(mode, mode)} of where you "
+                "are starting from. You can include places further away, or "
+                "come back with more travel time.")
+    return (f" We left {n} stop{plural} out: nothing suitable was within "
+            f"{budget_min} minutes {MODE_WORD.get(mode, mode)} of the stop "
+            "before it, or within that of your accommodation on the way back. "
+            "You can include places further away if you'd like a fuller day.")
+
+
+def generate_plans(venues, inputs, out_of_range=None):
     """Return a single candidate day plan for the parent to review.
 
     ``inputs`` is the normalised form dict (wake_up, bedtime, naps, stop_count,
@@ -541,6 +636,10 @@ def generate_plans(venues, inputs):
     a plan with a food venue around midday and a nap-friendly venue during
     the nap window. The structure is what a future LLM-backed implementation
     would return, so only this function's body needs to change later.
+
+    ``out_of_range`` is an optional list, filled with the kind of each slot the
+    travel limit left empty. A caller passes one when it needs to offer the
+    parent the choice to look further; the blurb explains it either way.
     """
     # No amenity filtering: what a parent needs in the moment (a nursing room,
     # a change table) is answered by find_nearby where they are, not by
@@ -554,28 +653,42 @@ def generate_plans(venues, inputs):
     requested_count = int(inputs["stop_count"])
     count = realistic_stop_count(requested_count, total_months)
     accommodation = inputs.get("accommodation", "")
-    # Where they are staying, when they pinned it. None when they typed an
-    # address without picking it on the map, or gave none at all: the day is
-    # planned the same way, just without a start and end anchor.
-    home = as_point(inputs.get("accommodation_lat"),
-                    inputs.get("accommodation_lng"))
+    home, mode, budget_min, beyond_budget = travel_rules(inputs)
     dining = inputs.get("dining", "dine_out")
     preferred_lunch_time = inputs.get("preferred_lunch_time") or ""
     preferred_lunch_min = hhmm_to_min(preferred_lunch_time) if preferred_lunch_time else None
 
     wanted = set(inputs.get("interest") or ())
-    # How far apart consecutive stops may sit, from how the family is getting
-    # between them. Until this, the answer changed nothing at all: every mode
-    # produced a byte-identical plan.
+    unreachable = out_of_range if out_of_range is not None else []
     stops = _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                         preferred_lunch_min, nap_minutes,
-                        reach=reach_km(inputs.get("transit")), home=home)
-    leave = _leave_stop(accommodation, stops, home)
+                        budget_min=budget_min, mode=mode, home=home,
+                        beyond_budget=beyond_budget, unreachable=unreachable)
+    # A day where the limit refused every slot is an empty day, not a day of
+    # notes about one. Left alone, it hands back "leave by 11:30 to reach your
+    # first stop" and a lunch near nowhere, which reads as a plan.
+    if not any(stop["venue"] for stop in stops):
+        stops = []
+    leave = _leave_stop(accommodation, stops, home, mode)
     if leave:
         stops = [leave] + stops
     blurb = interest_blurb(inputs.get("interest"))
     if count != requested_count:
         blurb += (f" You asked for {requested_count} stops; we planned {count} "
                   "instead, a more realistic pace for this age.")
+    if home is None:
+        # Said, not hidden. Every other leg was checked; this is the one that
+        # could not be, and it is the leg a tired family cares most about.
+        blurb += (" You didn't pin where you're staying, so we couldn't check "
+                  "the journey there and back.")
+    elif not in_metro_vancouver(home["lat"], home["lng"]):
+        # Said plainly, because every stop is measured from here and the day
+        # will look thin without the parent knowing why. The pin is still
+        # honoured: a family staying out in the valley is a real family, and
+        # the answer to that is a wider travel limit, not a quiet override.
+        blurb += (" Where you're staying is outside Metro Vancouver, so very "
+                  "little is within your travel limit of it.")
+    blurb += _range_note(unreachable, budget_min, mode, beyond_budget,
+                         empty=not stops)
     return [Plan(label=interest_label(inputs.get("interest")),
                  blurb=blurb, stops=stops)]

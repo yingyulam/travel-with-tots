@@ -110,6 +110,7 @@ from src.form_helpers import (
     STOP_COUNT_FORM_MAX,
     TRANSIT_NAP_OPTIONS,
     TRANSIT_OPTIONS,
+    WALK_BUDGET_FORM_OPTIONS,
     clamp_int,
     read_form,
     resolve_plan_child,
@@ -2190,10 +2191,15 @@ def plan():
             accommodation_lng=form["accommodation_lng"],
             features=form["features"], strict_schedule=form["strict_schedule"],
             interest=form["interest"], transit_nap=form["transit_nap"],
+            walk_budget=form["walk_budget"],
+            beyond_budget=form["beyond_budget"],
             model=_chosen_model(request.form.get("model")),
         )
         plans = [Plan.from_dict(result)]
         hours_report = result.get("hours")
+        # Slots the travel limit emptied. The blurb explains; this is what puts
+        # the choice to look further in front of the parent.
+        out_of_range = result.get("out_of_range")
         # Whether the AI step ran, and whether it moved anything. Not shown on
         # a first generate: the parent asked for a day out, and either way they
         # got a real plan. plan.html logs this to the console instead, so it
@@ -2218,6 +2224,7 @@ def plan():
     else:
         plans = None
         trip_context = None
+        out_of_range = None
 
     return render_template(
         "plan.html",
@@ -2225,9 +2232,11 @@ def plan():
         plans=plans,
         hours_report=hours_report,
         adjustment=adjustment,
+        out_of_range=out_of_range,
         trip_context=trip_context,
         supported_cities=SUPPORTED_CITIES,
         transit_options=TRANSIT_OPTIONS,
+        walk_budget_options=WALK_BUDGET_FORM_OPTIONS,
         dining_options=DINING_OPTIONS,
         feature_options=FEATURE_OPTIONS,
         interest_options=interest_options(),

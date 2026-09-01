@@ -5,7 +5,8 @@ import json
 from datetime import date
 
 from .dates import parse_date, compute_age
-from .geo import as_point
+from .geo import (DEFAULT_WALK_BUDGET_MIN, WALK_BUDGET_OPTIONS, as_point,
+                  walk_budget_min)
 from .data_loader import SUPPORTED_CITIES, VENUE_TYPES
 from .db import get_children
 
@@ -50,6 +51,14 @@ TRANSIT_OPTIONS = [("car", "Car, taxi or ride-share"),
                    ("walk", "On foot")]
 TRANSIT_KEYS = [key for key, _ in TRANSIT_OPTIONS]
 DEFAULT_TRANSIT = "walk"
+
+# How long the family will spend getting to any one stop. Asked in minutes
+# because that is what a parent can judge standing on a pavement with a
+# stroller, and asked at all because the comfortable answer differs enormously
+# between families -- the shortest option is the default, since a day that is
+# too tightly packed can be widened and a day that is too spread out cannot be
+# walked. The values come from geo, which is where the constraint is enforced.
+WALK_BUDGET_FORM_OPTIONS = [(str(m), f"Up to {m} min") for m in WALK_BUDGET_OPTIONS]
 
 # What the old options meant, for trips saved before this was one question.
 # `bus` was the only transit answer; `stroller` and `carrier` were how a family
@@ -109,6 +118,11 @@ DEFAULTS = {
     # The tightest reach, deliberately: a clustered day is fine for a family
     # with a car, and a spread-out one is not fine for a family on foot.
     "transit": DEFAULT_TRANSIT,
+    "walk_budget": str(DEFAULT_WALK_BUDGET_MIN),
+    # Set only by the parent, after a plan has told them what their limit left
+    # out. Never set on their behalf: quietly widening the limit is how a
+    # twenty-minute walk became a three-hour one.
+    "beyond_budget": False,
     "stop_count": "3",
     "dining": "dine_out",
     "preferred_lunch_time": "",
@@ -194,6 +208,11 @@ def read_form(form):
         # string got through -- the same gap that was closed for `interest`.
         "transit": (form.get("transit") if form.get("transit") in TRANSIT_KEYS
                     else DEFAULT_TRANSIT),
+        # walk_budget_min is the same guard the planner uses, so a hand-made
+        # post asking for 500 minutes gets the default rather than a number
+        # nobody was offered.
+        "walk_budget": str(walk_budget_min(form.get("walk_budget"))),
+        "beyond_budget": form.get("beyond_budget") in ("on", "1", "true"),
         "stop_count": str(clamp_int(form.get("stop_count"), STOP_COUNT_FORM_MIN,
                                      STOP_COUNT_FORM_MAX, int(DEFAULTS["stop_count"]))),
         "dining": form.get("dining") or DEFAULTS["dining"],

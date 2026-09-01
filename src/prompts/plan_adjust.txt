@@ -13,6 +13,7 @@ Trip context:
 - {schedule_flexibility}
 - Stops in the day: {stop_count}
 - Transit: {transit}
+- Travel limit: {travel_limit}
 - Accommodation: {accommodation}
 - Dining preference: {dining}
 - Preferred lunch time: {preferred_lunch_time}
@@ -35,6 +36,7 @@ Rules:
 - Never introduce a second meal stop, or remove the only one, that count is fixed by the parent's dining choice, not something to adjust.
 - Keep every nudge grounded: moving a stop by tens of minutes to smooth the day is normal and expected; moving it by hours is not, that's a different day, not an adjustment. A meal stop should still land somewhere a real lunch would.
 - A venue must actually be open at whatever time you place a stop.
+- Respect the travel limit above. Each candidate lists how far it is from the accommodation; a stop's neighbours are the stops either side of it in the draft, and the last stop of the day also has to get back.
 - Every "new_venue_id" you use must be distinct, and must not duplicate a venue already elsewhere in the day.
 - Give each edit a short, one-sentence "reason" that names the actual problem it fixes or the actual note it's applying.
 - If nothing needs to change, return an empty "edits" list rather than forcing one.

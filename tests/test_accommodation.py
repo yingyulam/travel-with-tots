@@ -4,10 +4,11 @@ Until this, `accommodation` was free text and the planner could not measure
 from it: the first stop was chosen from nowhere and the last was chosen without
 knowing anyone had to get home. A pin makes both ends real.
 
-The anchor **sorts**, it never filters, which is the same rule the rest of the
-planner follows. A hotel on the far side of the city must not be able to empty
-a day, so every test here that checks the anchor changed a plan is paired with
-one checking the day still has its stops.
+The anchor **filters**. It used to sort, and a sort cannot refuse: staying at
+Richmond Centre on foot, every venue tied at "out of reach" and the curator's
+ranking came back untouched, so the first stop of the morning was Stanley Park,
+20km and about four hours' walk away. A pin that leaves nothing in range now
+empties the day and says why, which is a worse-looking plan and a true one.
 """
 
 import unittest
@@ -98,26 +99,53 @@ class ThePinChoosesWhereTheDayHappensTest(unittest.TestCase):
         self.assertLess(home_km, 1.5)
 
 
-class ThePinCannotEmptyADayTest(unittest.TestCase):
-    """A sort, never a filter. This project has twice shipped a filter whose
-    fallback only fired when nothing at all qualified."""
+class APinOutOfRangeEmptiesTheDayTest(unittest.TestCase):
+    """The reversal, asserted from both sides.
 
-    def test_a_pin_nowhere_near_anything_still_plans_a_full_day(self):
-        # Middle of the Strait of Georgia: every venue is out of reach.
+    An empty day is the right answer when a parent on foot is staying nowhere
+    near anything, and it is only the right answer if they are told. So each
+    test that checks a stop was refused is paired with one checking the plan
+    says so.
+    """
+
+    def test_a_pin_nowhere_near_anything_plans_nothing(self):
+        # Middle of the Strait of Georgia: every venue is hours away.
         plan = _plan(accommodation_lat=49.30, accommodation_lng=-124.50)
+        self.assertEqual(_names(plan), [])
+
+    def test_and_says_why_rather_than_returning_a_blank_day(self):
+        plan = _plan(accommodation_lat=49.30, accommodation_lng=-124.50)
+        self.assertIn("could not build a day", plan.blurb)
+        self.assertIn("20 minutes on foot", plan.blurb)
+
+    def test_the_parent_can_ask_for_places_further_away(self):
+        # Their decision, and only theirs. Nothing sets beyond_budget for them.
+        plan = _plan(accommodation_lat=49.30, accommodation_lng=-124.50,
+                     beyond_budget=True)
         self.assertEqual(len(_names(plan)), 4)
 
-    def test_a_far_pin_returns_the_same_number_of_stops(self):
+    def test_a_reachable_pin_still_returns_a_full_day(self):
+        # The constraint bites where it should and nowhere else: this pin has
+        # its own cluster in range.
         with_pin = _plan(accommodation_lat=SOUTH_EAST[0],
                          accommodation_lng=SOUTH_EAST[1])
         self.assertEqual(len(_names(with_pin)), len(_names(_plan())))
 
-    def test_venues_without_coordinates_are_not_penalised(self):
-        # Missing data must not push a venue to the back: the cost of being
-        # wrong is a longer walk, not a wrong answer.
+    def test_a_venue_without_coordinates_cannot_be_called_close(self):
+        # The opposite of the old rule, deliberately. As a ranking hint "no
+        # coordinates" could mean "no opinion"; as a filter it would mean
+        # "always allowed", exempting exactly the venues nobody can place.
         pool = [_venue("No coordinates", None, None, 0)] + POOL
         plan = _plan(pool=pool, accommodation_lat=SOUTH_EAST[0],
                      accommodation_lng=SOUTH_EAST[1])
+        self.assertNotIn("No coordinates", _names(plan))
+
+    def test_it_comes_back_once_the_limit_is_lifted(self):
+        # Guards the test above: it has to fail for the reason it claims, not
+        # because the fixture venue was never eligible.
+        pool = [_venue("No coordinates", None, None, 0)] + POOL
+        plan = _plan(pool=pool, accommodation_lat=SOUTH_EAST[0],
+                     accommodation_lng=SOUTH_EAST[1], beyond_budget=True)
         self.assertIn("No coordinates", _names(plan))
 
 
@@ -126,7 +154,8 @@ class TheLeaveNoteTest(unittest.TestCase):
         plan = _plan(accommodation_lat=SOUTH_EAST[0], accommodation_lng=SOUTH_EAST[1])
         leave = next(s for s in plan.stops if s["kind"] == "leave")
         self.assertIn("Leave Where we stay by", leave["reason"])
-        self.assertRegex(leave["reason"], r"\d+\.\d km away\.")
+        self.assertRegex(leave["reason"],
+                         r"About \d+ min on foot \(\d+\.\d km\) away\.")
 
     def test_it_no_longer_calls_itself_a_placeholder(self):
         plan = _plan(accommodation_lat=SOUTH_EAST[0], accommodation_lng=SOUTH_EAST[1])
@@ -199,9 +228,9 @@ class ThePlanRouteCarriesThePinTest(unittest.TestCase):
         seen = {}
         real = plan_module.generate_plans
 
-        def spy(venues, inputs):
+        def spy(venues, inputs, **kwargs):
             seen.update(inputs)
-            return real(venues, inputs)
+            return real(venues, inputs, **kwargs)
 
         with mock.patch.object(plan_module, "generate_plans", spy), \
              mock.patch.object(plan_module, "PlanningAgent") as agent:

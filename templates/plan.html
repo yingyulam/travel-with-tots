@@ -189,6 +189,31 @@
       </div>
     </fieldset>
 
+    <fieldset class="group">
+      {# The limit is per leg, not per day, and the legend says so: "40 minutes"
+         read as a daily total is a very different day from the one we plan. #}
+      <legend>How long are you willing to travel to any one stop?</legend>
+      <div class="chips">
+        {% for key, label in walk_budget_options %}
+        <label class="chip">
+          <input type="radio" name="walk_budget" value="{{ key }}"
+                 {% if form.walk_budget == key %}checked{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <span class="field-hint">Each hop, including getting back to where you're
+        staying. We'll leave a stop out rather than send you further.</span>
+      {# Only ever ticked by the parent, and only worth showing once a plan has
+         told them what the limit left out. #}
+      {% if form.beyond_budget %}
+      <label class="chip">
+        <input type="checkbox" name="beyond_budget" checked>
+        <span>Including places further away</span>
+      </label>
+      {% endif %}
+    </fieldset>
+
     <label class="field field-full">
       <span>How many places would you like to visit? <em>(not counting lunch)</em></span>
       <input type="number" name="stop_count" min="1" max="6" value="{{ form.stop_count }}">
@@ -259,6 +284,15 @@
     Checked against {{ hours_report.day_type }} hours for {{ form.trip_date }}:
     {%- if hours_report.replaced %} {{ hours_report.replaced|length }} swapped{% endif %}
     {%- if hours_report.dropped %}{{ ',' if hours_report.replaced }} {{ hours_report.dropped|length }} left free{% endif %}.
+  </p>
+  {% endif %}
+  {# The parent's own decision, offered only once a plan has told them what
+     their limit cost them. Attached to the trip form above, so pressing it
+     regenerates the same day with the limit lifted. #}
+  {% if out_of_range and not form.beyond_budget %}
+  <p class="empty-plan">
+    <button type="submit" form="plan-form" name="beyond_budget" value="1"
+            class="cta-secondary cta-inline">Include places further away</button>
   </p>
   {% endif %}
   <p class="picker-hint">Tap “Start this day” when you’re ready.</p>

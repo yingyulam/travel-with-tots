@@ -200,27 +200,41 @@ and restful places are preferred during it. The app does not pretend to know
 where your child will actually fall asleep, which is what the live timeline is
 for.
 
-**How you travel decides how far apart stops can sit.** The form asks how you
-get *between* stops. Everyone is assumed to have a stroller once they are
-there.
+**How far you are willing to travel is a limit, not a preference.** The form
+asks how you get *between* stops and how long you will spend getting to any one
+of them: 20, 30 or 40 minutes, 20 by default. Everyone is assumed to have a
+stroller once they are there.
 
-| Getting around                | Stops sit within |
-| ----------------------------- | ---------------- |
-| On foot                       | 1.5 km           |
-| Public transit                | 5 km             |
-| Car, taxi or ride-share       | 8 km             |
+The limit applies to **each leg**, not to the day's total, and to **every** leg
+including the journey back to where you are staying. A day of four fifteen
+minute walks is fine; one thirty minute walk inside a twenty minute limit is
+not.
 
-There is no travel-time estimate, on purpose. Real durations need routes,
-schedules and transfers. The app tells you the distance and trusts you to judge
-the rest.
+| Getting around          | 20 minutes reaches about |
+| ----------------------- | ------------------------ |
+| On foot                 | 1.6 km                   |
+| Public transit          | 5.3 km                   |
+| Car, taxi or ride-share | 8 km                     |
+
+These are estimates, and labelled as estimates wherever you see one: a straight
+line scaled up by 1.35 for how streets actually run, divided by a typical speed
+for that mode. Not a route. When the Google Routes API is enabled on the
+project, real route times replace them and nothing else has to change.
+
+**Nothing widens the limit for you.** If there is not enough within it, the day
+comes back shorter, the plan says which stops it left out and why, and there is
+a button to include places further away. Pressing it is your decision.
 
 **Your hotel anchors both ends.** Pin it and the first stop is chosen from where
-you wake up, the last from where you have to get back to. Skip it and the day
-still plans, just without that anchor.
+you wake up, the last from somewhere you can get home from. Skip it and the day
+still plans on the legs between stops, and says the journey there and back could
+not be checked.
 
-**Preferences nudge, they never exclude.** Interests, shelter, nap-friendliness
-and distance all reorder the options rather than narrowing them, so a preference
-can never leave you with an empty day.
+**Other preferences nudge, they never exclude.** Interests, shelter and
+nap-friendliness reorder the options rather than narrowing them, so a preference
+can never leave you with an empty day. Travel time is the exception, and it is
+deliberate: staying in Richmond with no car, the old ranking handed back Stanley
+Park, four hours away on foot, as the first stop of the morning.
 
 **A place with unknown hours is never scheduled.** If the app cannot tell
 whether somewhere is open on your date, it stays out. On statutory holidays,

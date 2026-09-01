@@ -10,11 +10,13 @@ from dotenv import load_dotenv
 
 from . import db, rag
 from .data_loader import is_nap_friendly, maps_url
+from .geo import leg_minutes, walk_budget_min
 from .interactions import SITUATION_LABELS
+from .form_helpers import normalise_transit
 from .itinerary import (
-    DEFAULT_LUNCH_TARGET_MIN, LUNCH_SEARCH_RADIUS_MIN, display_to_min,
-    hhmm_to_min, min_to_display, stop_duration, transit_buffer_min,
-    venue_open_for,
+    DEFAULT_LUNCH_TARGET_MIN, LUNCH_SEARCH_RADIUS_MIN, MODE_WORD,
+    display_to_min, hhmm_to_min, min_to_display, stop_duration,
+    transit_buffer_min, venue_open_for,
 )
 
 load_dotenv()
@@ -240,7 +242,15 @@ def reload_plan_adjust_prompt() -> None:
     _PLAN_ADJUST_TEMPLATE = None
 
 
-def _format_venue_candidates(venues: list) -> str:
+def _format_venue_candidates(venues: list, home=None, mode="walk") -> str:
+    """The venues the adjuster may swap in, one block each.
+
+    Each carries how long it is from where the family is staying, when that can
+    be measured. Without it the adjuster is asked to respect a travel limit it
+    has no way to see, and a swap that reads better on paper lands a venue an
+    hour away -- which the caller then has to throw the whole adjustment out for
+    (see itinerary.over_budget).
+    """
     if not venues:
         return "No venues matched this trip's destination, age, and features."
     blocks = []
@@ -255,8 +265,37 @@ def _format_venue_candidates(venues: list) -> str:
             f"Hours: {v['open_time'] or '?'}-{v['close_time'] or '?'}\n"
             f"Nap-friendly: {'yes' if is_nap_friendly(v) else 'no'} | "
             f"Can eat here: {'yes' if v.get('can_eat') else 'no'}\n"
-            f"Features: {', '.join(tags) or 'none'}")
+            f"Features: {', '.join(tags) or 'none'}"
+            + _from_home(v, home, mode))
     return "\n\n".join(blocks)
+
+
+def _travel_limit_line(walk_budget, transit, beyond_budget):
+    """What the parent said about travel between stops, for the prompt.
+
+    Stated as the hard rule it is. The draft was built inside this limit and the
+    caller re-checks the day afterwards, so an adjustment that breaks it is
+    discarded whole -- saying so here is what makes that outcome rare rather
+    than routine.
+    """
+    if beyond_budget:
+        return ("The parent has asked to see places beyond their usual travel "
+                "limit, so there is no limit on this day.")
+    minutes = walk_budget_min(walk_budget)
+    return (f"No leg of this day may take more than {minutes} minutes "
+            f"{MODE_WORD.get(normalise_transit(transit), '')}, including the "
+            "journey back to the accommodation at the end. A swap that puts a "
+            "stop further away than that will be rejected and the whole "
+            "adjustment thrown out, so leave a stop alone unless a candidate is "
+            "both a better fit and no further.")
+
+
+def _from_home(venue, home, mode):
+    minutes = leg_minutes(home, venue, mode)
+    if minutes is None:
+        return "\nTravel from the accommodation: unknown"
+    word = MODE_WORD.get(mode, mode)
+    return f"\nTravel from the accommodation: about {minutes:.0f} min {word}"
 
 
 # A reasoning model puts its working in the reply when the provider does not
@@ -579,7 +618,8 @@ class PlanningAgent:
     def __init__(self, model: str = DEFAULT_MODEL):
         self.model = model if model in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
 
-    def _build_adjust_messages(self, draft_stops, candidates, ctx):
+    def _build_adjust_messages(self, draft_stops, candidates, ctx,
+                                home=None, mode="walk"):
         global _PLAN_ADJUST_TEMPLATE
         if _PLAN_ADJUST_TEMPLATE is None:
             _PLAN_ADJUST_TEMPLATE = _load_plan_adjust_template()
@@ -599,14 +639,17 @@ class PlanningAgent:
             .replace("{nap_notes}", ctx["nap_notes"] or "none")
             .replace("{extra_notes}", ctx["extra_notes"] or "none")
             .replace("{draft_stops}", _format_draft_stops_for_prompt(draft_stops))
-            .replace("{candidate_venues}", _format_venue_candidates(candidates))
+            .replace("{travel_limit}", ctx.get("travel_limit", ""))
+            .replace("{candidate_venues}",
+                     _format_venue_candidates(candidates, home, mode))
         )
         return [{"role": "system", "content": prompt}]
 
     def adjust_plan(self, draft_plan, *, destination, age_months, wake_up, bedtime,
                      stop_count, dining, naps=None, preferred_lunch_time="", nap_notes="",
                      extra_notes="", transit=None, accommodation="", features=None,
-                     strict_schedule=False, transit_nap=""):
+                     strict_schedule=False, transit_nap="", home=None,
+                     walk_budget=None, beyond_budget=False):
         """Given an already-valid rule-based draft, proposes a short list of
         edits (never a full regeneration) that smooth the day's flow and/or
         apply nap_notes/extra_notes, then applies them. Returns
@@ -626,9 +669,13 @@ class PlanningAgent:
                    strict_schedule=strict_schedule, transit_nap=transit_nap,
                    activity_duration_min=stop_duration("activity"),
                    meal_duration_min=stop_duration("meal"),
-                   transit_buffer_min=transit_buffer_min(transit))
+                   transit_buffer_min=transit_buffer_min(transit),
+                   travel_limit=_travel_limit_line(walk_budget, transit,
+                                                   beyond_budget))
 
-        messages = self._build_adjust_messages(draft_stops, candidates, ctx)
+        messages = self._build_adjust_messages(draft_stops, candidates, ctx,
+                                               home=home,
+                                               mode=normalise_transit(transit))
         cleaned, elapsed, input_tokens, output_tokens = _call_and_validate_edits(
             messages, self.model, draft_stops, by_id, ctx, PlanningAgentError)
 

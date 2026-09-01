@@ -16,28 +16,103 @@ EARTH_RADIUS_KM = 6371.0
 METRO_VANCOUVER_BOUNDS = (48.9, 49.6, -123.5, -122.5)
 
 
-# How far apart two consecutive stops may reasonably sit, by how the family gets
-# between them. A judgment about a day out with a small child, not a routing
-# calculation: no schedules, no transfers, no waiting, and no attempt to model
-# that a SkyTrain covers more ground than a bus.
-#
-# 1.5km on foot is about 26 minutes pushing a stroller, which fits even the
-# tightest gap the nap anchoring produces -- so getting the selection right
-# leaves the clock alone. See itinerary._pick.
+# How long a family will spend getting from one stop to the next, and how far
+# that is. A budget in minutes rather than kilometres because minutes are what a
+# parent can actually judge: "1.5 km" means nothing standing on a pavement with a
+# stroller, and the comfortable limit differs enormously between families.
+WALK_BUDGET_OPTIONS = (20, 30, 40)
+DEFAULT_WALK_BUDGET_MIN = 20
+
+# Pushing a stroller, with a small child, stopping. Not a brisk adult pace.
+WALK_SPEED_KMH = 4.8
+
+# Effective door-to-door speeds, waiting and parking included. Rough on purpose:
+# these turn a straight line into a plausible number of minutes, and the moment
+# the Routes API is enabled a real route replaces them (see estimate_minutes).
+MODE_SPEED_KMH = {"walk": WALK_SPEED_KMH, "transit": 16.0, "car": 24.0}
+
+# Street distance divided by straight-line distance, for an ordinary city grid.
+# Walking distance is always at least the straight line, so haversine alone
+# flatters every venue; 1.35 is the usual urban figure and keeps the estimate on
+# the honest side of the real walk.
+DETOUR_FACTOR = 1.35
+
+def walk_budget_min(value):
+    """A walking budget the form offered, or the default.
+
+    Client-supplied, so an unrecognised value is the default rather than a
+    number nobody chose: a hand-made post asking for 500 minutes is not a
+    preference, and a trip saved before this control existed has none at all.
+    """
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_WALK_BUDGET_MIN
+    return minutes if minutes in WALK_BUDGET_OPTIONS else DEFAULT_WALK_BUDGET_MIN
+
+
+def route_km(a_lat, a_lng, b_lat, b_lng):
+    """Estimated street distance, from the straight line.
+
+    An estimate, and labelled one wherever it reaches a parent. It is the lower
+    bound scaled up rather than a route: the Routes API is not enabled on this
+    project, so nothing here can ask how the pavements actually run. When it is
+    enabled this is the function a real matrix lookup replaces, and every caller
+    keeps working.
+    """
+    return haversine_km(a_lat, a_lng, b_lat, b_lng) * DETOUR_FACTOR
+
+
+def estimate_minutes(a_lat, a_lng, b_lat, b_lng, mode="walk"):
+    """How long that leg takes, in minutes, for one transport mode."""
+    speed = MODE_SPEED_KMH.get(mode, WALK_SPEED_KMH)
+    return route_km(a_lat, a_lng, b_lat, b_lng) / speed * 60
+
+
+def leg_minutes(origin, destination, mode="walk"):
+    """Minutes between two points, or None when either has no coordinates.
+
+    None rather than a number, and rather than zero: "we cannot measure this"
+    has to be distinguishable from "this is close", because a filter reading a
+    missing coordinate as nearby is how an unplaceable venue ends up in a day.
+    """
+    for point in (origin, destination):
+        if point is None:
+            return None
+        if point.get("lat") is None or point.get("lng") is None:
+            return None
+    return estimate_minutes(origin["lat"], origin["lng"],
+                            destination["lat"], destination["lng"], mode)
+
+
+def within_budget(origin, destination, budget_min, mode="walk"):
+    """Whether that leg fits the budget. Unmeasurable legs do not.
+
+    The opposite of what within_reach did. As a ranking hint, "no coordinates"
+    could safely mean "no opinion"; as a filter it would mean "always allowed",
+    so the four venues with no coordinates would be the only ones exempt from
+    the constraint. Out, and named separately to the parent.
+    """
+    minutes = leg_minutes(origin, destination, mode)
+    return minutes is not None and minutes <= budget_min
+
+
+# How far to look around a point for somewhere to eat, by how the family is
+# getting there. A radius for the *nearby search*, not a constraint on the day:
+# the planner works in minutes now (see within_budget), and these stay in
+# kilometres because a search radius is all they were ever used for.
 REACH_KM = {"walk": 1.5, "transit": 5.0, "car": 8.0}
 
-# An unrecognised mode -- a trip saved before this existed, a hand-made post --
-# takes the tightest reach. A clustered day is fine for a family with a car;
-# a spread-out one is not fine for a family on foot.
+# An unrecognised mode takes the tightest radius. A wide search is fine for a
+# family with a car; it is not fine for a family on foot.
 DEFAULT_REACH_KM = REACH_KM["walk"]
 
 
 def reach_km(mode):
-    """How far the next stop may reasonably be, for one transport mode.
+    """How far to search around a point, for one transport mode.
 
     Tolerates the old list shape, taking the widest: `trips.transit` held a JSON
-    array before the form became one question, and generate_plans can be handed
-    a dict directly by a component or a test. Ticking several always meant
+    array before the form became one question. Ticking several always meant
     "take the widest", so that is what a legacy list resolves to.
     """
     if isinstance(mode, (list, tuple, set)):
@@ -46,12 +121,15 @@ def reach_km(mode):
 
 
 def within_reach(venue, anchor, reach):
-    """Whether `venue` is close enough to `anchor` to be the next stop.
+    """Whether `venue` is inside a search radius around `anchor`.
 
-    True when either coordinate is missing, on purpose. Penalising a venue for
-    incomplete data is the wrong direction: the cost of getting this wrong is a
-    longer walk, not a wrong answer, and four curated venues have no coordinates
-    yet -- including both Granville Island markets.
+    True when either coordinate is missing, on purpose, and only safe because
+    this ranks a nearby search: four curated venues have no coordinates yet,
+    including both Granville Island markets, and leaving them out of a lunch
+    list costs more than including one that turns out to be a little far.
+
+    Not the planner's rule. There, "no coordinates" cannot mean "always
+    allowed" -- see within_budget.
     """
     if anchor is None:
         return True

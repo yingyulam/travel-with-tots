@@ -13,7 +13,7 @@ from ..agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
 from ..data_loader import get_venues
 from ..components.validate_hours import enforce
 from ..dates import parse_date
-from ..itinerary import generate_plans
+from ..itinerary import generate_plans, over_budget, travel_rules
 
 
 def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedtime="20:00",
@@ -21,7 +21,8 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
                preferred_lunch_time="", nap_notes="", extra_notes="",
                transit=None, accommodation="", accommodation_lat=None,
                accommodation_lng=None, strict_schedule=False,
-               interest=None, transit_nap="", model=DEFAULT_MODEL) -> dict:
+               interest=None, transit_nap="", walk_budget=None,
+               beyond_budget=False, model=DEFAULT_MODEL) -> dict:
     """Build a full day plan: a rule-based draft, then AI-smoothed. Always
     returns a usable plan -- if the AI step fails, falls back to the
     unadjusted draft rather than raising, so every caller gets that
@@ -46,6 +47,13 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
         # prompt but not the draft, so the mode a parent picked was inert on
         # the one plan they actually see.
         "transit": transit,
+        # How long the parent is willing to travel to any one stop, and whether
+        # they have since asked for places beyond that. Both reach the draft,
+        # where they decide which venues are eligible at all -- the mode used to
+        # be a ranking hint, which is how a family on foot at Richmond Centre
+        # was sent to Stanley Park, 20km away.
+        "walk_budget": walk_budget,
+        "beyond_budget": beyond_budget,
         # Where they are staying, when they pinned it on the map: the first
         # stop is chosen from here and the last is chosen to get back to it.
         "accommodation_lat": accommodation_lat,
@@ -55,7 +63,9 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
     # resolved once here rather than threaded through the planner.
     on_date = parse_date(trip_date)
     venues = get_venues(on_date=on_date)
-    plan = generate_plans(venues, inputs)[0]
+    out_of_range = []
+    plan = generate_plans(venues, inputs, out_of_range=out_of_range)[0]
+    draft_stops = list(plan.stops)
     adjusted = True
     try:
         adjustment = PlanningAgent(model).adjust_plan(
@@ -65,8 +75,22 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
             nap_notes=nap_notes, extra_notes=extra_notes, transit=transit,
             accommodation=accommodation, features=features, strict_schedule=strict_schedule,
             transit_nap=transit_nap,
+            # The same limit the draft was built inside, and the same anchor, so
+            # the adjuster is working to the rule its output is checked against.
+            home=travel_rules(inputs)[0], walk_budget=walk_budget,
+            beyond_budget=beyond_budget,
         )
         plan.stops = adjustment["stops"]
+        # The adjuster may improve the day. It may not break the one promise the
+        # parent was given: it reorders and swaps stops, and it has no way to
+        # measure a leg, so a smoother-looking day can quietly put a venue an
+        # hour's walk from the one before it. The draft is known to fit.
+        too_far = over_budget(plan.stops, inputs)
+        if too_far:
+            print(f"Plan adjustment discarded, {too_far} leg(s) over the "
+                  "travel limit; showing the unadjusted draft")
+            plan.stops = draft_stops
+            adjusted = False
     except (PlanningAgentError, requests.exceptions.RequestException, KeyError) as e:
         print(f"Plan adjustment skipped, showing the unadjusted draft: {e}")
         adjusted = False
@@ -88,4 +112,7 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
     # adjuster agreeing with the draft, which is a good outcome and a different
     # one from the call failing, and only `adjusted` can tell those apart.
     result["changed"] = any(stop.get("adjusted") for stop in result["stops"])
+    # Which slots the travel limit emptied, so the page can explain and offer
+    # the parent the choice rather than handing back a shorter day in silence.
+    result["out_of_range"] = out_of_range
     return result

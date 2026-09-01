@@ -78,9 +78,25 @@ which changes how much the planner leans on a nap-friendly venue.
 A parent can pin where they're staying on a map, and the day is then
 anchored to it: the first stop is chosen near the accommodation rather
 than wherever happens to score well, so the morning doesn't start with a
-long trip across the city. They can also say how they're getting between
-stops (car or ride-share, public transit, on foot), and the sequencing
-takes that into account.
+long trip across the city. They also say how they're getting between
+stops (car or ride-share, public transit, on foot) and how long they're
+willing to spend getting to any one stop: 20, 30 or 40 minutes, with 20
+as the default.
+
+That travel time is a hard limit, not a preference. It applies to each
+leg on its own rather than to the day's total, and to every leg
+including the journey back to the accommodation at the end, so the last
+stop of the day is somewhere the family can actually get home from. A
+day of four short walks is fine; a single walk over the limit is not.
+The travel time shown for each leg is an estimate from the straight-line
+distance rather than a real route.
+
+If there isn't enough within the limit, the plan comes back shorter
+rather than reaching further. It names how many stops it left out and
+why, and offers a button to include places further away. Nothing widens
+the limit on the parent's behalf. Pinning an accommodation outside Metro
+Vancouver is allowed, and the plan says plainly that very little will be
+within reach of it.
 
 One plan comes back per request, built from real venues with real
 opening hours. A rule-based draft is written first, then an AI pass
@@ -168,6 +184,7 @@ what's needed.
 - Navigation: hands off to Google Maps, no in-app turn-by-turn
 - Dining styles: "dine out" (a midday food stop of about 1.5 hours, at a preferred time if given) or "on the go" (no dedicated food stop)
 - Getting around: car or ride-share, public transit, or on foot
+- Travel time between stops: 20, 30 or 40 minutes, default 20, applied to each leg including the journey home
 - Accommodation: optional, and pinnable on a map; the day is anchored to it when given
 - Ways to reach a task: the planning form, the in-trip buttons, or the chat
 - Parent reports on venue features: reviewed by an admin before anyone else sees them
