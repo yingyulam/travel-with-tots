@@ -14,9 +14,15 @@ import app as app_module
 from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 
 # Deliberately not DEFAULT_MODEL. A test that "picks" the default cannot tell a
-# choice being honoured from a choice being dropped, and this file used to pick
-# gpt-4o-mini, which became the default underneath it.
-PICKED = "nvidia/nemotron-3-super-120b-a12b:free"
+# choice being honoured from a choice being dropped. This has now swapped twice
+# underneath itself -- it was gpt-4o-mini until that became the default, then
+# the free model until *that* did -- which is what PickedIsNotTheDefaultTest
+# below is for.
+PICKED = "openai/gpt-4o-mini"
+
+# The two operations that keep gpt-4o-mini whatever the parent picks. The same
+# string as PICKED today, and kept a separate name because it is a separate
+# claim: one is "a choice travels", the other is "this one never changes".
 PINNED = "openai/gpt-4o-mini"
 DRAFT = {"label": "L", "blurb": "b", "from_time": "12:00", "stops": []}
 

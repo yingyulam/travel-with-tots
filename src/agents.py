@@ -22,17 +22,24 @@ from .itinerary import (
 load_dotenv()
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Paid, and cheap enough that this is not a real cost: a chat turn runs about
-# a hundredth of a cent. It used to be `openrouter/free`, and the reason for
-# changing is latency rather than quality. Free models **queue** under load,
-# for minutes at a time, and a queued call is indistinguishable from a hung
-# one from a browser's point of view: the deployed chatbot sat on "Thinking…"
-# until the proxy gave up and answered with an error page.
+# What the parent gets unless they pick otherwise, and so what every chat turn,
+# plan and replan runs on. Free, because this is a student project paying its
+# own bills and those three are the whole of the traffic.
 #
-# It also supports structured outputs, which the plan adjuster and the form
-# extractor depend on. The free models are still selectable in the widget --
-# see ALLOWED_CHAT_MODELS -- so a free one is a choice rather than the default.
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+# The cost is latency, and it is real. Free models **queue** under load, for
+# minutes at a time, and a queued call is indistinguishable from a hung one
+# from a browser's point of view. They also return the occasional 200 whose
+# body is anti-idle whitespace and no completion, which is what
+# MAX_MALFORMED_BODY_RETRIES below exists for. Both fail soft: a plan falls
+# back to its unadjusted draft and a chat turn says it could not answer, rather
+# than the page breaking.
+#
+# gpt-4o-mini is still one tap away in the widget's dropdown, and remains
+# pinned for the two operations that cannot tolerate a queue or a malformed
+# body: form extraction and venue proposing, which need structured outputs and
+# whose failure mode is "no form at all" (see extract_form.EXTRACTOR_MODEL and
+# propose_venues.CURATOR_MODEL).
+DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 # One free and one paid, and the set is short on purpose. `/chatbot` is public
 # and does not ask who is calling before honouring a model, so this set is the
