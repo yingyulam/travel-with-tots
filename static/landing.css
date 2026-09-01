@@ -18,9 +18,13 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
+  /* Ours, served from this folder, rather than hotlinked from Unsplash:
+     somebody else's URL on the first page anyone sees is a page that can break
+     without a commit here. Relative to this stylesheet, so it needs no
+     knowledge of the mount path. */
   background:
     linear-gradient(rgba(30, 60, 90, 0.55), rgba(30, 60, 90, 0.55)),
-    url("https://images.unsplash.com/photo-1741990811736-81fd08f449e5?fm=jpg&q=80&w=2000")
+    url("cover_pic.jpeg")
       center/cover no-repeat;
   color: #fff;
   padding: 2rem;
