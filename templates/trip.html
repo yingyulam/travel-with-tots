@@ -118,6 +118,18 @@
         <button type="button" class="tap-btn" id="replan-confirm-yes">Yes, replan</button>
       </div>
     </div>
+    {# What accepting a replan would actually do. Shown before anything is
+       applied: the timeline above switches to the proposal so it can be read
+       in full, and this says what differs, because two timelines side by side
+       is a spot-the-difference puzzle at the worst possible moment. #}
+    <div class="nap-prompt" id="replan-proposal" hidden>
+      <p class="panel-title" id="proposal-summary"></p>
+      <ul class="proposal-changes" id="proposal-changes"></ul>
+      <div class="chips">
+        <button type="button" class="tap-btn" id="proposal-discard">Discard</button>
+        <button type="button" class="tap-btn" id="proposal-accept">Accept these changes</button>
+      </div>
+    </div>
   </div>
 
   <!-- 5. Need-nearby panel -->
@@ -597,11 +609,16 @@
     dayPicker.querySelectorAll(".plan-tab").forEach((tab) => {
       tab.addEventListener("click", () => {
         activeDay = Number(tab.dataset.day);
-        // Back to that day's original: "Updated" belongs to the day it was
-        // computed for, and carrying the index across would show day three's
-        // original under a tab labelled Updated.
-        active = 0;
+        const day = DAYS[activeDay];
+        // Whatever that day settled on, not whichever tab the last day was
+        // showing: carrying the index across would put day three's original
+        // under a pill labelled Updated.
+        active = day.pending ? 1 : (day.accepted || 0);
         status.hidden = true;
+        // A proposal belongs to its day and survives being left. Leaving one
+        // and coming back must not have quietly accepted or lost it.
+        if (day.pending) showProposal(day.plans[1]);
+        else proposalPanel.hidden = true;
         renderDayTabs();
         renderTabs();
         renderTimeline();
@@ -610,10 +627,20 @@
   }
 
   const SLOT_LABELS = ["Original", "Updated"];
+
+  // Slot 1 is a proposal until the day accepts it, and the tab has to say so:
+  // a pill reading "Updated" beside a day nobody has agreed to is the whole
+  // misunderstanding this stage exists to prevent.
+  function slotLabel(index) {
+    if (index === 1 && DAYS[activeDay].pending) return "Proposed";
+    return SLOT_LABELS[index];
+  }
+
   function renderTabs() {
     picker.replaceChildren(...SLOT_LABELS.flatMap((label, i) => {
       if (!plans()[i]) return [];
-      const tab = el("button", `plan-tab ${i === active ? "is-active" : ""}`, label);
+      const tab = el("button", `plan-tab ${i === active ? "is-active" : ""}`,
+                     slotLabel(i));
       tab.type = "button";
       tab.dataset.index = i;
       return [tab];
@@ -642,8 +669,11 @@
 
   // Re-plan the rest of the day (rule-based), then let the AI adjuster
   // smooth it, in one request -- same draft-then-adjust pattern the
-  // planning page uses. Always installs the result as the single
-  // "Updated" version. minutes is the parent-entered duration (nap
+  // planning page uses. The result is a *proposal*: it goes into slot 1 so
+  // it can be read in full, and stays there until the parent accepts or
+  // discards it. Nothing else in the trip moves in the meantime, which is
+  // what makes replanning a later day safe to offer afterwards rather than
+  // something that has already happened. minutes is the parent-entered duration (nap
   // length / how far behind); interest is the kind of place the parent
   // picked for "change_interest"; note is an optional one-off addition to
   // extra_notes, never stored back into tripData. "It's raining" needs no
@@ -686,17 +716,64 @@
       const newPlan = await res.json();
       if (!res.ok) throw new Error(newPlan.error || "Something went wrong.");
       plans()[1] = newPlan;
+      DAYS[activeDay].pending = true;
       active = 1;
       replanNoteText.value = "";
       renderTabs();
       renderTimeline();
+      showProposal(newPlan);
       const time = newPlan.from_time || nowDisplay();
       logAdjustment(newPlan, "replan");
-      status.textContent = `Updated ready from ${time}. Use the tabs above to compare with the original.`;
+      status.textContent = `Proposed from ${time}. Nothing has changed yet.`;
     } catch (e) {
       status.textContent = e.message || "Couldn't re-plan right now.";
     }
   }
+
+  // A replan is a proposal until it is accepted, and these three functions are
+  // the whole of that. `pending` lives on the day rather than on the page, so
+  // switching to another day and back does not quietly accept it.
+  const proposalPanel = document.getElementById("replan-proposal");
+  const proposalSummary = document.getElementById("proposal-summary");
+  const proposalChanges = document.getElementById("proposal-changes");
+
+  function showProposal(plan) {
+    const changes = plan.changes || [];
+    proposalSummary.textContent = plan.change_summary
+      || (changes.length ? "Here is what would change:" : "Nothing would change.");
+    proposalChanges.replaceChildren(...changes.map((change) => {
+      const item = el("li", `proposal-change is-${change.kind}`, change.text);
+      return item;
+    }));
+    proposalPanel.hidden = false;
+  }
+
+  function acceptProposal() {
+    const day = DAYS[activeDay];
+    day.pending = false;
+    // The accepted version is what gets saved and what a later day would be
+    // replanned around, whichever tab happens to be on screen afterwards.
+    day.accepted = 1;
+    proposalPanel.hidden = true;
+    renderTabs();
+    status.hidden = false;
+    status.textContent = "Updated. Your other days are unchanged.";
+  }
+
+  function discardProposal() {
+    const day = DAYS[activeDay];
+    day.pending = false;
+    day.plans.length = 1;   // drop the proposal; the original was never touched
+    active = 0;
+    proposalPanel.hidden = true;
+    renderTabs();
+    renderTimeline();
+    status.hidden = false;
+    status.textContent = "Discarded. Your day is as it was.";
+  }
+
+  document.getElementById("proposal-accept").addEventListener("click", acceptProposal);
+  document.getElementById("proposal-discard").addEventListener("click", discardProposal);
 
   // The chat bubble can collect a situation too, and hands it here rather
   // than replanning itself: this page holds the plan, its versions and the
@@ -1009,12 +1086,11 @@
     saveTripForm.addEventListener("submit", () => {
       // Every day of the visit, each at whichever version is showing, so
       // saving from day three does not save only day three.
-      // Each day at whichever version is showing, carrying its own date, so
-      // saving from day three saves three dated days rather than three copies
-      // of the first one.
+      // Each day at the version it has accepted, carrying its own date. Not
+      // the version on screen: reading a proposal is not agreeing to it, and
+      // saving while one is open must not smuggle it in.
       document.getElementById("save-plan-field").value = JSON.stringify(
-        DAYS.map((d, i) => ({ ...d.plans[i === activeDay ? active : 0],
-                              trip_date: d.date })));
+        DAYS.map((d) => ({ ...d.plans[d.accepted || 0], trip_date: d.date })));
     });
   }
 </script>

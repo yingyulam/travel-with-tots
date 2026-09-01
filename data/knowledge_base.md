@@ -148,6 +148,18 @@ nap schedules and stamina differ per child.
 
 ## Re-planning in detail
 
+A re-plan is a proposal, not something that happens to the day. When a
+parent picks a situation, the app builds the revised day and shows it on
+a tab labelled "Proposed" beside the original, along with a short list in
+plain words of what would differ: which stop replaces which, what is
+dropped, what is added, and what moves to a new time. Nothing is applied
+until the parent presses "Accept these changes"; pressing "Discard" puts
+the day back exactly as it was. Saving a trip always saves the version
+the parent accepted, never a proposal they were only looking at. On a
+multi-day trip each day holds its own proposal, so switching to another
+day and back neither accepts nor loses it, and accepting one day's
+changes does not alter the other days.
+
 Re-planning never throws away the whole day and starts over. It keeps
 every stop that's already happened, and the stop currently in progress,
 exactly as they were; only the stops still ahead on the clock get

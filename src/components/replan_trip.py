@@ -12,6 +12,7 @@ from ..agents import DEFAULT_MODEL, ReplanningAgent, ReplanningAgentError
 from ..data_loader import get_venues
 from ..dates import parse_date
 from ..interactions import replan
+from ..plan_diff import describe_changes, summarise
 
 
 def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
@@ -58,4 +59,10 @@ def replan_trip(*, plan, situation, current_time, destination="", age_months=0,
     # adjuster agreeing with the draft, which is a good outcome and a different
     # one from the call failing, and only `adjusted` can tell those apart.
     draft["changed"] = any(stop.get("adjusted") for stop in draft["stops"])
+    # What accepting this would do to the day, against the day as it stands.
+    # A replan is a proposal the parent says yes or no to, and "here is a new
+    # timeline, spot the difference" is not a question anybody can answer
+    # standing outside a shut aquarium with a toddler.
+    draft["changes"] = describe_changes(plan.get("stops") or [], draft["stops"])
+    draft["change_summary"] = summarise(draft["changes"])
     return draft

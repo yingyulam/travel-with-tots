@@ -144,7 +144,11 @@ class TheTripPageStaysQuietTest(unittest.TestCase):
             self.source = f.read()
 
     def test_the_status_no_longer_branches_on_the_adjuster(self):
-        status = re.search(r"status\.textContent = `Updated ready.*?;",
+        # "Proposed from ..." since a replan became something the parent
+        # accepts rather than something that has already happened. The rule is
+        # unchanged: this line reports what the parent can act on, and says
+        # nothing about whether the AI step ran.
+        status = re.search(r"status\.textContent = `Proposed from.*?;",
                            self.source, re.DOTALL).group(0)
         for leaking in ("newPlan.adjusted", "nothing to change",
                         "didn't finish this time", "rule-based"):

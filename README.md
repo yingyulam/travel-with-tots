@@ -279,6 +279,23 @@ rearrange what is left:
 `Nap happened here` · `Need to stay here longer` · `Skip next stop` ·
 `Finished this stop early` · `It's raining` · `Do something else`
 
+**A re-plan is a proposal.** The revised day appears on a tab marked *Proposed*
+beside the original, under a list of what would actually differ — "Vancouver
+Aquarium replaces Science World at 12:45 PM", "Second Beach is dropped from
+4:15 PM". Accept applies it; Discard puts the day back. Nothing moves in
+between, and saving always writes the version you accepted rather than the one
+you were looking at.
+
+The differences are computed server-side (`src/plan_diff.py`) rather than in the
+page, and stops are matched by identity — a venue by name, a venue-less block by
+its kind — never by position, because dropping one stop shifts every later one
+and would report the whole afternoon as changed. A replacement in the same slot
+is reported as one change, not as a drop plus an add.
+
+That a proposal changes nothing until accepted is also what will make it safe to
+offer replanning the *rest* of a multi-day trip afterwards: the cascade can only
+follow a decision the parent has actually made.
+
 Every stop asks two questions, loudest on the stop you are currently at.
 
 **"Find kid-friendly features here?"** opens a row of chips: tick a washroom, a
