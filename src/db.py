@@ -400,14 +400,68 @@ def create_schema(conn):
     conn.executescript(INDEXES)
 
 
+# Columns added to a table after Supabase's copy of it was already created.
+#
+# postgres_ddl only emits CREATE TABLE IF NOT EXISTS, which does nothing to a
+# table that exists, so a column added to SCHEMA reached SQLite and never
+# reached Supabase. That is not a theoretical gap: adding venue_reports.status
+# took the deployed planner, the nearby search, the trip page and the review
+# page down at once, because reported_flags selects on it and get_venues calls
+# reported_flags for every plan.
+#
+# Postgres has ADD COLUMN IF NOT EXISTS, so this is idempotent and costs
+# nothing to run at every boot. Add a line here with the column, and a deploy
+# applies it.
+POSTGRES_ADDED_COLUMNS = (
+    ("venue_reports", "status", "TEXT NOT NULL DEFAULT 'approved'"),
+    ("venue_reports", "decided_at", "TEXT"),
+    ("venue_reports", "decided_by", "INTEGER"),
+)
+
+
+def _ensure_postgres_columns():
+    """Add any column Supabase's tables are missing. Idempotent.
+
+    Connects to Postgres directly rather than through connect(), which falls
+    back to SQLite when Supabase is unreachable: ADD COLUMN IF NOT EXISTS is
+    Postgres syntax that SQLite does not have, so the fallback would run the
+    wrong dialect against the local file. Unreachable means there is nothing to
+    migrate here anyway.
+
+    Never raises. A boot that cannot reach the database has bigger problems than
+    this, and failing here would take every page down rather than the one
+    feature the column serves.
+    """
+    dsn = _supabase_dsn()
+    if dsn is None:
+        return
+    try:
+        conn = postgres.connect(dsn)
+    except (ImportError, *postgres.unreachable_errors()):
+        return
+    with closing(conn):
+        for table, column, spec in POSTGRES_ADDED_COLUMNS:
+            try:
+                conn.execute(f"ALTER TABLE {table} "
+                             f"ADD COLUMN IF NOT EXISTS {column} {spec}")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"Could not add {table}.{column}: "
+                      f"{type(e).__name__}: {e}", flush=True)
+
+
 def init_db():
     """Create the tables if they don't exist and seed initial data once.
 
-    SQLite only. On Supabase the tables were created by the SQL on /settings and
-    the migration machinery below cannot run there at all: it is PRAGMA
-    table_info and ALTER TABLE the whole way down.
+    On Supabase the tables were created by the SQL on /settings, and the
+    SQLite migration machinery below cannot run there: it is PRAGMA table_info
+    and ALTER TABLE the whole way down. What does run there is
+    _ensure_postgres_columns, which adds any column added to SCHEMA since that
+    copy was made.
     """
     if _supabase_dsn() is not None:
+        _ensure_postgres_columns()
         return
     with closing(connect_sqlite()) as conn:
         create_schema(conn)

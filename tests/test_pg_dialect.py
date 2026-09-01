@@ -382,5 +382,83 @@ class UniqueViolationsReachTheReviewPageTest(unittest.TestCase):
         self.assertIn(psycopg.errors.UniqueViolation, db.INTEGRITY_ERRORS)
 
 
+class ColumnsReachSupabaseTooTest(unittest.TestCase):
+    """A column added to SCHEMA has to reach Supabase, not just SQLite.
+
+    The reported bug: adding venue_reports.status took the deployed planner,
+    the nearby search, the trip page and the review page down at once.
+    reported_flags selects on it and get_venues calls reported_flags for every
+    plan, so a column that existed in SQLite and not in Postgres was a 500 on
+    every one of them.
+
+    postgres_ddl only emits CREATE TABLE IF NOT EXISTS, which does nothing to a
+    table that already exists, so nothing carried the column across. That is
+    what POSTGRES_ADDED_COLUMNS is for.
+    """
+
+    def test_every_listed_column_exists_in_the_sqlite_schema(self):
+        # A typo here would run an ALTER for a column no table wants, and the
+        # failure would be a log line nobody reads.
+        for table, column, _spec in db.POSTGRES_ADDED_COLUMNS:
+            with self.subTest(column=f"{table}.{column}"):
+                self.assertIn(f"{column} ", db.SCHEMA,
+                              f"{column} is migrated but not in SCHEMA")
+
+    def test_the_statements_are_postgres_and_idempotent(self):
+        for table, column, spec in db.POSTGRES_ADDED_COLUMNS:
+            with self.subTest(column=f"{table}.{column}"):
+                self.assertTrue(table and column and spec)
+
+    def test_it_does_not_touch_sqlite_when_supabase_is_unreachable(self):
+        # connect() falls back to SQLite, and ADD COLUMN IF NOT EXISTS is not
+        # SQLite syntax, so the fallback would run the wrong dialect against
+        # the local file.
+        with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
+             mock.patch.object(db.postgres, "connect",
+                               side_effect=ImportError("no psycopg")), \
+             mock.patch.object(db, "connect_sqlite") as sqlite:
+            db._ensure_postgres_columns()
+        sqlite.assert_not_called()
+
+    def test_boot_runs_it_on_supabase(self):
+        # The wiring, and the whole point: init_db returns early on Supabase,
+        # so without this line the migration exists and never runs.
+        with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
+             mock.patch.object(db, "_ensure_postgres_columns") as migrated:
+            db.init_db()
+        migrated.assert_called_once()
+
+    def test_boot_does_not_run_it_on_sqlite(self):
+        # SQLite has _ensure_columns for this, which handles its own dialect.
+        with mock.patch.object(db, "_supabase_dsn", return_value=None), \
+             mock.patch.object(db, "_ensure_postgres_columns") as migrated, \
+             mock.patch.object(db, "connect_sqlite"), \
+             mock.patch.object(db, "create_schema"), \
+             mock.patch.object(db, "_drop_dead_columns"), \
+             mock.patch.object(db, "_migrate_trips_ownership"), \
+             mock.patch.object(db, "_seed_venues"), \
+             mock.patch.object(db, "_migrate_seed_claims"), \
+             mock.patch.object(db, "_seed_sample_data"), \
+             mock.patch.object(db, "_seed_admin"):
+            db.init_db()
+        migrated.assert_not_called()
+
+    def test_it_does_nothing_on_sqlite(self):
+        with mock.patch.object(db, "_supabase_dsn", return_value=None), \
+             mock.patch.object(db.postgres, "connect") as opened:
+            db._ensure_postgres_columns()
+        opened.assert_not_called()
+
+    def test_one_failing_column_does_not_stop_the_rest(self):
+        # A boot that cannot add one column must still add the others, and must
+        # not take every page down.
+        conn = mock.MagicMock()
+        conn.execute.side_effect = [Exception("nope"), None, None]
+        with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
+             mock.patch.object(db.postgres, "connect", return_value=conn):
+            db._ensure_postgres_columns()
+        self.assertEqual(conn.execute.call_count, len(db.POSTGRES_ADDED_COLUMNS))
+
+
 if __name__ == "__main__":
     unittest.main()
