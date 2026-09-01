@@ -160,6 +160,22 @@ multi-day trip each day holds its own proposal, so switching to another
 day and back neither accepts nor loses it, and accepting one day's
 changes does not alter the other days.
 
+Accepting a change can, though, make the later days worth revisiting: a
+day that now visits somewhere a later day was also going to, or that has
+dropped somewhere now free again. When that happens the app says so,
+naming the place involved, and asks whether to rework the remaining
+days. It never does it unasked. If the parent agrees, it builds fresh
+plans for those days and shows what would change on each one, day by
+day, with days that need no change marked as unaffected; only then can
+the parent accept them all or keep the days they had. So a single replan
+takes four steps before a later day moves, and stopping at any of them
+leaves the trip exactly as it was.
+
+This is offered on a trip built in the current session. A trip reopened
+from the dashboard does not offer it, because features, kinds of place
+and the travel limit are planning inputs rather than saved trip data, so
+rebuilding a day later would quietly use different answers.
+
 Re-planning never throws away the whole day and starts over. It keeps
 every stop that's already happened, and the stop currently in progress,
 exactly as they were; only the stops still ahead on the clock get

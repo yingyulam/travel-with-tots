@@ -708,6 +708,23 @@ textarea:focus {
 .proposal-change.is-swapped::before { content: "⇄"; }
 .proposal-change.is-moved::before { content: "→"; }
 
+/* One block per later day in the cascade proposal, so a parent can see which
+   day each change belongs to rather than reading one long list. */
+.cascade-day {
+  margin-bottom: 0.75rem;
+}
+
+.cascade-day-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.cascade-day-none {
+  font-size: 0.88rem;
+  color: #7a8899;
+  padding-left: 1.4rem;
+}
+
 /* The day picker sits above the version picker and has to read as the outer
    choice of the two, so it gets a little air and its own bottom rule. */
 .day-picker {

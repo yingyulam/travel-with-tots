@@ -292,9 +292,24 @@ its kind — never by position, because dropping one stop shifts every later one
 and would report the whole afternoon as changed. A replacement in the same slot
 is reported as one change, not as a drop plus an add.
 
-That a proposal changes nothing until accepted is also what will make it safe to
-offer replanning the *rest* of a multi-day trip afterwards: the cascade can only
-follow a decision the parent has actually made.
+That a proposal changes nothing until accepted is what makes it safe to offer
+replanning the *rest* of a multi-day trip afterwards.
+
+**And that offer is four steps, not one.** Accept a change to Tuesday and, if it
+moved *where* that day goes, the app says what it noticed — "Science World now
+appears on this day as well as later in your trip" — and asks. Agree, and it
+builds fresh plans for the remaining days and shows what would change on each,
+marking the untouched ones as unaffected. Only then can you accept them all.
+Stop at any step and the trip is exactly as it was.
+
+Retiming a day offers nothing, because retiming Tuesday cannot affect Thursday.
+The later days are rebuilt with `plan_days` — the same planner that built the
+trip, told through `used_names` what the earlier days hold — rather than with
+the mid-day replanner, because a later day has not started yet.
+
+Not offered on a trip reopened from the dashboard: features, kinds of place and
+the travel limit are planning inputs and are not saved with a trip, so a rebuilt
+day would silently use answers you never gave.
 
 Every stop asks two questions, loudest on the stop you are currently at.
 

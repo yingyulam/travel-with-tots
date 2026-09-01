@@ -128,6 +128,7 @@ from src.interactions import (
 )
 from src.agent import handle_message, run_workflow_turn
 from src.models import Day, Plan, Trip
+from src.plan_diff import describe_changes, summarise
 from src.results import get_results, get_stats, save_result
 from src.workflows import log_a_place, workflows_by_trigger
 
@@ -2166,6 +2167,41 @@ def save_trip():
     return redirect(url_for("dashboard"))
 
 
+def _planner_kwargs(form, extra_notes, model):
+    """The inputs plan_days takes, read off one planning form.
+
+    Shared by /plan and by replanning the rest of a trip, because two readings
+    of the same form drift apart: the cascade would quietly plan the later days
+    of a visit on defaults the parent never chose -- a different wake-up, a
+    tighter travel limit -- and the plans would look wrong for no visible
+    reason.
+
+    Every field goes through DEFAULTS, because this also reads a form that
+    arrived as JSON from the in-trip page rather than from read_form, and a
+    missing key there should mean "what the form would have shown" rather than
+    a KeyError.
+    """
+    def field(name):
+        value = form.get(name, DEFAULTS.get(name))
+        return DEFAULTS.get(name) if value is None else value
+
+    return dict(
+        destination=field("destination"),
+        age_months=int(field("age_years") or 0) * 12 + int(field("age_months") or 0),
+        wake_up=field("wake_up"), bedtime=field("bedtime"),
+        stop_count=int(field("stop_count")), dining=field("dining"),
+        naps=field("naps"), preferred_lunch_time=field("preferred_lunch_time"),
+        nap_notes=field("nap_notes"), extra_notes=extra_notes,
+        transit=field("transit"), accommodation=field("accommodation"),
+        accommodation_lat=field("accommodation_lat"),
+        accommodation_lng=field("accommodation_lng"),
+        features=field("features"), strict_schedule=field("strict_schedule"),
+        interest=field("interest"), transit_nap=field("transit_nap"),
+        walk_budget=field("walk_budget"), beyond_budget=field("beyond_budget"),
+        model=model,
+    )
+
+
 @app.route("/plan", methods=["GET", "POST"])
 @rate_limited(PLAN_LIMIT, PLAN_WINDOW)
 def plan():
@@ -2216,26 +2252,13 @@ def plan():
         if form["revise_feedback"]:
             notes_for_ai = (f"{notes_for_ai}\n{form['revise_feedback']}"
                             if notes_for_ai else form["revise_feedback"])
-        age_months = int(form["age_years"]) * 12 + int(form["age_months"])
         # One plan per day of the visit, planned in order so no two days send
         # the family to the same place. A one-day trip is a list of one date
         # and takes the single call it always took.
         results = plan_days(
             trip_dates(form),
-            destination=form["destination"], age_months=age_months,
-            wake_up=form["wake_up"], bedtime=form["bedtime"],
-            stop_count=int(form["stop_count"]), dining=form["dining"],
-            naps=form["naps"], preferred_lunch_time=form["preferred_lunch_time"],
-            nap_notes=form["nap_notes"], extra_notes=notes_for_ai,
-            transit=form["transit"], accommodation=form["accommodation"],
-            accommodation_lat=form["accommodation_lat"],
-            accommodation_lng=form["accommodation_lng"],
-            features=form["features"], strict_schedule=form["strict_schedule"],
-            interest=form["interest"], transit_nap=form["transit_nap"],
-            walk_budget=form["walk_budget"],
-            beyond_budget=form["beyond_budget"],
-            model=_chosen_model(request.form.get("model")),
-        )
+            **_planner_kwargs(form, notes_for_ai,
+                              _chosen_model(request.form.get("model"))))
         # One entry per day: the plan itself, the date it is for, and what the
         # hours check and the travel limit had to say about that day. Kept
         # together so a card can report on its own day rather than the page
@@ -2639,6 +2662,47 @@ def replan_adjust_route():
         model=_chosen_model(data.get("model")),
     )
     return jsonify(result)
+
+
+@app.route("/trip/replan-remaining", methods=["POST"])
+@rate_limited(PLAN_LIMIT, PLAN_WINDOW)
+def replan_remaining_route():
+    """Fresh plans for the days after one the parent has just changed.
+
+    Only ever reached because they accepted a change and then asked for this.
+    A replan on Tuesday can leave Thursday visiting somewhere Tuesday now goes,
+    or free up somewhere Tuesday has dropped, and neither is something to fix
+    behind their back -- so this returns proposals, with the difference spelled
+    out per day, and changes nothing.
+
+    These are whole days rebuilt rather than mid-day replans: a later day has
+    not started, so plan_days is the right tool and `used_names` is how it is
+    told what the days before it have taken.
+    """
+    data = request.get_json(silent=True) or {}
+    days = data.get("days")
+    if not isinstance(days, list) or not days:
+        return jsonify({"error": "days are required"}), 400
+    if len(days) > MAX_TRIP_DAYS:
+        return jsonify({"error": f"at most {MAX_TRIP_DAYS} days"}), 400
+
+    form = data.get("form") or {}
+    # What the earlier days have spoken for, including the change just
+    # accepted. Client-supplied and only a planning input: the worst a wrong
+    # list can do is make a day thinner, and it is the page that knows which
+    # version of each earlier day the parent settled on.
+    used = [name for name in (data.get("used_names") or []) if isinstance(name, str)]
+
+    fresh = plan_days([day.get("date") or "" for day in days], used_names=used,
+                      **_planner_kwargs(form, form.get("extra_notes", ""),
+                                        _chosen_model(data.get("model"))))
+    proposals = []
+    for was, now in zip(days, fresh):
+        before = (was.get("plan") or {}).get("stops") or []
+        changes = describe_changes(before, now["stops"])
+        proposals.append({**now, "changes": changes,
+                          "change_summary": summarise(changes)})
+    return jsonify({"days": proposals})
 
 
 @app.route("/find_nearby", methods=["POST"])

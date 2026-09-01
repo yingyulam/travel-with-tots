@@ -130,6 +130,25 @@
         <button type="button" class="tap-btn" id="proposal-accept">Accept these changes</button>
       </div>
     </div>
+    {# Shown only after a change is accepted, and only when it moved which
+       places the day visits. Accepting Tuesday can leave Thursday going
+       somewhere Tuesday now goes, or free up somewhere Tuesday dropped --
+       neither of which is fixed behind the parent's back. #}
+    <div class="nap-prompt" id="cascade-offer" hidden>
+      <p id="cascade-offer-text"></p>
+      <div class="chips">
+        <button type="button" class="tap-btn" id="cascade-decline">Leave them as they are</button>
+        <button type="button" class="tap-btn" id="cascade-run">Replan the rest</button>
+      </div>
+    </div>
+    <div class="nap-prompt" id="cascade-proposal" hidden>
+      <p class="panel-title" id="cascade-summary"></p>
+      <div id="cascade-changes"></div>
+      <div class="chips">
+        <button type="button" class="tap-btn" id="cascade-discard">Keep my days</button>
+        <button type="button" class="tap-btn" id="cascade-accept">Accept all</button>
+      </div>
+    </div>
   </div>
 
   <!-- 5. Need-nearby panel -->
@@ -175,9 +194,20 @@
 {% block scripts %}
 <script id="trip-data" type="application/json">{{ trip | tojson }}</script>
 <script id="features-data" type="application/json">{{ feature_options | tojson }}</script>
+{# The form this trip was planned from. Rebuilding a later day needs the same
+   answers the first pass used -- wake-up, stop count, travel limit -- and
+   planning it on defaults instead would quietly hand back a different sort of
+   day. Null for a trip reopened from the dashboard, which is why the offer
+   does not appear there: see PLAN_INPUTS below. #}
+<script id="plan-inputs" type="application/json">{{ trip_form | tojson }}</script>
 <script>
   const tripData = JSON.parse(document.getElementById("trip-data").textContent);
   const FEATURES = JSON.parse(document.getElementById("features-data").textContent);
+  // The form this trip was planned from, or null when it was reopened from the
+  // dashboard. Null is why the cascade is not offered there: features, kinds of
+  // place and the travel limit are planning inputs and are not saved with a
+  // trip, so a rebuilt day would silently use different answers.
+  const PLAN_INPUTS = JSON.parse(document.getElementById("plan-inputs").textContent);
   const TRIP_ID = {{ trip_id|tojson }};
   // How the family gets between stops. Sent with a lunch lookup, because it is
   // what decides how far a lunch stop may reasonably be: a walk is not eight
@@ -750,14 +780,23 @@
 
   function acceptProposal() {
     const day = DAYS[activeDay];
+    const before = new Set(venueNames(day.plans[day.accepted || 0]));
     day.pending = false;
     // The accepted version is what gets saved and what a later day would be
     // replanned around, whichever tab happens to be on screen afterwards.
     day.accepted = 1;
+    const after = new Set(venueNames(day.plans[1]));
     proposalPanel.hidden = true;
     renderTabs();
     status.hidden = false;
     status.textContent = "Updated. Your other days are unchanged.";
+
+    // Only now, and only if it could matter. Retiming a day changes nothing
+    // for the days after it; changing *where* it goes can leave a later day
+    // repeating a place, or free one up again.
+    if (DAYS.length > activeDay + 1 && PLAN_INPUTS && !sameSet(before, after)) {
+      offerCascade();
+    }
   }
 
   function discardProposal() {
@@ -774,6 +813,150 @@
 
   document.getElementById("proposal-accept").addEventListener("click", acceptProposal);
   document.getElementById("proposal-discard").addEventListener("click", discardProposal);
+
+  // Replanning the days after the one that changed. Three steps, and the
+  // parent can stop at any of them: we offer, they ask, we propose, they
+  // accept. Nothing about a later day moves until the last of those.
+  const cascadeOffer = document.getElementById("cascade-offer");
+  const cascadeOfferText = document.getElementById("cascade-offer-text");
+  const cascadePanel = document.getElementById("cascade-proposal");
+  const cascadeSummary = document.getElementById("cascade-summary");
+  const cascadeChanges = document.getElementById("cascade-changes");
+
+  function venueNames(plan) {
+    return (plan.stops || []).filter((s) => s.venue).map((s) => s.venue.name);
+  }
+
+  function sameSet(a, b) {
+    return a.size === b.size && [...a].every((name) => b.has(name));
+  }
+
+  // Which day the cascade is about. Fixed when it is offered, not read from
+  // activeDay later: the panel is trip-level and stays up while the parent
+  // looks at other days, and reading activeDay at that point would rebuild the
+  // wrong end of the trip.
+  let cascadeAnchor = 0;
+
+  function laterDays() {
+    return DAYS.slice(cascadeAnchor + 1);
+  }
+
+  function offerCascade() {
+    cascadeAnchor = activeDay;
+    const later = laterDays();
+    // Named rather than hinted at. "Your other days may be affected" is not
+    // something a parent can weigh; a place they can see on two days is.
+    const nowHere = new Set(venueNames(DAYS[cascadeAnchor].plans[1]));
+    const clashes = [...new Set(later.flatMap(venueNames))].filter((n) => nowHere.has(n));
+    const count = `${later.length} ${later.length === 1 ? "day" : "days"}`;
+    cascadeOfferText.textContent = clashes.length
+      ? `${clashes.join(" and ")} now appears on this day as well as later in `
+        + `your trip. Shall we rework your remaining ${count}?`
+      : `That changed where this day goes, so your remaining ${count} could be `
+        + "rearranged around it. Shall we?";
+    cascadeOffer.hidden = false;
+  }
+
+  function hideCascade() {
+    cascadeOffer.hidden = true;
+    cascadePanel.hidden = true;
+  }
+
+  async function runCascade() {
+    const later = laterDays();
+    cascadeOffer.hidden = true;
+    status.hidden = false;
+    status.textContent = `Replanning your remaining ${later.length} `
+      + `${later.length === 1 ? "day" : "days"}…`;
+    try {
+      const res = await fetch("/trip/replan-remaining", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          form: PLAN_INPUTS,
+          days: later.map((d) => ({ date: d.date, plan: d.plans[d.accepted || 0] })),
+          // Everything the days up to and including this one have taken, at
+          // whichever version each of them settled on.
+          used_names: DAYS.slice(0, cascadeAnchor + 1)
+            .flatMap((d) => venueNames(d.plans[d.accepted || 0])),
+          model: twtSelectedModel(),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Something went wrong.");
+      // Parked on the day rather than written into it. A later day may already
+      // have a replan of its own that the parent accepted, and discarding this
+      // has to put that back, not the day's original.
+      body.days.forEach((proposed, i) => { later[i].cascade = proposed; });
+      showCascade(later);
+      status.textContent = "Nothing has changed yet.";
+    } catch (e) {
+      status.textContent = e.message || "Couldn't replan the rest right now.";
+    }
+  }
+
+  function showCascade(later) {
+    const changed = later.filter((d) => (d.cascade.changes || []).length);
+    cascadeSummary.textContent = changed.length
+      ? `What would change across your remaining ${later.length} `
+        + `${later.length === 1 ? "day" : "days"}:`
+      : "Nothing would change on your remaining days.";
+    cascadeChanges.replaceChildren(...later.map((day, i) => {
+      const block = el("div", "cascade-day");
+      const n = cascadeAnchor + 2 + i;
+      const changes = day.cascade.changes || [];
+      block.append(el("p", "cascade-day-title",
+                      `Day ${n}${day.date ? ` · ${day.date}` : ""}`));
+      if (!changes.length) {
+        block.append(el("p", "cascade-day-none", "Unaffected."));
+      } else {
+        const list = el("ul", "proposal-changes");
+        list.append(...changes.map((c) =>
+          el("li", `proposal-change is-${c.kind}`, c.text)));
+        block.append(list);
+      }
+      return block;
+    }));
+    cascadePanel.hidden = false;
+  }
+
+  function acceptCascade() {
+    let touched = 0;
+    DAYS.forEach((day) => {
+      if (!day.cascade) return;
+      if ((day.cascade.changes || []).length) {
+        day.plans[1] = day.cascade;
+        day.accepted = 1;
+        day.pending = false;
+        touched += 1;
+      }
+      delete day.cascade;
+    });
+    hideCascade();
+    renderDayTabs();
+    renderTabs();
+    renderTimeline();
+    status.hidden = false;
+    status.textContent = touched
+      ? `Updated ${touched} later ${touched === 1 ? "day" : "days"}.`
+      : "Your later days needed no changes.";
+  }
+
+  function discardCascade() {
+    DAYS.forEach((day) => { delete day.cascade; });
+    hideCascade();
+    status.hidden = false;
+    status.textContent = "Your later days are as they were.";
+  }
+
+  document.getElementById("cascade-run").addEventListener("click", runCascade);
+  document.getElementById("cascade-decline").addEventListener("click", () => {
+    hideCascade();
+    status.hidden = false;
+    status.textContent = "Left your later days alone.";
+  });
+  document.getElementById("cascade-accept").addEventListener("click", acceptCascade);
+  document.getElementById("cascade-discard").addEventListener("click", discardCascade);
 
   // The chat bubble can collect a situation too, and hands it here rather
   // than replanning itself: this page holds the plan, its versions and the
