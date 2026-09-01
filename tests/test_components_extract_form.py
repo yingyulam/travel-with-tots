@@ -16,6 +16,7 @@ from src.form_helpers import (
     MAX_AGE_YEARS,
     MAX_NAPS,
     STOP_COUNT_FORM_MAX,
+    TRANSIT_KEYS,
 )
 
 EXTRACTABLE_FIELDS = (
@@ -233,11 +234,16 @@ class VocabularyGuardTest(unittest.TestCase):
         # about how the family gets between stops.
         result, _ = _run(_reply(transit="helicopter"))
         self.assertNotIn("transit", result["found"])
-        self.assertEqual(result["form"]["transit"], "walk")   # the default
+        # Against the constant, not against a literal: this said "walk" and
+        # broke the day the form's default moved to car, which is a test
+        # failing for the one thing it was not about.
+        self.assertEqual(result["form"]["transit"], DEFAULTS["transit"])
 
     def test_a_real_transit_mode_is_kept(self):
-        result, _ = _run(_reply(transit="car"))
-        self.assertEqual(result["form"]["transit"], "car")
+        # Deliberately not the default, or "kept" and "fell back" look alike.
+        picked = next(k for k in TRANSIT_KEYS if k != DEFAULTS["transit"])
+        result, _ = _run(_reply(transit=picked))
+        self.assertEqual(result["form"]["transit"], picked)
         self.assertIn("transit", result["found"])
 
 

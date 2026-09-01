@@ -50,7 +50,18 @@ TRANSIT_OPTIONS = [("car", "Car, taxi or ride-share"),
                    ("transit", "Public transit"),
                    ("walk", "On foot")]
 TRANSIT_KEYS = [key for key, _ in TRANSIT_OPTIONS]
-DEFAULT_TRANSIT = "walk"
+
+# What most families visiting Vancouver with a toddler actually do, so it is
+# what the form starts on. It used to be `walk`, chosen as the cautious answer:
+# a clustered day is fine for a family with a car and a spread-out one is not
+# fine for a family on foot, so the tightest reach was the safe default.
+#
+# The caution now sits somewhere better. Travel time is a real constraint
+# rather than a ranking hint (see geo.within_budget), and every leg of a plan
+# says how long it takes in the mode the parent picked -- so a day built for a
+# car is visibly a day built for a car, rather than a walk that quietly turns
+# out to be four hours.
+DEFAULT_TRANSIT = "car"
 
 # How long the family will spend getting to any one stop. Asked in minutes
 # because that is what a parent can judge standing on a pavement with a
@@ -120,8 +131,6 @@ DEFAULTS = {
     # it just has no start and end anchor.
     "accommodation_lat": "",
     "accommodation_lng": "",
-    # The tightest reach, deliberately: a clustered day is fine for a family
-    # with a car, and a spread-out one is not fine for a family on foot.
     "transit": DEFAULT_TRANSIT,
     "walk_budget": str(DEFAULT_WALK_BUDGET_MIN),
     # Set only by the parent, after a plan has told them what their limit left
