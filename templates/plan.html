@@ -240,7 +240,7 @@
          here runs on the model the parent actually picked. -->
     <input type="hidden" name="model" id="plan-model-field">
 
-    <button type="submit" class="cta" id="plan-submit-btn">Plan my day</button>
+    <button type="submit" class="cta cta-fit" id="plan-submit-btn">Plan my day</button>
     <p class="revise-progress" id="plan-progress" hidden>Building your day…</p>
   </form>
 </section>
@@ -278,13 +278,13 @@
       <form method="post" action="{{ url_for('trip') }}">
         <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
         <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
-        <button type="submit" class="cta">Start this day</button>
+        <button type="submit" class="cta cta-fit">Start this day</button>
       </form>
       {% if current_parent %}
       <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
         <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
         <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
-        <button type="submit" class="cta-secondary">💾 Save this plan</button>
+        <button type="submit" class="cta-secondary cta-fit">💾 Save this plan</button>
       </form>
       {% else %}
       <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
@@ -293,9 +293,9 @@
         <p class="panel-title">Not quite right?</p>
         <div class="chips">
           {% if can_revise_more %}
-          <button type="button" class="cta-secondary" id="plan-reject-btn">Something's off</button>
+          <button type="button" class="cta-secondary cta-fit" id="plan-reject-btn">Need changes?</button>
           {% endif %}
-          <button type="button" class="cta-secondary" id="plan-decline-btn">Try a new plan</button>
+          <button type="button" class="cta-secondary cta-fit" id="plan-decline-btn">Try a new plan</button>
         </div>
         {% if can_revise_more %}
         <div id="plan-reject-box" hidden>
@@ -303,7 +303,7 @@
             <span>What would you change?</span>
             <textarea id="plan-reject-text" rows="2" placeholder="e.g. the museum stop feels rushed"></textarea>
           </label>
-          <button type="button" class="cta" id="plan-reject-submit">Update my plan</button>
+          <button type="button" class="cta cta-fit" id="plan-reject-submit">Update my plan</button>
         </div>
         {% else %}
         <p class="field-hint">You've reached the limit for fine-tuning this plan, once your trip starts, you can always adjust things on the fly.</p>
@@ -457,7 +457,7 @@
       return;
     }
 
-    // "Something's off" -> reveal the feedback box.
+    // "Need changes?" -> reveal the feedback box.
     const rejectBtn = e.target.closest("#plan-reject-btn");
     if (rejectBtn) {
       rejectBtn.hidden = true;

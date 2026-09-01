@@ -403,12 +403,29 @@ textarea:focus {
   background: #1565c0;
 }
 
-/* A .cta-secondary sized to its own label rather than to its container.
-   `width: 100%` above is right for a page's primary action -- "Save this plan"
-   at the foot of a form -- and wrong for a button sitting inside a card or
-   beside text, where it stretched to the full width of the panel and dwarfed
-   everything around it. Padding and font match .tap-btn, which is what the
-   other buttons on the in-trip page are, so they line up at the same height. */
+/* Both .cta and .cta-secondary are `width: 100%`, which suits a lone submit at
+   the foot of a narrow form and nothing else. In a card, a chip row, or beside
+   another button, they stretched to the full column and dwarfed everything
+   around them. Two ways to opt out, because a primary action and a button
+   tucked inside a panel do not want the same size:
+
+   .cta-fit    keeps the button's own weight, just stops it spanning the column.
+               For a page's main actions -- "Plan my day", "Start this day".
+   .cta-inline also drops to .tap-btn's size, so it sits level with the small
+               buttons around it. For "Send" inside a report panel.
+
+   Size order, deliberately: .tap-btn < .cta-secondary < .cta. A primary action
+   stays the largest thing in its group; it just no longer fills the row. */
+.cta.cta-fit {
+  width: auto;
+  padding: 0.7rem 1.6rem;
+  font-size: 1rem;
+}
+
+.cta-secondary.cta-fit {
+  width: auto;
+}
+
 .cta-secondary.cta-inline {
   width: auto;
   padding: 0.55rem 1.05rem;
