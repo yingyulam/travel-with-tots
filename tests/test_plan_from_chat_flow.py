@@ -547,7 +547,7 @@ class PrefillRouteTest(unittest.TestCase):
         self.client = app_module.app.test_client()
 
     def test_prefill_fills_the_form_without_planning(self):
-        with mock.patch.object(self.app_module, "plan_trip") as planned:
+        with mock.patch.object(self.app_module, "plan_days") as planned:
             resp = self.client.post("/plan", data={"prefill": "1",
                                                    "destination": "Vancouver",
                                                    "wake_up": "06:30"})
@@ -563,7 +563,7 @@ class PrefillRouteTest(unittest.TestCase):
     def test_an_unsupported_destination_comes_back_as_the_one_we_cover(self):
         # The dropdown offers one city; a hand-made post can still name
         # another, and it must not be echoed back as though we could plan it.
-        with mock.patch.object(self.app_module, "plan_trip"):
+        with mock.patch.object(self.app_module, "plan_days"):
             resp = self.client.post("/plan", data={"prefill": "1",
                                                    "destination": "Burnaby"})
         html = resp.get_data(as_text=True)
@@ -578,7 +578,7 @@ class PrefillRouteTest(unittest.TestCase):
                   "transit": "transit",
                   "features": "kid_friendly", "strict_schedule": "on",
                   "stop_count": "4"}
-        with mock.patch.object(self.app_module, "plan_trip") as planned:
+        with mock.patch.object(self.app_module, "plan_days") as planned:
             resp = self.client.post("/plan", data=posted)
         planned.assert_not_called()
         html = resp.get_data(as_text=True)
@@ -597,8 +597,8 @@ class PrefillRouteTest(unittest.TestCase):
         # marker as a hidden field.
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": True}
-        with mock.patch.object(self.app_module, "plan_trip",
-                               return_value=plan) as planned:
+        with mock.patch.object(self.app_module, "plan_days",
+                               return_value=[plan]) as planned:
             resp = self.client.post("/plan", data={"destination": "Vancouver",
                                                    "generate": "1"})
         planned.assert_called_once()
@@ -609,7 +609,7 @@ class PrefillRouteTest(unittest.TestCase):
         # in rather than spending a minute on an AI call nobody asked for.
         # This is the direction that matters: the old flag meant the reverse,
         # and a lost name cost a plan.
-        with mock.patch.object(self.app_module, "plan_trip") as planned:
+        with mock.patch.object(self.app_module, "plan_days") as planned:
             resp = self.client.post("/plan", data={"destination": "Burnaby"})
         planned.assert_not_called()
         self.assertEqual(resp.status_code, 200)

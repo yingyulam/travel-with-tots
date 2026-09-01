@@ -468,7 +468,7 @@ def _nap_minutes(naps):
 def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                 preferred_lunch_min=None, nap_minutes=None,
                 budget_min=DEFAULT_WALK_BUDGET_MIN, mode="walk", home=None,
-                beyond_budget=False, unreachable=None):
+                beyond_budget=False, unreachable=None, used_names=None):
     """Build one day plan: an ordered list of timed stops.
 
     ``wanted`` is the set of venue types the parent asked for, empty when they
@@ -531,7 +531,12 @@ def _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
     slots.sort(key=lambda s: s["time"])
 
     pools = {"nap": naps_pool, "activity": activities}
-    used = set()
+    # Venues this day may not use. Empty for a one-day trip; on day three of a
+    # week it holds everything days one and two already visit, which is what
+    # keeps a trip from being the same park five times. The same set is where a
+    # venue the family has actually been will go, once stops can be ticked off:
+    # "already seen" and "seen tomorrow" are the same instruction to _pick.
+    used = set(used_names or ())
     stops = []
     # The day starts where the family is staying, so the first stop is measured
     # from the accommodation instead of being chosen from nowhere. Without a pin
@@ -682,6 +687,10 @@ def generate_plans(venues, inputs, out_of_range=None):
     ``out_of_range`` is an optional list, filled with the kind of each slot the
     travel limit left empty. A caller passes one when it needs to offer the
     parent the choice to look further; the blurb explains it either way.
+
+    ``inputs["used_names"]`` is venues this day may not use, because another day
+    of the same trip already has them. One day's planner still plans one day;
+    this is the only thing it needs to know about the others.
     """
     # No amenity filtering: what a parent needs in the moment (a nursing room,
     # a change table) is answered by find_nearby where they are, not by
@@ -710,7 +719,8 @@ def generate_plans(venues, inputs, out_of_range=None):
     stops = _build_plan(matches, wake, bedtime, naps, count, wanted, dining,
                         preferred_lunch_min, nap_minutes,
                         budget_min=budget_min, mode=mode, home=home,
-                        beyond_budget=beyond_budget, unreachable=unreachable)
+                        beyond_budget=beyond_budget, unreachable=unreachable,
+                        used_names=inputs.get("used_names"))
     # A day where the limit refused every slot is an empty day, not a day of
     # notes about one. Left alone, it hands back "leave by 11:30 to reach your
     # first stop" and a lunch near nowhere, which reads as a plan.

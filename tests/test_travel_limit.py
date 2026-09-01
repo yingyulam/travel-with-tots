@@ -337,7 +337,7 @@ class TheChoiceIsOfferedNotTakenTest(unittest.TestCase):
     def _page(self, out_of_range, **extra):
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": False, "hours": None, "out_of_range": out_of_range}
-        with mock.patch.object(app_module, "plan_trip", return_value=plan):
+        with mock.patch.object(app_module, "plan_days", return_value=[plan]):
             page = self.client.post("/plan", data={
                 "generate": "1", "destination": "Vancouver", "age_years": "3",
                 "age_months": "0", **extra})

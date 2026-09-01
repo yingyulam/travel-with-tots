@@ -78,12 +78,15 @@ class PlanRouteFormWiringTest(unittest.TestCase):
         from src.components.plan_trip import plan_trip
         from src.form_helpers import DEFAULTS
 
-        with mock.patch.object(app_module, "plan_trip") as planner:
-            planner.return_value = {"label": "Mixed", "blurb": "b", "stops": [],
-                                    "source": "rule", "adjusted": False,
-                                    "changed": False}
+        with mock.patch.object(app_module, "plan_days") as planner:
+            planner.return_value = [{"label": "Mixed", "blurb": "b", "stops": [],
+                                     "source": "rule", "adjusted": False,
+                                     "changed": False}]
             self.client.post("/plan", data=BASE_FORM)
-        passed = set(planner.call_args.kwargs)
+        # plan_days forwards **kwargs straight to plan_trip, so what reaches it
+        # is still the right thing to check plan_trip's signature against. The
+        # dates are its one positional argument and carry trip_date.
+        passed = set(planner.call_args.kwargs) | {"trip_date"}
 
         accepted = set(inspect.signature(plan_trip).parameters)
         collected = set(DEFAULTS)

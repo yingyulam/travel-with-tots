@@ -7,6 +7,7 @@ the src/ package; this file just wires HTTP requests to that logic.
 
 import json
 import os
+import secrets
 import traceback
 from contextlib import closing
 from datetime import date, datetime, timezone
@@ -48,7 +49,7 @@ from src.components.geocode import (
 )
 from src.components.place_search import PlaceSearchError, search_places
 from src import osm, postgres, ratelimit, supabase_sync
-from src.components.plan_trip import plan_trip
+from src.components.plan_trip import plan_days, plan_trip
 from src.components.replan_trip import replan_trip
 from src.components.search_web import WebSearchError, search_web
 
@@ -62,7 +63,7 @@ from src.data_loader import (
     get_venues,
     interest_options,
 )
-from src.dates import compute_age, parse_date
+from src.dates import MAX_TRIP_DAYS, compute_age, parse_date
 from src.db import (
     AMENITY_OPTIONS,
     PromotionError,
@@ -82,6 +83,7 @@ from src.db import (
     get_pending_submissions,
     get_rejected_submissions,
     get_trip_for_parent,
+    get_trip_group,
     get_trips_for_parent,
     get_unverified_venues,
     get_venues_missing_hours,
@@ -114,6 +116,8 @@ from src.form_helpers import (
     clamp_int,
     read_form,
     resolve_plan_child,
+    trip_dates,
+    trip_too_long,
 )
 from src.interactions import (
     MAX_REPLAN_MINUTES,
@@ -123,7 +127,7 @@ from src.interactions import (
     replan,
 )
 from src.agent import handle_message, run_workflow_turn
-from src.models import Plan, Trip
+from src.models import Day, Plan, Trip
 from src.results import get_results, get_stats, save_result
 from src.workflows import log_a_place, workflows_by_trigger
 
@@ -2119,23 +2123,46 @@ def save_trip():
     parent = _current_parent()
     valid_ids = {str(child["id"]) for child in get_children(parent["id"])}
     try:
-        plan_data = json.loads(request.form.get("plan", ""))
+        # One day or a whole visit. The in-trip page and the planning page both
+        # post "plans"; "plan" is what everything older posts, and reads as a
+        # visit of one rather than as a second path through here.
+        posted = request.form.get("plans")
+        plan_data = (json.loads(posted) if posted
+                     else [json.loads(request.form.get("plan", ""))])
         trip_form = json.loads(request.form.get("trip_form", "{}"))
     except (TypeError, ValueError):
+        return redirect(url_for("plan"))
+    if not isinstance(plan_data, list) or not plan_data:
         return redirect(url_for("plan"))
     child_ids = [cid for cid in trip_form.get("child_ids", []) if cid in valid_ids]
 
     fields = {field: trip_form[field] for field in TRIP_FIELDS if field in trip_form}
     fields["transit"] = trip_form.get("transit") or DEFAULT_TRANSIT
     fields["naps"] = json.dumps(trip_form.get("naps", []))
-    fields["plan_label"] = plan_data.get("label")
-    fields["plan_json"] = json.dumps(plan_data)
-    fields["trip_date"] = trip_form.get("trip_date") or date.today().isoformat()
+    # What ties the days of one visit together. Generated here, never taken
+    # from the post: it decides which rows are read back as one trip, and a
+    # client-supplied one would let a parent staple their days onto somebody
+    # else's. Every trip gets one, including a trip of one day, so reading a
+    # group is never a special case.
+    fields["trip_group_id"] = secrets.token_urlsafe(12)
+    dates = trip_dates(trip_form)
+
     # [None] is one trip with nobody attached, not zero trips. child_id is
     # nullable and ON DELETE SET NULL, so the dashboard already reads a trip
     # whose child is missing; this is the same row, arrived at sooner.
     for child_id in child_ids or [None]:
-        add_trip(parent["id"], int(child_id) if child_id else None, **fields)
+        for index, plan in enumerate(plan_data):
+            day = dict(fields)
+            day["day_index"] = index
+            day["plan_label"] = plan.get("label")
+            day["plan_json"] = json.dumps(plan)
+            # The day this plan is for. From the plan itself when it says, so a
+            # day saved from the in-trip page keeps its own date rather than
+            # the first day's.
+            day["trip_date"] = (plan.get("trip_date")
+                                or (dates[index] if index < len(dates) else "")
+                                or date.today().isoformat())
+            add_trip(parent["id"], int(child_id) if child_id else None, **day)
     return redirect(url_for("dashboard"))
 
 
@@ -2169,7 +2196,11 @@ def plan():
     # rather than guessing which of the ten kinds they meant, and rather than
     # quietly planning as though they had ticked them all.
     interest_error = should_generate and not form["interest"]
-    should_generate = should_generate and not interest_error
+    # More days than we will lay out in one go. Refused rather than clamped:
+    # planning the first week of a fortnight and saying nothing is the kind of
+    # answer that reads as a bug to whoever asked for the fortnight.
+    too_long = trip_too_long(form) if should_generate else None
+    should_generate = should_generate and not interest_error and not too_long
 
     hours_report = None
     adjustment = None
@@ -2186,9 +2217,12 @@ def plan():
             notes_for_ai = (f"{notes_for_ai}\n{form['revise_feedback']}"
                             if notes_for_ai else form["revise_feedback"])
         age_months = int(form["age_years"]) * 12 + int(form["age_months"])
-        result = plan_trip(
+        # One plan per day of the visit, planned in order so no two days send
+        # the family to the same place. A one-day trip is a list of one date
+        # and takes the single call it always took.
+        results = plan_days(
+            trip_dates(form),
             destination=form["destination"], age_months=age_months,
-            trip_date=form["trip_date"],
             wake_up=form["wake_up"], bedtime=form["bedtime"],
             stop_count=int(form["stop_count"]), dining=form["dining"],
             naps=form["naps"], preferred_lunch_time=form["preferred_lunch_time"],
@@ -2202,11 +2236,29 @@ def plan():
             beyond_budget=form["beyond_budget"],
             model=_chosen_model(request.form.get("model")),
         )
-        plans = [Plan.from_dict(result)]
+        # One entry per day: the plan itself, the date it is for, and what the
+        # hours check and the travel limit had to say about that day. Kept
+        # together so a card can report on its own day rather than the page
+        # reporting on all of them at once.
+        days = [{"plan": Plan.from_dict(r), "date": r.get("trip_date", ""),
+                 "index": i, "hours": r.get("hours"),
+                 "out_of_range": r.get("out_of_range") or []}
+                for i, r in enumerate(results)]
+        plans = [d["plan"] for d in days]
+        # The whole visit, ready to post to /trip and /save-trip. Each plan
+        # carries the date it is for: Plan is a day's content and Day owns the
+        # calendar, so a Plan round-tripped through to_dict() has no date, and
+        # three days were being saved as three copies of the first.
+        #
+        # Serialised here rather than in the template: Jinja's map(attribute=)
+        # hands back the bound method rather than calling it.
+        plans_json = [{**d["plan"].to_dict(), "trip_date": d["date"]}
+                      for d in days]
+        result = results[0]
         hours_report = result.get("hours")
-        # Slots the travel limit emptied. The blurb explains; this is what puts
-        # the choice to look further in front of the parent.
-        out_of_range = result.get("out_of_range")
+        # Any day the travel limit thinned. One offer for the trip: a parent
+        # who wants to look further wants it for the visit, not for Tuesday.
+        out_of_range = [k for r in results for k in (r.get("out_of_range") or [])]
         # Whether the AI step ran, and whether it moved anything. Not shown on
         # a first generate: the parent asked for a day out, and either way they
         # got a real plan. plan.html logs this to the console instead, so it
@@ -2230,6 +2282,8 @@ def plan():
         trip_context = form
     else:
         plans = None
+        plans_json = None
+        days = None
         trip_context = None
         out_of_range = None
 
@@ -2241,6 +2295,10 @@ def plan():
         adjustment=adjustment,
         out_of_range=out_of_range,
         interest_error=interest_error,
+        days=days,
+        plans_json=plans_json,
+        too_long=too_long,
+        max_trip_days=MAX_TRIP_DAYS,
         trip_context=trip_context,
         supported_cities=SUPPORTED_CITIES,
         transit_options=TRANSIT_OPTIONS,
@@ -2259,32 +2317,63 @@ def plan():
     )
 
 
-def _build_trip(destination, transit, bedtime, age_months, dining, plan_data,
-                 trip_date="", nap_notes="", extra_notes=""):
-    """Assemble a Trip around a chosen plan, shared by the fresh in-trip page
-    and reopening a saved itinerary from the dashboard."""
+def _build_trip(destination, transit, bedtime, age_months, dining, days,
+                 trip_date="", nap_notes="", extra_notes="", group_id=""):
+    """Assemble a Trip from its days, shared by the fresh in-trip page and by
+    reopening a saved itinerary from the dashboard.
+
+    `days` is a list of Day. A one-day trip is a list of one, and takes exactly
+    the same path: there is no single-day branch here to fall out of step.
+    """
     return Trip(
         destination=destination or "Vancouver",
         transit=transit,
-        trip_date=trip_date,
+        trip_date=trip_date or (days[0].date if days else ""),
         bedtime=bedtime,
         age_months=age_months,
         dining=dining,
         nap_notes=nap_notes,
         extra_notes=extra_notes,
+        group_id=group_id,
+        days=days,
+    )
+
+
+def _day_from(plan_data, index=0, date="", accommodation="",
+              accommodation_lat=None, accommodation_lng=None, trip_id=None):
+    """One Day from a plan dict and where they are staying for it.
+
+    The accommodation is passed per day even though the form asks once. That is
+    the seam a different hotel on Thursday goes through, and it costs nothing
+    to thread now while there is one caller per shape.
+    """
+    return Day(
+        date=date or plan_data.get("trip_date", ""),
+        index=index,
         original=Plan.from_dict(plan_data),
+        accommodation=accommodation,
+        accommodation_lat=accommodation_lat,
+        accommodation_lng=accommodation_lng,
+        trip_id=trip_id,
     )
 
 
 def _trip_venue_ids(trip):
+    """Every venue id anywhere in the trip: all days, all versions of each.
+
+    Across the whole visit rather than one day, because the report panel opens
+    on whichever day the parent is looking at and one round trip should arm all
+    of them. Seven days of four stops is 28 ids, which is one query.
+    """
     return sorted({stop["venue"]["id"]
-                   for plan in trip.get("plans", [])
+                   for day in trip.get("days", [])
+                   for plan in day.get("plans", [])
                    for stop in plan.get("stops", [])
                    if stop.get("venue") and stop["venue"].get("id")})
 
 
 def _trip_venue_reports(trip):
-    """{venue_id: {field: bool}} for every venue in the day.
+    """{venue_id: {field: bool}} for every venue in the trip.
 
     So the report panel can open already showing what we hold. Without it a
     parent cannot tell "nobody has said" from "we think there is one", and
@@ -2311,7 +2400,7 @@ def _trip_pending_reports(trip):
     return db.pending_reports_for(parent["id"], ids)
 
 
-def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
+def _render_trip(trip, saved=False, trip_form=None, trip_id=None, open_day=0):
     as_dict = trip.to_dict()
     return render_template(
         "trip.html",
@@ -2321,6 +2410,7 @@ def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
         saved=saved,
         trip_form=trip_form,
         trip_id=trip_id,
+        open_day=open_day,
         reportable_flags=[(key, FEATURE_LABELS[key])
                           for key in db.REPORTABLE_FIELDS],
         conditional_flags=db.CONDITIONAL_ON_CAN_EAT,
@@ -2346,20 +2436,35 @@ def trip():
     if request.method == "GET":
         return redirect(url_for("plan"))
     try:
-        plan_data = json.loads(request.form.get("plan", ""))
+        # "plan" is one day, "plans" is a whole visit. Both are accepted: the
+        # planning page posts the list, and a one-day plan posted by anything
+        # older -- a saved snapshot, a test, a bookmarked form -- is a list of
+        # one rather than a second code path.
+        posted = request.form.get("plans")
+        plan_data = json.loads(posted) if posted else [json.loads(request.form.get("plan", ""))]
         context = json.loads(request.form.get("context", "{}"))
     except (ValueError, TypeError):
+        return redirect(url_for("plan"))
+    if not isinstance(plan_data, list) or not plan_data:
         return redirect(url_for("plan"))
 
     age_months = (int(context.get("age_years") or DEFAULTS["age_years"]) * 12
                   + int(context.get("age_months") or 0))
+    dates = trip_dates(context)
+    days = [_day_from(plan, index=i,
+                      date=dates[i] if i < len(dates) else "",
+                      accommodation=context.get("accommodation", ""),
+                      accommodation_lat=context.get("accommodation_lat") or None,
+                      accommodation_lng=context.get("accommodation_lng") or None)
+            for i, plan in enumerate(plan_data)]
     trip = _build_trip(
         destination=context.get("destination"),
         transit=normalise_transit(context.get("transit")),
         bedtime=context.get("bedtime", ""),
         age_months=age_months,
         dining=context.get("dining", ""),
-        plan_data=plan_data,
+        days=days,
+        trip_date=context.get("trip_date", ""),
         nap_notes=context.get("nap_notes", ""),
         extra_notes=context.get("extra_notes", ""),
     )
@@ -2380,18 +2485,33 @@ def view_trip(trip_id):
         age_months = years * 12 + months
     else:
         age_months = int(DEFAULTS["age_years"]) * 12 + int(DEFAULTS["age_months"])
+    # Every day of the same visit, when this row belongs to one. A row saved
+    # before multi-day existed has no group and is a group of one.
+    rows = ([row] if not row["trip_group_id"]
+            else [r for r in get_trip_group(parent["id"], row["trip_group_id"])
+                  if r["plan_json"]] or [row])
+    days = [_day_from(json.loads(r["plan_json"]), index=i,
+                      date=r["trip_date"] or "",
+                      accommodation=r["accommodation"] or "",
+                      accommodation_lat=r["accommodation_lat"],
+                      accommodation_lng=r["accommodation_lng"],
+                      trip_id=r["id"])
+            for i, r in enumerate(rows)]
     trip = _build_trip(
         destination=row["destination"],
         transit=normalise_transit(row["transit"]),
-        trip_date=row["trip_date"] or "",
+        trip_date=rows[0]["trip_date"] or "",
         bedtime=row["bedtime"] or "",
         age_months=age_months,
         dining=row["dining"] or "",
-        plan_data=json.loads(row["plan_json"]),
+        days=days,
         nap_notes=row["nap_notes"] or "",
         extra_notes=row["extra_notes"] or "",
+        group_id=row["trip_group_id"] or "",
     )
-    return _render_trip(trip, saved=True, trip_id=trip_id)
+    # The day the parent clicked, so reopening day three opens on day three.
+    opened = next((i for i, r in enumerate(rows) if r["id"] == trip_id), 0)
+    return _render_trip(trip, saved=True, trip_id=trip_id, open_day=opened)
 
 
 # What a parent tells us when they say a venue was shut when they got there. It

@@ -78,6 +78,13 @@ CREATE TABLE IF NOT EXISTS trips (
     preferred_lunch_time TEXT,             -- "HH:MM": when the parent wants lunch scheduled
     nap_notes     TEXT,
     extra_notes   TEXT,
+    -- A day of a longer visit. One row is still one day: a five-day trip is
+    -- five rows sharing a group id, ordered by day_index, which is what keeps
+    -- every existing query, the dashboard and a one-day trip untouched.
+    -- Nullable because every row saved before multi-day existed is a group of
+    -- one, and reads as such.
+    trip_group_id TEXT,
+    day_index     INTEGER,
     plan_label    TEXT,                   -- label of the generated plan the parent picked
     plan_json     TEXT,                   -- full Plan.to_dict() (label, blurb, stops), so the
                                            -- saved itinerary can be reopened from the dashboard
@@ -287,6 +294,7 @@ TRIP_FIELDS = (
     "transit",
     "stop_count", "dining", "preferred_lunch_time", "nap_notes",
     "extra_notes", "plan_label", "plan_json",
+    "trip_group_id", "day_index",
 )
 
 
@@ -413,6 +421,8 @@ def create_schema(conn):
 # nothing to run at every boot. Add a line here with the column, and a deploy
 # applies it.
 POSTGRES_ADDED_COLUMNS = (
+    ("trips", "trip_group_id", "TEXT"),
+    ("trips", "day_index", "INTEGER"),
     ("venue_reports", "status", "TEXT NOT NULL DEFAULT 'approved'"),
     ("venue_reports", "decided_at", "TEXT"),
     ("venue_reports", "decided_by", "INTEGER"),
@@ -511,6 +521,10 @@ def _ensure_columns(conn):
         with conn:
             conn.execute("ALTER TABLE trips ADD COLUMN accommodation_lat REAL")
             conn.execute("ALTER TABLE trips ADD COLUMN accommodation_lng REAL")
+    if "trip_group_id" not in existing:
+        with conn:
+            conn.execute("ALTER TABLE trips ADD COLUMN trip_group_id TEXT")
+            conn.execute("ALTER TABLE trips ADD COLUMN day_index INTEGER")
     if "pace" in existing and "stop_count" not in existing:
         with conn:
             conn.execute("ALTER TABLE trips RENAME COLUMN pace TO stop_count")
@@ -1711,6 +1725,22 @@ def get_trips_for_parent(parent_id):
             "LEFT JOIN children ON children.id = trips.child_id "
             "WHERE trips.parent_id = ? AND trips.plan_json IS NOT NULL "
             "ORDER BY trips.created_at DESC", (parent_id,)).fetchall()
+
+
+def get_trip_group(parent_id, group_id):
+    """Every day of one saved trip, in order, scoped to this parent.
+
+    Ordered by day_index rather than by date: an index cannot be ambiguous, and
+    a row whose date failed to save should still hold its place rather than
+    sorting to the front.
+    """
+    with closing(connect()) as conn:
+        return conn.execute(
+            "SELECT trips.*, children.name AS child_name, "
+            "children.date_of_birth AS child_dob FROM trips "
+            "LEFT JOIN children ON children.id = trips.child_id "
+            "WHERE trips.parent_id = ? AND trips.trip_group_id = ? "
+            "ORDER BY trips.day_index", (parent_id, group_id)).fetchall()
 
 
 def get_trip_for_parent(parent_id, trip_id):

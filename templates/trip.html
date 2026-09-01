@@ -34,8 +34,12 @@
       <input type="time" id="current-time">
     </label>
   </div>
-  <!-- 2. Plan version selector: pinned at the top so the active version is
-       never ambiguous. Shows a single "Original" pill before any replan. -->
+  <!-- 2a. Which day of the visit. Rendered only when there is more than one,
+       so a single day looks exactly as it did before trips could be longer. -->
+  <div class="plan-picker day-picker" id="day-picker" hidden></div>
+  <!-- 2b. Plan version selector for the day above: pinned at the top so the
+       active version is never ambiguous. A single "Original" pill before any
+       replan. -->
   <div class="plan-picker" id="plan-picker"></div>
   <p id="replan-status" class="replan-status" hidden></p>
 
@@ -140,9 +144,10 @@
     <p class="panel-title">Keep this day</p>
     {% if current_parent and trip_form %}
     <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form" id="save-trip-form">
-      <textarea name="plan" id="save-plan-field" hidden></textarea>
+      {# "plans", not "plan": the field carries every day of the visit. #}
+      <textarea name="plans" id="save-plan-field" hidden></textarea>
       <textarea name="trip_form" hidden>{{ trip_form | tojson }}</textarea>
-      <button type="submit" class="cta-secondary">💾 Save this plan</button>
+      <button type="submit" class="cta-secondary" id="save-trip-btn">💾 Save this plan</button>
     </form>
     {% elif current_parent %}
     {# No trip form behind this day, so there is nothing to save it from. #}
@@ -175,8 +180,17 @@
   // VENUE_REPORTS because they are not what the app holds: they are what one
   // person said, shown back so a send does not look swallowed.
   const PENDING_REPORTS = {{ pending_reports|tojson }};
-  const PLANS = tripData.plans.slice();   // versions; index 0 is the original
-  let active = 0;
+  // The visit, as days. A one-day trip is a list of one and takes every path
+  // below unchanged; the day picker simply stays hidden.
+  const DAYS = tripData.days;
+  let activeDay = Math.min({{ open_day|tojson }}, DAYS.length - 1);
+  let active = 0;   // which version of the active day; index 0 is the original
+
+  // The active day's versions. A function rather than a variable because
+  // switching days has to change what every reader sees, and a copy taken once
+  // at load would keep showing day one's plans under day three's tab.
+  function plans() { return DAYS[activeDay].plans; }
+  function currentPlan() { return plans()[active]; }
 
   // Development visibility only. Whether the AI touched a plan is not shown to
   // a parent: there is no action for them to take on it.
@@ -522,7 +536,7 @@
   // server applies when it splits kept from remaining -- so what this says is
   // what the replan will actually treat as the current stop.
   function renderCurrentStop() {
-    const plan = PLANS[active];
+    const plan = currentPlan();
     if (!timeField.value) {
       currentStopLabel.textContent = "Set a current time to replan";
       return;
@@ -541,7 +555,7 @@
   }
 
   function renderTimeline() {
-    const plan = PLANS[active];
+    const plan = currentPlan();
     const nowI = nowIndex(plan.stops);
     const list = el("ol", "timeline");
     plan.stops.forEach((s, i) => {
@@ -554,11 +568,51 @@
 
   // Fixed slots: Original (0, never changes), Updated (1, rule-based
   // replan with the AI adjuster's edits already applied). Iterating over
-  // SLOT_LABELS rather than PLANS.map avoids a sparse-array hole.
+  // SLOT_LABELS rather than mapping the array avoids a sparse-array hole.
+  // Which day of the visit. Hidden entirely for a one-day trip, so that page
+  // is the page it always was rather than one with a single pointless tab.
+  const dayPicker = document.getElementById("day-picker");
+
+  function dayLabel(day, index) {
+    if (!day.date) return `Day ${index + 1}`;
+    // "Day 2 · Tue 15 Sep". The date is parsed as local noon: a bare
+    // YYYY-MM-DD is UTC midnight, which renders as the previous day west of
+    // Greenwich -- which is where every user of this app is.
+    const when = new Date(`${day.date}T12:00:00`);
+    const shown = when.toLocaleDateString(undefined,
+      { weekday: "short", day: "numeric", month: "short" });
+    return `Day ${index + 1} · ${shown}`;
+  }
+
+  function renderDayTabs() {
+    if (DAYS.length < 2) { dayPicker.hidden = true; return; }
+    dayPicker.hidden = false;
+    dayPicker.replaceChildren(...DAYS.map((day, i) => {
+      const tab = el("button", `plan-tab ${i === activeDay ? "is-active" : ""}`,
+                     dayLabel(day, i));
+      tab.type = "button";
+      tab.dataset.day = i;
+      return tab;
+    }));
+    dayPicker.querySelectorAll(".plan-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        activeDay = Number(tab.dataset.day);
+        // Back to that day's original: "Updated" belongs to the day it was
+        // computed for, and carrying the index across would show day three's
+        // original under a tab labelled Updated.
+        active = 0;
+        status.hidden = true;
+        renderDayTabs();
+        renderTabs();
+        renderTimeline();
+      });
+    });
+  }
+
   const SLOT_LABELS = ["Original", "Updated"];
   function renderTabs() {
     picker.replaceChildren(...SLOT_LABELS.flatMap((label, i) => {
-      if (!PLANS[i]) return [];
+      if (!plans()[i]) return [];
       const tab = el("button", `plan-tab ${i === active ? "is-active" : ""}`, label);
       tab.type = "button";
       tab.dataset.index = i;
@@ -604,13 +658,14 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          plan: PLANS[active],
+          plan: currentPlan(),
           situation: situation,
           current_time: timeField.value,
           destination: tripData.destination,
           // The day being replanned, so hours resolve for it rather than for
-          // whenever this button happened to be pressed.
-          trip_date: tripData.trip_date || null,
+          // whenever this button happened to be pressed, and for the day whose
+          // tab is open rather than the first day of the visit.
+          trip_date: DAYS[activeDay].date || tripData.trip_date || null,
           age_months: tripData.age_months,
           features: tripData.features,
           transit: tripData.transit,
@@ -630,7 +685,7 @@
       });
       const newPlan = await res.json();
       if (!res.ok) throw new Error(newPlan.error || "Something went wrong.");
-      PLANS[1] = newPlan;
+      plans()[1] = newPlan;
       active = 1;
       replanNoteText.value = "";
       renderTabs();
@@ -855,7 +910,7 @@
   // planner already checks this at plan time, so a lunch block naming a venue
   // means it found one; this is the same question asked again, later.
   function eatHereNow() {
-    const stop = PLANS[active].stops[nowIndex(PLANS[active].stops)];
+    const stop = currentPlan().stops[nowIndex(currentPlan().stops)];
     return stop && stop.venue && stop.venue.can_eat ? stop.venue : null;
   }
 
@@ -864,7 +919,7 @@
   // the last one they were at -- a lunch block itself names nowhere, so
   // "current stop" alone would often be blank exactly when this is needed.
   function anchorPlaceName() {
-    const stops = PLANS[active].stops;
+    const stops = currentPlan().stops;
     for (let i = nowIndex(stops); i >= 0; i--) {
       if (stops[i].venue) return stops[i].venue.name;
     }
@@ -938,7 +993,13 @@
   });
   document.getElementById("need-other-go").addEventListener("click", () => runNeed("other"));
 
-  logAdjustment(PLANS[0], "original");
+  if (DAYS.length > 1) {
+    const saveBtn = document.getElementById("save-trip-btn");
+    if (saveBtn) saveBtn.textContent = `💾 Save all ${DAYS.length} days`;
+  }
+
+  logAdjustment(plans()[0], "original");
+  renderDayTabs();
   renderTabs();
   renderTimeline();
 
@@ -946,7 +1007,14 @@
   const saveTripForm = document.getElementById("save-trip-form");
   if (saveTripForm) {
     saveTripForm.addEventListener("submit", () => {
-      document.getElementById("save-plan-field").value = JSON.stringify(PLANS[active]);
+      // Every day of the visit, each at whichever version is showing, so
+      // saving from day three does not save only day three.
+      // Each day at whichever version is showing, carrying its own date, so
+      // saving from day three saves three dated days rather than three copies
+      // of the first one.
+      document.getElementById("save-plan-field").value = JSON.stringify(
+        DAYS.map((d, i) => ({ ...d.plans[i === activeDay ? active : 0],
+                              trip_date: d.date })));
     });
   }
 </script>

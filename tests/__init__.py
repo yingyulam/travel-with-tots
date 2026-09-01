@@ -21,3 +21,33 @@ os.environ["DB_BACKEND"] = "local"
 # tests were answered 429 by a limit meant for somebody else.
 # tests/test_rate_limit.py turns it back on for the tests that are about it.
 os.environ["RATE_LIMITS"] = "off"
+
+
+# No real AI calls, ever, whatever a test forgets to mock. The block is on the
+# host rather than on the key, because the key cannot be kept out of the
+# environment: src/agents.py calls load_dotenv() at import and puts it straight
+# back, and supabase_sync re-reads .env with override=True.
+#
+# A ConnectionError is what every AI path already handles -- plan_trip,
+# replan_trip, the tools and the workflows all catch RequestException and fall
+# back to their unadjusted draft -- so this changes no behaviour the suite
+# asserts. Three tests already simulate the same outcome by hand.
+#
+# Added after a route was changed to call plan_days() while its tests still
+# mocked plan_trip(): the mocks quietly stopped matching, eight tests started
+# talking to OpenRouter for real, and the only symptom was the suite taking 85
+# seconds instead of 9. A bill is a bad way to find out a mock has gone stale.
+import requests
+
+_real_post = requests.post
+
+
+def _no_paid_calls(url, *args, **kwargs):
+    if "openrouter.ai" in str(url):
+        raise requests.exceptions.ConnectionError(
+            "Blocked: a test tried to call OpenRouter for real. Mock the agent "
+            "it goes through, or the component that calls it.")
+    return _real_post(url, *args, **kwargs)
+
+
+requests.post = _no_paid_calls

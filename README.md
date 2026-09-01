@@ -183,9 +183,9 @@ A five-minute tour, roughly in the order a parent would meet it.
 
 A day is built in four steps, and only one of them is AI.
 
-1. **The form** collects the shape of your day: wake-up, bedtime, naps,
-   transport, how far you will travel, how many stops, lunch, which kinds of
-   place, and where you are staying.
+1. **The form** collects the shape of your day: the dates you are here,
+   wake-up, bedtime, naps, transport, how far you will travel, how many stops,
+   lunch, which kinds of place, and where you are staying.
 2. **The planner** (`src/itinerary.py`) lays out the times, anchors the naps,
    and picks a venue for each slot.
 3. **The hours check** (`src/components/validate_hours.py`) tests every stop
@@ -193,6 +193,26 @@ A day is built in four steps, and only one of them is AI.
    does not work.
 4. **The AI adjuster** smooths the pacing and the wording. If it fails, you get
    the draft, and it is not something you need to know about.
+
+**A visit can be several days.** Give an arriving and a leaving date and you
+get one plan per day, up to seven at a time. Leave the second date blank and it
+is a day out, exactly as before: a one-day trip is a trip with one day, through
+the same code, not a special case beside it.
+
+Days are planned in order and each is told what the earlier ones took, so no
+venue turns up twice in a visit. That is the same mechanism that stops a single
+day repeating itself, given a longer memory. It is greedy rather than optimal:
+day one gets the best-ranked venues and day five gets what is left, which is
+also the order you read them in.
+
+On the in-trip page a day picker sits above the version tabs. Each day keeps its
+own plan, its own replans and its own accommodation, and the picker is hidden
+entirely when there is only one day.
+
+Underneath, **a day is a `trips` row**. A visit is rows sharing a
+`trip_group_id`, ordered by `day_index`. Every query that reads a row as a day
+still does, which is why the dashboard, the delete button and every trip saved
+before this went on working untouched.
 
 ### What makes it toddler-shaped
 

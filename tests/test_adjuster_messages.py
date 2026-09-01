@@ -99,7 +99,7 @@ class ThePlanningPageStaysQuietTest(unittest.TestCase):
     def _post(self, adjusted, changed, **extra):
         plan = {"label": "L", "blurb": "b", "stops": [], "source": "rule",
                 "adjusted": adjusted, "changed": changed}
-        with mock.patch.object(app_module, "plan_trip", return_value=plan):
+        with mock.patch.object(app_module, "plan_days", return_value=[plan]):
             return self.client.post("/plan", data={**BASE, **extra},
                                     follow_redirects=True).get_data(as_text=True)
 
@@ -157,7 +157,9 @@ class TheTripPageStaysQuietTest(unittest.TestCase):
 
     def test_it_logs_the_outcome_instead(self):
         self.assertIn("logAdjustment(newPlan", self.source)
-        self.assertIn("logAdjustment(PLANS[0]", self.source)
+        # plans()[0] since a trip became a list of days: the original of
+        # whichever day is open, rather than of the only one there was.
+        self.assertIn("logAdjustment(plans()[0]", self.source)
 
     def test_it_no_longer_says_it_could_not_fine_tune_a_good_plan(self):
         self.assertNotIn("couldn't fine-tune it right now", self.source)

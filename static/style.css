@@ -681,6 +681,22 @@ textarea:focus {
 
 /* A text button that reads as a link: "+2 more", "Clear all". Grouped rather
    than duplicated, since the two are the same control in different places. */
+/* The day picker sits above the version picker and has to read as the outer
+   choice of the two, so it gets a little air and its own bottom rule. */
+.day-picker {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+/* Actions that apply to the whole visit rather than to one of its days. */
+.plan-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
 .preview-more-toggle,
 .link-toggle {
   background: none;

@@ -101,6 +101,40 @@ def parse_date(value, default=None):
         return default or date.today()
 
 
+# The longest trip the planner will lay out in one go. Each day costs its own
+# AI adjustment call, run one after another, so a fortnight is a minute of
+# somebody watching a spinner on a single Render worker. A week is also about as
+# long as a family visit to one city runs.
+MAX_TRIP_DAYS = 7
+
+
+def date_range(start, end):
+    """Every date from `start` to `end` inclusive, as ISO strings.
+
+    A list rather than the pair it came from, deliberately: the form asks for
+    two dates because a visit is contiguous, but the plan is a list of days, and
+    keeping the list as the real value is what lets days be picked individually
+    later without anything downstream noticing.
+
+    Backwards, missing or absurd input degrades to a single day, the same way
+    parse_date degrades to today: a bad date must not cost the parent a plan.
+    """
+    first = parse_date(start)
+    last = parse_date(end, default=first)
+    if last < first:
+        last = first
+    span = min((last - first).days, MAX_TRIP_DAYS - 1)
+    return [(first + timedelta(days=n)).isoformat() for n in range(span + 1)]
+
+
+def days_between(start, end):
+    """How many days that range covers, before it is capped. For telling a
+    parent their trip is too long rather than silently shortening it."""
+    first = parse_date(start)
+    last = parse_date(end, default=first)
+    return max(1, (last - first).days + 1)
+
+
 def format_age(years, months):
     """An age in words, for showing a parent what was recalled about their own
     child. Singular where it should be, and the zero half dropped, because

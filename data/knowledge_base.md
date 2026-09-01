@@ -83,6 +83,20 @@ stops (car or ride-share, public transit, on foot) and how long they're
 willing to spend getting to any one stop: 20, 30 or 40 minutes, with 20
 as the default.
 
+A trip can cover more than one day. The form asks for an arriving date
+and, optionally, a leaving date; leaving it blank plans a single day out,
+which is how the app worked before. With both dates given, the planner
+builds one itinerary per day, up to seven days at a time, and refuses a
+longer range rather than quietly planning only part of it. Each day is
+planned for its own date, so opening hours resolve for that weekday or
+holiday, and no venue is used on two days of the same visit. The family
+is assumed to stay at the same accommodation throughout for now.
+
+On the in-trip page, a multi-day trip shows a day picker above the plan
+version tabs, and everything else on that page works within whichever day
+is selected. Saving a multi-day trip saves each day separately, so the
+dashboard lists them as individual days that reopen the whole trip.
+
 The trip form also asks which kinds of place the family would like, as a
 list of every kind the app has venues for, all ticked to begin with.
 Unticking a kind is a preference rather than a rule: the ticked kinds
@@ -193,6 +207,7 @@ what's needed.
 - Navigation: hands off to Google Maps, no in-app turn-by-turn
 - Dining styles: "dine out" (a midday food stop of about 1.5 hours, at a preferred time if given) or "on the go" (no dedicated food stop)
 - Getting around: car or ride-share, public transit, or on foot
+- Trip length: one arriving date and an optional leaving date, up to 7 days, one itinerary per day
 - Kinds of place: every kind starts ticked, and unticking one moves it down the list rather than removing it; at least one must stay ticked
 - Travel time between stops: 20, 30 or 40 minutes, default 20, applied to each leg including the journey home
 - Accommodation: optional, and pinnable on a map; the day is anchored to it when given

@@ -22,7 +22,8 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
                transit=None, accommodation="", accommodation_lat=None,
                accommodation_lng=None, strict_schedule=False,
                interest=None, transit_nap="", walk_budget=None,
-               beyond_budget=False, model=DEFAULT_MODEL) -> dict:
+               beyond_budget=False, used_names=None,
+               model=DEFAULT_MODEL) -> dict:
     """Build a full day plan: a rule-based draft, then AI-smoothed. Always
     returns a usable plan -- if the AI step fails, falls back to the
     unadjusted draft rather than raising, so every caller gets that
@@ -58,6 +59,9 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
         # stop is chosen from here and the last is chosen to get back to it.
         "accommodation_lat": accommodation_lat,
         "accommodation_lng": accommodation_lng,
+        # Venues another day of the same trip already has. Empty for a one-day
+        # trip, which is why that path is byte-identical to what it was.
+        "used_names": set(used_names or ()),
     }
     # The day being planned decides which of each venue's hours apply, so it is
     # resolved once here rather than threaded through the planner.
@@ -115,4 +119,35 @@ def plan_trip(*, destination, age_months, trip_date=None, wake_up="07:00", bedti
     # Which slots the travel limit emptied, so the page can explain and offer
     # the parent the choice rather than handing back a shorter day in silence.
     result["out_of_range"] = out_of_range
+    # Which day this is for. A single-day caller has always known; a multi-day
+    # one is handed back a list and needs each plan to say so itself.
+    result["trip_date"] = trip_date or ""
     return result
+
+
+def plan_days(dates, **kwargs) -> list:
+    """One plan per date, none of them repeating another's venues.
+
+    A loop over plan_trip rather than a second planner. Each day resolves its
+    own opening hours, because plan_trip already parses the date it is given --
+    so a Sunday in the middle of a week is planned as a Sunday without anything
+    here knowing that.
+
+    Days are planned in order and each is told what the earlier ones took. That
+    is a greedy pass, not an optimum: day one gets the best-ranked venues and
+    day five gets what is left. The alternative is scoring whole-trip
+    permutations, which is a different program, and this ordering is also the
+    honest one -- a parent reads day one first.
+
+    `dates` is never empty; a one-day trip is a list of one, and gets exactly
+    the single call it got before this function existed.
+    """
+    used = set(kwargs.pop("used_names", None) or ())
+    plans = []
+    for index, on_date in enumerate(dates):
+        plan = plan_trip(trip_date=on_date, used_names=used, **kwargs)
+        plan["day_index"] = index
+        plans.append(plan)
+        used.update(stop["venue"]["name"] for stop in plan["stops"]
+                    if stop.get("venue"))
+    return plans

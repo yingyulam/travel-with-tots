@@ -34,9 +34,12 @@ class PlanUsesTheChosenModelTest(unittest.TestCase):
         self.client = app_module.app.test_client()
 
     def _post(self, **extra):
+        # plan_days, not plan_trip: the route asks for a list of days now, and
+        # forwards the model to it once for the whole trip.
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": True}
-        with mock.patch.object(app_module, "plan_trip", return_value=plan) as planned:
+        with mock.patch.object(app_module, "plan_days",
+                               return_value=[plan]) as planned:
             self.client.post("/plan",
                               data={"destination": "Vancouver",
                                     "generate": "1", **extra})

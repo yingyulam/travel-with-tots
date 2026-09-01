@@ -4,7 +4,7 @@ the raw form dict app.py's routes already parse, no Flask dependency."""
 import json
 from datetime import date
 
-from .dates import parse_date, compute_age
+from .dates import MAX_TRIP_DAYS, compute_age, date_range, days_between, parse_date
 from .geo import (DEFAULT_WALK_BUDGET_MIN, WALK_BUDGET_OPTIONS, as_point,
                   walk_budget_min)
 from .data_loader import SUPPORTED_CITIES, VENUE_TYPES, interest_options
@@ -109,6 +109,11 @@ DEFAULTS = {
     # The day being planned. Decides which of a venue's hours apply,
     # so it is a planning input rather than a label on a saved trip.
     "trip_date": "",
+    # The last day of the visit. Empty means a one-day trip, which is what the
+    # form was before it could ask: `trip_date` alone still describes that day,
+    # so every reader of a single day -- a saved row, a replan, the chat
+    # extractor -- is untouched by this.
+    "end_date": "",
     "accommodation": "",
     # Set only by picking the accommodation on the map. Empty means the parent
     # typed an address without pinning it, or gave none: the day still plans,
@@ -215,6 +220,7 @@ def read_form(form):
         "destination": (form.get("destination") if form.get("destination")
                         in SUPPORTED_CITIES else DEFAULTS["destination"]),
         "trip_date": parse_date(form.get("trip_date")).isoformat(),
+        "end_date": _read_end_date(form),
         "accommodation": form.get("accommodation", "").strip(),
         # Kept as strings, like every other form value, so the dict round-trips
         # through a hidden field unchanged. as_point() is what turns them into
@@ -266,6 +272,36 @@ def _read_interest(form):
     if picked or form.get(INTEREST_OFFERED_FIELD):
         return picked
     return all_interests()
+
+
+def _read_end_date(form):
+    """The last day of the visit, never earlier than the first.
+
+    Empty when it was not asked for or matches the start, so a one-day trip
+    keeps posting exactly what it posted before this existed.
+    """
+    start = parse_date(form.get("trip_date")).isoformat()
+    end = form.get("end_date")
+    if not end:
+        return ""
+    resolved = parse_date(end, default=parse_date(start)).isoformat()
+    return "" if resolved <= start else resolved
+
+
+def trip_dates(form):
+    """The days a plan covers, as ISO strings. Always at least one."""
+    return date_range(form.get("trip_date"), form.get("end_date"))
+
+
+def trip_too_long(form):
+    """How many days were asked for, when that is more than we will plan.
+
+    None when the range is fine. Named rather than clamped: silently planning
+    the first week of a fortnight is the kind of answer that looks like a bug
+    to the person who asked for the fortnight.
+    """
+    asked = days_between(form.get("trip_date"), form.get("end_date"))
+    return asked if asked > MAX_TRIP_DAYS else None
 
 
 def _accommodation_point(form):

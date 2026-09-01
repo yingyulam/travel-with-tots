@@ -133,11 +133,24 @@
           {% endfor %}
         </select>
       </label>
+      {# Two dates rather than one. Leaving the second blank is a day out,
+         which is what this asked for before it could ask for a visit. #}
       <label class="field">
-        <span>Date</span>
-        <input type="date" name="trip_date" value="{{ form.trip_date }}">
+        <span>Arriving</span>
+        <input type="date" name="trip_date" id="trip-start-date"
+               value="{{ form.trip_date }}">
+      </label>
+      <label class="field">
+        <span>Leaving <em>(optional)</em></span>
+        <input type="date" name="end_date" id="trip-end-date"
+               value="{{ form.end_date }}">
+        <span class="field-hint" id="trip-span-hint"></span>
       </label>
     </div>
+    {% if too_long %}
+    <p class="revise-result revise-error">That's {{ too_long }} days. We plan up
+      to {{ max_trip_days }} at a time, so please shorten the dates.</p>
+    {% endif %}
 
     {# Accommodation. The text is what a parent typed and what the AI prompt
        reads; the pin is what the planner measures from. Searching fills both,
@@ -312,59 +325,87 @@
             class="cta-secondary cta-inline">Include places further away</button>
   </p>
   {% endif %}
-  <p class="picker-hint">Tap “Start this day” when you’re ready.</p>
+  <p class="picker-hint">
+    {%- if days|length > 1 %}Your {{ days|length }} days. Tap “Start this trip” when you’re ready.
+    {%- else %}Tap “Start this day” when you’re ready.{% endif %}</p>
   <p class="meta">Built from the hours we hold, which can be out of date. Check a stop's map link before you go.</p>
+  {# One card per day, previews only. The buttons that act on the whole visit
+     live once, below, rather than once per card: a parent starts a trip, not
+     a Tuesday, and repeating them would repeat their ids too. #}
   <div class="plan-grid" id="plan-grid">
-    {% for plan in plans %}
-    <div class="plan-option" data-plan="{{ plan.label }}" data-source="{{ plan.source }}">
-      <h3 class="plan-option-title">{{ plan.label }}</h3>
-      <p class="plan-blurb">{{ plan.blurb }}</p>
+    {% for day in days %}
+    <div class="plan-option" data-plan="{{ day.plan.label }}"
+         data-source="{{ day.plan.source }}" data-day="{{ day.index }}">
+      <h3 class="plan-option-title">
+        {%- if days|length > 1 %}Day {{ day.index + 1 }} · {{ day.date }}
+        {%- else %}{{ day.plan.label }}{% endif %}</h3>
+      {% if days|length > 1 %}<p class="meta">{{ day.plan.label }}</p>{% endif %}
+      <p class="plan-blurb">{{ day.plan.blurb }}</p>
+      {% if day.hours and day.hours.note %}
+      <p class="empty-plan">{{ day.hours.note }}</p>
+      {% endif %}
+      {% if day.hours and (day.hours.replaced or day.hours.dropped) %}
+      <p class="meta">
+        Checked against {{ day.hours.day_type }} hours for {{ day.date }}:
+        {%- if day.hours.replaced %} {{ day.hours.replaced|length }} swapped{% endif %}
+        {%- if day.hours.dropped %}{{ ',' if day.hours.replaced }} {{ day.hours.dropped|length }} left free{% endif %}.
+      </p>
+      {% endif %}
       <ol class="preview-list">
-        {% for stop in plan.preview() %}{{ stop_line(stop) }}{% endfor %}
-        {% for stop in plan.remaining() %}{{ stop_line(stop, extra=True) }}{% endfor %}
-        {% if plan.remaining() %}
-        <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ plan.remaining()|length }} more…</button></li>
+        {% for stop in day.plan.preview() %}{{ stop_line(stop) }}{% endfor %}
+        {% for stop in day.plan.remaining() %}{{ stop_line(stop, extra=True) }}{% endfor %}
+        {% if day.plan.remaining() %}
+        <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ day.plan.remaining()|length }} more…</button></li>
         {% endif %}
       </ol>
-      <form method="post" action="{{ url_for('trip') }}">
-        <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
-        <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
-        <button type="submit" class="cta cta-fit">Start this day</button>
-      </form>
-      {% if current_parent %}
-      <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
-        <textarea name="plan" hidden>{{ plan.to_dict() | tojson }}</textarea>
-        <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
-        <button type="submit" class="cta-secondary cta-fit">💾 Save this plan</button>
-      </form>
-      {% else %}
-      <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
-      {% endif %}
-      <div class="plan-revise" id="plan-revise-block">
-        <p class="panel-title">Not quite right?</p>
-        <div class="chips">
-          {% if can_revise_more %}
-          <button type="button" class="cta-secondary cta-fit" id="plan-reject-btn">Need changes?</button>
-          {% endif %}
-          <button type="button" class="cta-secondary cta-fit" id="plan-decline-btn">Try a new plan</button>
-        </div>
-        {% if can_revise_more %}
-        <div id="plan-reject-box" hidden>
-          <label class="field field-full">
-            <span>What would you change?</span>
-            <textarea id="plan-reject-text" rows="2" placeholder="e.g. the museum stop feels rushed"></textarea>
-          </label>
-          <button type="button" class="cta cta-fit" id="plan-reject-submit">Update my plan</button>
-        </div>
-        {% else %}
-        <p class="field-hint">You've reached the limit for fine-tuning this plan, once your trip starts, you can always adjust things on the fly.</p>
-        {% endif %}
-        {% if revise_message %}
-        <p class="revise-result {{ 'revise-error' if revise_error else 'revise-success' }}">{{ revise_message }}</p>
-        {% endif %}
-      </div>
+      {# Read by the console-logging script below, and by nothing else. The
+         forms that post a plan carry the whole list instead. #}
+      <textarea class="day-plan-json" hidden>{{ day.plan.to_dict() | tojson }}</textarea>
     </div>
     {% endfor %}
+  </div>
+
+  {# The whole visit, once. #}
+  <div class="plan-actions">
+    <form method="post" action="{{ url_for('trip') }}">
+      <textarea name="plans" hidden>{{ plans_json | tojson }}</textarea>
+      <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
+      <button type="submit" class="cta cta-fit">
+        {%- if days|length > 1 %}Start this trip{% else %}Start this day{% endif %}</button>
+    </form>
+    {% if current_parent %}
+    <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
+      <textarea name="plans" hidden>{{ plans_json | tojson }}</textarea>
+      <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
+      <button type="submit" class="cta-secondary cta-fit">
+        {%- if days|length > 1 %}💾 Save this trip{% else %}💾 Save this plan{% endif %}</button>
+    </form>
+    {% else %}
+    <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
+    {% endif %}
+    <div class="plan-revise" id="plan-revise-block">
+      <p class="panel-title">Not quite right?</p>
+      <div class="chips">
+        {% if can_revise_more %}
+        <button type="button" class="cta-secondary cta-fit" id="plan-reject-btn">Need changes?</button>
+        {% endif %}
+        <button type="button" class="cta-secondary cta-fit" id="plan-decline-btn">Try a new plan</button>
+      </div>
+      {% if can_revise_more %}
+      <div id="plan-reject-box" hidden>
+        <label class="field field-full">
+          <span>What would you change?</span>
+          <textarea id="plan-reject-text" rows="2" placeholder="e.g. the museum stop feels rushed"></textarea>
+        </label>
+        <button type="button" class="cta cta-fit" id="plan-reject-submit">Update my plan</button>
+      </div>
+      {% else %}
+      <p class="field-hint">You've reached the limit for fine-tuning this plan, once your trip starts, you can always adjust things on the fly.</p>
+      {% endif %}
+      {% if revise_message %}
+      <p class="revise-result {{ 'revise-error' if revise_error else 'revise-success' }}">{{ revise_message }}</p>
+      {% endif %}
+    </div>
   </div>
   {% else %}
   {% if hours_report and hours_report.note %}
@@ -387,7 +428,7 @@
   const ADJUSTMENT = {{ adjustment | tojson }};
   if (ADJUSTMENT) {
     document.querySelectorAll(".plan-option").forEach((card) => {
-      const field = card.querySelector("textarea[name='plan']");
+      const field = card.querySelector(".day-plan-json");
       if (!field) return;
       const plan = JSON.parse(field.value);
       console.debug("[plan]", plan.label, {
@@ -451,6 +492,29 @@
   if (years && months) {
     years.addEventListener("input", syncAgeCap);
     syncAgeCap();
+  }
+
+  // How long the visit is, said back as it is picked, and the end date held to
+  // the start. A parent who has typed two dates should not have to count the
+  // days between them to find out we will refuse the range.
+  const startDate = document.getElementById("trip-start-date");
+  const endDate = document.getElementById("trip-end-date");
+  const spanHint = document.getElementById("trip-span-hint");
+  const MAX_TRIP_DAYS = {{ max_trip_days|tojson }};
+  if (startDate && endDate && spanHint) {
+    function syncDates() {
+      endDate.min = startDate.value || "";
+      if (!startDate.value || !endDate.value) { spanHint.textContent = ""; return; }
+      const days = Math.round(
+        (new Date(endDate.value) - new Date(startDate.value)) / 86400000) + 1;
+      if (days < 1) { spanHint.textContent = "That's before you arrive."; return; }
+      spanHint.textContent = days > MAX_TRIP_DAYS
+        ? `${days} days. We plan up to ${MAX_TRIP_DAYS} at a time.`
+        : `${days} day${days === 1 ? "" : "s"}, one plan each.`;
+    }
+    startDate.addEventListener("change", syncDates);
+    endDate.addEventListener("change", syncDates);
+    syncDates();
   }
 
   // Select all / clear all, and at least one before the form will submit.
