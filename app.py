@@ -553,6 +553,29 @@ def dashboard():
                            places=places, amenity_options=AMENITY_OPTIONS)
 
 
+def _grouped_reports(rows):
+    """Pending reports as one card per parent per venue, the shape they arrived.
+
+    A parent ticks several boxes and sends once, so a reviewer should see "this
+    parent said these four things about this place" and settle it in one go.
+    """
+    grouped = {}
+    for row in rows:
+        key = (row["venue_id"], row["reported_by"])
+        card = grouped.setdefault(key, {
+            "venue_id": row["venue_id"],
+            "venue_name": row["venue_name"],
+            "venue_type": row["venue_type"],
+            "neighbourhood": row["neighbourhood"],
+            "reported_by": row["reported_by"],
+            "reporter_name": row["reporter_name"] or "a parent",
+            "reported_at": row["reported_at"],
+            "claims": [],
+        })
+        card["claims"].append({"field": row["field"], "value": bool(row["value"])})
+    return list(grouped.values())
+
+
 def _settleable(check):
     """One pending hours check, with its finding worked out now.
 
@@ -608,6 +631,10 @@ def venue_review():
             for r in candidates.load(candidates.REJECTED)],
         rejected_submissions=get_rejected_submissions(),
         hours_checks=[_settleable(c) for c in get_pending_hours_checks()],
+        pending_reports=_grouped_reports(db.get_pending_reports()),
+        # The same labels the parent ticked, so a reviewer reads the words the
+        # parent saw rather than a column name.
+        amenity_labels=FEATURE_LABELS,
         weekdays=list(enumerate(osm.WEEKDAYS)),
         missing_hours=[dict(row, source_link=_safe_url(row["source_url"]))
                        for row in missing_hours[:MISSING_HOURS_PAGE_SIZE]],
@@ -1182,6 +1209,26 @@ def venue_hours_decide(check_id):
     else:
         flash("Kept our hours.")
     resolve_hours_check(check_id, admin_id)
+    return redirect(url_for("venue_review"))
+
+
+@app.route("/venues/<int:venue_id>/reports/settle", methods=["POST"])
+@login_required
+@admin_required
+def settle_venue_reports(venue_id):
+    """Approve or reject one parent's unreviewed reports about one venue.
+
+    A batch rather than a row, because that is how they arrive: a parent ticks
+    several boxes and sends once. One decision per tick is the friction that
+    argued against having a queue here at all, so the queue settles what the
+    parent actually did.
+    """
+    admin_id = _current_parent()["id"]
+    reporter = request.form.get("reported_by", type=int)
+    approved = request.form.get("decision") == "approve"
+    db.settle_reports_for(venue_id, reporter, approved=approved, admin_id=admin_id)
+    flash("Report approved and applied." if approved
+          else "Report rejected; nothing changed.")
     return redirect(url_for("venue_review"))
 
 
@@ -2212,18 +2259,39 @@ def _build_trip(destination, transit, bedtime, age_months, dining, plan_data,
     )
 
 
+def _trip_venue_ids(trip):
+    return sorted({stop["venue"]["id"]
+                   for plan in trip.get("plans", [])
+                   for stop in plan.get("stops", [])
+                   if stop.get("venue") and stop["venue"].get("id")})
+
+
 def _trip_venue_reports(trip):
     """{venue_id: {field: bool}} for every venue in the day.
 
     So the report panel can open already showing what we hold. Without it a
     parent cannot tell "nobody has said" from "we think there is one", and
     unticking could not mean "that has gone".
+
+    Approved only, because that is what the app holds. What this parent has
+    reported and nobody has checked is a separate map: see _trip_pending_reports.
     """
-    ids = {stop["venue"]["id"]
-           for plan in trip.get("plans", [])
-           for stop in plan.get("stops", [])
-           if stop.get("venue") and stop["venue"].get("id")}
-    return db.reported_flags(sorted(ids)) if ids else {}
+    ids = _trip_venue_ids(trip)
+    return db.reported_flags(ids) if ids else {}
+
+
+def _trip_pending_reports(trip):
+    """{venue_id: {field: bool}} of this parent's own unreviewed reports.
+
+    So the panel can show them their tick still standing, marked as waiting,
+    rather than appearing to have swallowed it. Their own only: somebody else's
+    unchecked claim is exactly what the queue exists to keep out of view.
+    """
+    parent = _current_parent()
+    ids = _trip_venue_ids(trip)
+    if not parent or not ids:
+        return {}
+    return db.pending_reports_for(parent["id"], ids)
 
 
 def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
@@ -2232,6 +2300,7 @@ def _render_trip(trip, saved=False, trip_form=None, trip_id=None):
         "trip.html",
         trip=as_dict,
         venue_reports=_trip_venue_reports(as_dict),
+        pending_reports=_trip_pending_reports(as_dict),
         saved=saved,
         trip_form=trip_form,
         trip_id=trip_id,
@@ -2327,10 +2396,15 @@ PARENT_HOURS_FINDING = "A parent found this venue closed when we sent them."
 def report_amenities(venue_id):
     """Record what a parent saw at one stop, as JSON.
 
-    Here rather than behind a review queue, and here rather than on an admin
-    page, because the person standing in the building is the best source there
-    is for whether it has a change table. A queue in front of this would mean
-    these fields never fill.
+    Written pending, and a reviewer decides. The person standing in the
+    building is still the best source there is for whether it has a change
+    table, so this stays the easiest report in the app to file -- but an
+    unchecked claim from one visitor changed what every other parent was shown,
+    which is what the queue is for.
+
+    The risk that argued against a queue is that these fields never fill, so
+    the review page settles a parent's whole batch for one venue in a single
+    action rather than one click per tick.
 
     Keyed on the venue rather than the trip, because that is what the report is
     about and because a day being run has not necessarily been saved. A
@@ -2356,8 +2430,11 @@ def report_amenities(venue_id):
     # also what a parent leaves alone. So an unticked field is only written when
     # somebody had already claimed it was there, which makes it a correction.
     values = {f: (f in found) for f in shown if f in found or f in known}
+    # Held for review. The parent standing in the building is still the best
+    # source there is, but nothing they say reaches another parent until a
+    # reviewer agrees: see db.reported_flags, which reads approved rows only.
     written = db.record_amenities(values=values, venue_id=venue_id,
-                                  reported_by=parent["id"])
+                                  reported_by=parent["id"], approved=False)
 
     if data.get("hours_wrong"):
         # The scheduled time, when the widget sends it. "Closed at 17:00" is
@@ -2372,8 +2449,8 @@ def report_amenities(venue_id):
         written += 1
 
     return jsonify({"saved": written, "message": (
-        f"Thanks, noted {written} thing{'s' if written != 1 else ''}."
-        if written else "Nothing new to add.")})
+        "Thank you for your contribution! Your report has been submitted and "
+        "is awaiting review." if written else "Nothing new to add.")})
 
 
 @app.route("/replan", methods=["POST"])

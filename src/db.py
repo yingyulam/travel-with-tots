@@ -163,7 +163,15 @@ CREATE TABLE IF NOT EXISTS venue_reports (
     value       INTEGER NOT NULL,   -- 1 present, 0 absent. Absence is a real report
     reported_by INTEGER REFERENCES parents(id) ON DELETE SET NULL,
     reported_at TEXT NOT NULL DEFAULT (datetime('now')),
-    note        TEXT
+    note        TEXT,
+    -- Whether anybody has checked this. Only reports from the in-trip page are
+    -- written pending: the parent standing in the building is the best source
+    -- there is, but nothing they say reaches another parent until a reviewer
+    -- agrees. Everything else -- a reviewer's own ticks, the municipal import,
+    -- Log a Place -- is written approved and behaves as it always has.
+    status      TEXT NOT NULL DEFAULT 'approved',  -- pending | approved | rejected
+    decided_at  TEXT,
+    decided_by  INTEGER REFERENCES parents(id) ON DELETE SET NULL
 );
 
 """
@@ -457,6 +465,20 @@ def _ensure_columns(conn):
     if "is_admin" not in existing:
         with conn:
             conn.execute("ALTER TABLE parents ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+
+    # `existing` is empty on a database old enough to predate the table itself,
+    # where CREATE TABLE has not run yet and there is nothing to alter.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(venue_reports)")}
+    if existing and "status" not in existing:
+        with conn:
+            # Existing rows are live today and stay live: this gates what
+            # happens from here, rather than retroactively withdrawing what
+            # parents have already contributed.
+            conn.execute("ALTER TABLE venue_reports ADD COLUMN status TEXT "
+                         "NOT NULL DEFAULT 'approved'")
+            conn.execute("ALTER TABLE venue_reports ADD COLUMN decided_at TEXT")
+            conn.execute("ALTER TABLE venue_reports ADD COLUMN decided_by INTEGER "
+                         "REFERENCES parents(id) ON DELETE SET NULL")
 
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
     if "city" not in existing:
@@ -1437,7 +1459,70 @@ def resolve_hours_check(check_id, admin_id=None):
            (admin_id, check_id))
 
 
-def add_report(venue_id, field, value, reported_by=None, note=None):
+def pending_reports_for(parent_id, venue_ids):
+    """{venue_id: {field: bool}} of this parent's own unreviewed reports.
+
+    So the in-trip panel can show a parent what they said while it waits. Their
+    own, deliberately: a pending claim is not information about the venue yet,
+    it is a record of what one person reported, and showing somebody else's
+    would be the unreviewed data leaking out by another door.
+    """
+    ids = [i for i in (venue_ids or [])]
+    if not parent_id or not ids:
+        return {}
+    placeholders = ", ".join("?" for _ in ids)
+    pending = {}
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            f"SELECT venue_id, field, value FROM venue_reports "
+            f"WHERE status = 'pending' AND reported_by = ? "
+            f"AND venue_id IN ({placeholders}) ORDER BY reported_at, id",
+            [parent_id, *ids])
+        for row in rows:
+            pending.setdefault(row["venue_id"], {})[row["field"]] = bool(row["value"])
+    return pending
+
+
+def get_pending_reports():
+    """Unreviewed amenity reports, with the venue and the parent behind each.
+
+    Grouped by venue and parent in the caller: a parent ticks several boxes at
+    once and each is a row, so a reviewer should be able to settle the batch
+    they arrived as rather than click once per tick.
+    """
+    with closing(connect()) as conn:
+        return conn.execute("""
+            SELECT r.*, v.name AS venue_name, v.type AS venue_type,
+                   v.neighbourhood, p.name AS reporter_name
+            FROM venue_reports r
+            JOIN venues v ON v.id = r.venue_id
+            LEFT JOIN parents p ON p.id = r.reported_by
+            WHERE r.status = 'pending'
+            ORDER BY r.reported_at DESC, r.id DESC""").fetchall()
+
+
+def settle_report(report_id, approved, admin_id=None):
+    """Approve or reject one unreviewed report.
+
+    Rejected rather than deleted: "somebody said this and a reviewer disagreed"
+    is worth keeping, and a deleted row would let the same claim arrive again
+    looking new.
+    """
+    _write("UPDATE venue_reports SET status = ?, decided_at = datetime('now'), "
+           "decided_by = ? WHERE id = ? AND status = 'pending'",
+           ("approved" if approved else "rejected", admin_id, report_id))
+
+
+def settle_reports_for(venue_id, parent_id, approved, admin_id=None):
+    """Settle every pending report one parent made about one venue, at once."""
+    _write("UPDATE venue_reports SET status = ?, decided_at = datetime('now'), "
+           "decided_by = ? WHERE venue_id = ? AND reported_by IS ? "
+           "AND status = 'pending'",
+           ("approved" if approved else "rejected", admin_id, venue_id, parent_id))
+
+
+def add_report(venue_id, field, value, reported_by=None, note=None,
+               approved=True):
     """Record that somebody observed an amenity at a venue, or its absence.
 
     `value` 0 is a real report: "I looked and there was no change table" is
@@ -1446,16 +1531,32 @@ def add_report(venue_id, field, value, reported_by=None, note=None):
     `reported_by` is None only for a seed claim (see _migrate_seed_claims): a
     report with no author is visibly weaker than one with, and that is how the
     hand-typed flags are represented now that nobody stands behind them.
+
+    `approved` defaults to True, which keeps every writer behaving as it did.
+    Only the in-trip report route passes False: that is the one place a claim
+    arrives from somebody the app has no other reason to trust, and nothing
+    there reaches another parent until a reviewer agrees. A caller added later
+    is trusted unless it says otherwise, so say otherwise if it is a parent.
     """
     if field not in REPORTABLE_FIELDS:
         raise ValueError(f"not a reportable field: {field}")
+    if not approved:
+        # One pending report per parent, per venue, per field. record_amenities
+        # skips unchanged answers by comparing against the approved flags, which
+        # cannot see a pending row, so a parent reporting twice would otherwise
+        # stack duplicates. Same rule as record_hours_check, which replaces any
+        # open check from the same source.
+        _write("DELETE FROM venue_reports WHERE venue_id = ? AND field = ? "
+               "AND reported_by IS ? AND status = 'pending'",
+               (venue_id, field, reported_by))
     return _write(
-        "INSERT INTO venue_reports (venue_id, field, value, reported_by, note) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (venue_id, field, int(bool(value)), reported_by, note))
+        "INSERT INTO venue_reports (venue_id, field, value, reported_by, note, "
+        "status) VALUES (?, ?, ?, ?, ?, ?)",
+        (venue_id, field, int(bool(value)), reported_by, note,
+         "approved" if approved else "pending"))
 
 
-def record_amenities(venue_id, values, reported_by, note=None):
+def record_amenities(venue_id, values, reported_by, note=None, approved=True):
     """Write reports for the amenities in `values`, from one author.
 
     The one way an amenity claim enters the database. `values` is
@@ -1484,7 +1585,8 @@ def record_amenities(venue_id, values, reported_by, note=None):
         value = bool(values[field])
         if field in known and known[field] == value and not note:
             continue
-        add_report(venue_id, field, value, reported_by=reported_by, note=note)
+        add_report(venue_id, field, value, reported_by=reported_by, note=note,
+                   approved=approved)
         written += 1
     return written
 
@@ -1502,14 +1604,18 @@ def reported_flags(venue_ids=None):
     A field with no report is absent from the dict, which is what lets "nobody
     has said" differ from "somebody looked and there was none".
     """
+    # Approved only. This is the whole enforcement of "a parent's in-trip
+    # report waits for a reviewer": the planner, the nearby search, the review
+    # page and the in-trip panel every one of them read the flags through here,
+    # so nothing can show an unchecked claim by forgetting to filter.
     sql = ("SELECT venue_id, field, value, reported_by, reported_at "
-           "FROM venue_reports")
+           "FROM venue_reports WHERE status = 'approved'")
     params = []
     if venue_ids is not None:
         ids = list(venue_ids)
         if not ids:
             return {}
-        sql += f" WHERE venue_id IN ({', '.join('?' for _ in ids)})"
+        sql += f" AND venue_id IN ({', '.join('?' for _ in ids)})"
         params = ids
     # Weakest first, so a later row simply overwrites: seed claims before real
     # reports, and older reports before newer.

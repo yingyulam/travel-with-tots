@@ -1407,3 +1407,14 @@ textarea:focus {
 .review-section[open] > summary h2::before {
   transform: rotate(90deg);
 }
+
+/* A tick the parent has sent that nobody has reviewed. Marked rather than
+   hidden: the send has to look like it did something, and the alternative was
+   the box reverting under them as though it had been swallowed. */
+.chip.chip-pending { border-style: dashed; }
+.chip-pending-note {
+  font-size: 0.72rem;
+  opacity: 0.7;
+  margin-left: 0.35rem;
+  font-style: italic;
+}

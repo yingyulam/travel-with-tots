@@ -262,9 +262,37 @@
 
 <section class="card">
   <details class="review-section">
-  <summary><h2>2. Finish<span class="queue-count">{{ missing_hours_total + hours_checks|length }}</span></h2></summary>
-  <p class="meta">Already in the database, and held back by its hours. Both of
-    these are the same job, so they sit together.</p>
+  <summary><h2>2. Finish<span class="queue-count">{{ missing_hours_total + hours_checks|length + pending_reports|length }}</span></h2></summary>
+  <p class="meta">Already in the database, and the data on it needs settling.
+    These are the same job, so they sit together.</p>
+
+  <h3>What parents reported</h3>
+  <p class="meta">Sent from the in-trip page by somebody standing in the
+    building. Nothing here is shown to anyone else until you approve it, and
+    each card is one parent's whole batch about one place.</p>
+  {% if not pending_reports %}
+    <p class="meta">Nothing waiting.</p>
+  {% else %}
+    <p class="meta">{{ pending_reports|length }} to settle.</p>
+    {% for r in pending_reports %}
+    <div class="plan-option">
+      <p><strong>{{ r.venue_name }}</strong>
+        <span class="meta">{{ r.venue_type or 'no type' }}{% if r.neighbourhood %}, {{ r.neighbourhood }}{% endif %}</span></p>
+      <p class="meta">{{ r.reporter_name }} reported, {{ r.reported_at }}:</p>
+      <ul class="meta">
+        {% for claim in r.claims %}
+          <li>{{ amenity_labels.get(claim.field, claim.field) }}:
+            <strong>{{ 'yes' if claim.value else 'no' }}</strong></li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="{{ url_for('settle_venue_reports', venue_id=r.venue_id) }}">
+        <input type="hidden" name="reported_by" value="{{ r.reported_by }}">
+        <button type="submit" name="decision" value="approve" class="cta-secondary cta-inline">Approve</button>
+        <button type="submit" name="decision" value="reject" class="cta-secondary cta-inline">Reject</button>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
 
   <h3>No hours at all</h3>
   <p class="meta">No hours means no plans. These stay out until you set them.</p>

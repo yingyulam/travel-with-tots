@@ -171,6 +171,10 @@
   // What we already hold about each venue, so the panel opens showing it and
   // unticking can mean "that has gone" rather than "I did not look".
   const VENUE_REPORTS = {{ venue_reports|tojson }};
+  // This parent's own reports that nobody has reviewed yet. Kept apart from
+  // VENUE_REPORTS because they are not what the app holds: they are what one
+  // person said, shown back so a send does not look swallowed.
+  const PENDING_REPORTS = {{ pending_reports|tojson }};
   const PLANS = tripData.plans.slice();   // versions; index 0 is the original
   let active = 0;
 
@@ -388,6 +392,7 @@
     const v = stop.venue;
     if (!v || !v.id) return null;
     const known = VENUE_REPORTS[v.id] || {};
+    const waiting = PENDING_REPORTS[v.id] || {};
     const offered = REPORTABLE.filter(
       // A highchair at a park is not a question.
       ([key]) => !(CONDITIONAL.includes(key) && !v.can_eat));
@@ -405,8 +410,15 @@
       const chip = el("label", "chip");
       const input = document.createElement("input");
       input.type = "checkbox";
-      input.checked = known[key] === true;
+      // Their own unreviewed answer wins over what the app holds, so the box
+      // shows what they last said rather than reverting under them.
+      const pending = Object.prototype.hasOwnProperty.call(waiting, key);
+      input.checked = pending ? waiting[key] === true : known[key] === true;
       chip.append(input, el("span", null, label));
+      if (pending) {
+        chip.classList.add("chip-pending");
+        chip.append(el("span", "chip-pending-note", "awaiting review"));
+      }
       chips.appendChild(chip);
       boxes.set(key, input);
     });

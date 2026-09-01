@@ -122,12 +122,38 @@ class ReportRouteTest(unittest.TestCase):
     def _flags(self):
         return db.reported_flags([self.venue]).get(self.venue, {})
 
+    def _pending(self):
+        return db.pending_reports_for(self.parent, [self.venue]).get(self.venue, {})
+
+    def _approve(self):
+        """What a reviewer does. Nothing a parent reports counts until this."""
+        db.settle_reports_for(self.venue, self.parent, approved=True)
+
     def _count(self):
         with closing(db.connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM venue_reports").fetchone()[0]
 
+    def test_a_tick_waits_for_a_reviewer(self):
+        # The rule. One visitor's unchecked claim used to change what every
+        # other parent was shown, the moment it was sent.
+        self._post(found=["has_washroom"])
+        self.assertNotIn("has_washroom", self._flags())
+        self.assertIs(self._pending()["has_washroom"], True)
+
+    def test_approving_it_makes_it_everybodys(self):
+        self._post(found=["has_washroom"])
+        self._approve()
+        self.assertIs(self._flags()["has_washroom"], True)
+
+    def test_rejecting_it_leaves_the_data_alone(self):
+        self._post(found=["has_washroom"])
+        db.settle_reports_for(self.venue, self.parent, approved=False)
+        self.assertNotIn("has_washroom", self._flags())
+        self.assertEqual(self._pending(), {})
+
     def test_a_tick_is_recorded_against_the_parent(self):
         self._post(found=["has_washroom"])
+        self._approve()
         self.assertIs(self._flags()["has_washroom"], True)
         with closing(db.connect()) as conn:
             row = conn.execute("SELECT reported_by FROM venue_reports").fetchone()
@@ -157,7 +183,9 @@ class ReportRouteTest(unittest.TestCase):
     def test_unticking_something_we_hold_reports_it_gone(self):
         # The "something is different" case, with no extra control for it.
         self._post(found=["has_washroom"])
+        self._approve()
         self._post(found=[])
+        self._approve()
         self.assertIs(self._flags()["has_washroom"], False)
 
     def test_a_field_the_panel_never_offered_is_left_alone(self):
@@ -166,10 +194,13 @@ class ReportRouteTest(unittest.TestCase):
                    shown=["has_washroom", "has_family_room"])
         self.assertNotIn("has_highchair", self._flags())
 
-    def test_the_reply_confirms_what_was_saved(self):
+    def test_the_reply_thanks_them_and_says_it_is_waiting(self):
+        # The send has to feel like it did something, because from the parent's
+        # side nothing else visibly changes until a reviewer gets to it.
         body = self._post(found=["has_washroom"]).get_json()
         self.assertEqual(body["saved"], 1)
-        self.assertIn("noted 1 thing", body["message"])
+        self.assertIn("Thank you", body["message"])
+        self.assertIn("awaiting review", body["message"])
 
     def test_a_closed_venue_files_a_check_for_an_admin(self):
         self._post(hours_wrong=True)
@@ -204,7 +235,7 @@ class ReportRouteTest(unittest.TestCase):
         self.client.post(f"/venues/{self.venue}/report",
                          json={"found": ["has_washroom"],
                                "shown": ["has_washroom"]})
-        self.assertIs(self._flags()["has_washroom"], True)
+        self.assertIs(self._pending()["has_washroom"], True)
 
     def test_the_review_page_does_not_label_a_parent_report_as_osm(self):
         # Two sources reach that queue now and they say different kinds of
@@ -228,6 +259,148 @@ class ReportRouteTest(unittest.TestCase):
             response = self._post(found=["has_washroom"])
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self._count(), 0)
+
+
+class TheReviewQueueTest(unittest.TestCase):
+    """What a reviewer sees, and what settling one does.
+
+    Mirrors venue_hours_checks, which already holds a disputed claim for a
+    person rather than acting on it.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        patcher = mock.patch.object(db, "DB_PATH",
+                                   os.path.join(self._tmp.name, "app.db"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with closing(db.connect()) as conn:
+            db.create_schema(conn)
+        self.parent = db.add_parent("p@example.com", "h", name="Pat")
+        self.other = db.add_parent("q@example.com", "h", name="Quinn")
+        self.admin = db.add_parent("a@example.com", "h", name="Ada")
+        self.venue = db.add_venue("A Mall", source="curated", city="Vancouver")
+
+    def _report(self, parent, **values):
+        db.record_amenities(self.venue, values, reported_by=parent,
+                            approved=False)
+
+    def _flags(self):
+        return db.reported_flags([self.venue]).get(self.venue, {})
+
+    def test_a_pending_report_is_queued_with_who_and_where(self):
+        self._report(self.parent, has_nursing_room=True)
+        row = db.get_pending_reports()[0]
+        self.assertEqual(row["venue_name"], "A Mall")
+        self.assertEqual(row["reporter_name"], "Pat")
+        self.assertEqual(row["field"], "has_nursing_room")
+
+    def test_an_approved_report_leaves_the_queue_and_applies(self):
+        self._report(self.parent, has_nursing_room=True)
+        db.settle_reports_for(self.venue, self.parent, approved=True,
+                              admin_id=self.admin)
+        self.assertEqual(db.get_pending_reports(), [])
+        self.assertIs(self._flags()["has_nursing_room"], True)
+
+    def test_a_rejected_report_leaves_the_queue_and_changes_nothing(self):
+        self._report(self.parent, has_nursing_room=True)
+        db.settle_reports_for(self.venue, self.parent, approved=False,
+                              admin_id=self.admin)
+        self.assertEqual(db.get_pending_reports(), [])
+        self.assertNotIn("has_nursing_room", self._flags())
+
+    def test_a_rejected_report_is_kept_rather_than_deleted(self):
+        # "Somebody said this and a reviewer disagreed" is worth keeping, and a
+        # deleted row would let the same claim arrive again looking new.
+        self._report(self.parent, has_nursing_room=True)
+        db.settle_reports_for(self.venue, self.parent, approved=False)
+        with closing(db.connect()) as conn:
+            row = conn.execute("SELECT status FROM venue_reports").fetchone()
+        self.assertEqual(row["status"], "rejected")
+
+    def test_settling_one_parent_leaves_another_parents_report_alone(self):
+        self._report(self.parent, has_nursing_room=True)
+        self._report(self.other, has_washroom=True)
+        db.settle_reports_for(self.venue, self.parent, approved=True)
+        self.assertEqual([r["reporter_name"] for r in db.get_pending_reports()],
+                         ["Quinn"])
+
+    def test_a_whole_batch_settles_in_one_action(self):
+        # A parent ticks several boxes and sends once; one click per tick is
+        # the friction that argued against having a queue at all.
+        self._report(self.parent, has_nursing_room=True, has_washroom=True,
+                     has_family_room=True)
+        db.settle_reports_for(self.venue, self.parent, approved=True)
+        self.assertEqual(db.get_pending_reports(), [])
+        self.assertEqual(len(self._flags()), 3)
+
+    def test_a_parent_only_sees_their_own_pending_report(self):
+        # Somebody else's unchecked claim is what the queue keeps out of view.
+        self._report(self.other, has_washroom=True)
+        self.assertEqual(db.pending_reports_for(self.parent, [self.venue]), {})
+
+    def test_other_writers_still_apply_at_once(self):
+        # Scope: only the in-trip page is held. A reviewer's own tick, the
+        # municipal import and Log a Place behave as they always did.
+        db.record_amenities(self.venue, {"has_highchair": True},
+                            reported_by=self.admin, note="Checked at review.")
+        self.assertIs(self._flags()["has_highchair"], True)
+        self.assertEqual(db.get_pending_reports(), [])
+
+
+class SettlingIsAdminOnlyTest(unittest.TestCase):
+    """Only a reviewer decides. A parent approving their own report would make
+    the queue a formality."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        import app as app_module
+        self.app_module = app_module
+        patcher = mock.patch.object(db, "DB_PATH",
+                                   os.path.join(self._tmp.name, "app.db"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with closing(db.connect()) as conn:
+            db.create_schema(conn)
+        self.parent = db.add_parent("p@example.com", "h", name="Pat")
+        self.admin = db.add_parent("a@example.com", "h", name="Ada")
+        self.venue = db.add_venue("A Mall", source="curated", city="Vancouver")
+        db.record_amenities(self.venue, {"has_nursing_room": True},
+                            reported_by=self.parent, approved=False)
+        app_module.app.config["TESTING"] = True
+        self.client = app_module.app.test_client()
+
+    def _settle(self, current, decision="approve"):
+        with mock.patch.object(self.app_module, "_current_parent",
+                               return_value=current):
+            return self.client.post(
+                f"/venues/{self.venue}/reports/settle",
+                data={"reported_by": self.parent, "decision": decision})
+
+    def _applied(self):
+        return "has_nursing_room" in db.reported_flags([self.venue]).get(self.venue, {})
+
+    def test_an_admin_can_approve(self):
+        self._settle({"id": self.admin, "is_admin": True, "name": "Ada",
+                      "email": "a@example.com"})
+        self.assertTrue(self._applied())
+
+    def test_the_reporting_parent_cannot_approve_their_own(self):
+        self._settle({"id": self.parent, "is_admin": False, "name": "Pat",
+                      "email": "p@example.com"})
+        self.assertFalse(self._applied())
+
+    def test_a_stranger_cannot_approve(self):
+        self._settle(None)
+        self.assertFalse(self._applied())
+
+    def test_rejecting_applies_nothing(self):
+        self._settle({"id": self.admin, "is_admin": True, "name": "Ada",
+                      "email": "a@example.com"}, decision="reject")
+        self.assertFalse(self._applied())
+        self.assertEqual(db.get_pending_reports(), [])
 
 
 if __name__ == "__main__":
