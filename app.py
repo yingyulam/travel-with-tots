@@ -31,6 +31,11 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from src import candidates, db, rag
+from src.web import guards
+from src.web.guards import (CHAT_LIMIT, CHAT_WINDOW, LOGIN_LIMIT,
+                            LOGIN_WINDOW, LOOKUP_LIMIT, LOOKUP_WINDOW,
+                            PLAN_LIMIT, PLAN_WINDOW, admin_required,
+                            login_required, rate_limited)
 from src.workflows import propose_venues
 from src.agents import (
     ALLOWED_CHAT_MODELS,
@@ -172,21 +177,6 @@ app.config.update(
     MAX_CONTENT_LENGTH=256 * 1024,
 )
 
-# Whether X-Forwarded-For can be believed. True only behind a proxy that sets
-# it; off a proxy it is a header the caller wrote, and trusting it would let one
-# attacker present as an unlimited number of addresses. render.yaml turns it on.
-TRUST_PROXY = os.environ.get(
-    "TRUST_PROXY", "").strip().lower() in ("1", "true", "yes")
-
-# What one caller may do per minute on the routes that cost money. Generous
-# against real use -- a parent plans a day a few times, not sixty -- and low
-# enough that a script cannot spend a month's API budget before anyone notices.
-CHAT_LIMIT, CHAT_WINDOW = 20, 60
-PLAN_LIMIT, PLAN_WINDOW = 12, 60
-LOOKUP_LIMIT, LOOKUP_WINDOW = 40, 60
-# Tighter, because guessing repeatedly is the whole attack on this one.
-LOGIN_LIMIT, LOGIN_WINDOW = 8, 300
-
 # Caps on what a caller may put in a chat turn. `history` is echoed back by the
 # widget, so it is the caller's to inflate, and every turn of it is paid for as
 # prompt tokens. A real conversation is a few short turns.
@@ -257,18 +247,12 @@ def _chosen_model(value):
     return value if value in ALLOWED_CHAT_MODELS else DEFAULT_MODEL
 
 
-def _current_parent():
-    """The logged-in parent's row, or None if no one is logged in."""
-    parent_id = session.get("parent_id")
-    return get_parent(parent_id) if parent_id else None
-
-
 def _chat_context(data):
     """Everything a chat turn is given beyond the message itself.
 
     Identity comes from the session and only from the session: `parent_id` is
     what every recall is scoped by, so a client-supplied one would read another
-    parent's children and saved trips. Read through `_current_parent()` rather
+    parent's children and saved trips. Read through `guards.current_parent()` rather
     than `session.get("parent_id")` raw, because SQLite reuses row ids, so a
     stale cookie can eventually name a real but different parent; the lookup
     returns None for a row that is gone.
@@ -276,100 +260,9 @@ def _chat_context(data):
     Our value is merged last, so it wins outright even if the browser half of
     the context ever grows a key of the same name.
     """
-    parent = _current_parent()
+    parent = guards.current_parent()
     return {**_message_context(data),
             "parent_id": parent["id"] if parent else None}
-
-
-def login_required(view):
-    """Redirect anonymous visitors to the login page instead of the view."""
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if _current_parent() is None:
-            return redirect(url_for("login"))
-        return view(*args, **kwargs)
-    return wrapped
-
-
-def admin_required(view):
-    """Redirect logged-in non-admins away from admin-only pages. Stack under
-    @login_required, which already handles anonymous visitors."""
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not _current_parent()["is_admin"]:
-            flash("You don't have access to that page.")
-            return redirect(url_for("dashboard"))
-        return view(*args, **kwargs)
-    return wrapped
-
-
-def rate_limited(limit, window):
-    """Cap how often one caller may reach this view.
-
-    Keyed on the parent when there is one and the address otherwise, so a
-    household behind one address is not throttled by a stranger, and a logged-in
-    parent is not punished for sharing an office with one.
-
-    Answers 429 with Retry-After. JSON for the JSON routes, so the widget can
-    say something rather than failing on a parse error; for a form POST, the
-    flash-and-redirect the rest of the app already uses, so the parent lands
-    back on the page they submitted with the reason on it.
-    """
-    def decorate(view):
-        bucket = ratelimit.RateLimit(limit, window)
-
-        @wraps(view)
-        def wrapped(*args, **kwargs):
-            if not _rate_limits_on():
-                return view(*args, **kwargs)
-            parent = _current_parent()
-            key = f"parent:{parent['id']}" if parent else f"ip:{_caller_address()}"
-            try:
-                bucket.check(key)
-            except ratelimit.TooMany as e:
-                message = (f"That's a lot of requests. Please wait "
-                           f"{e.retry_after} seconds and try again.")
-                if request.is_json:
-                    response = make_response(jsonify({"error": message}), 429)
-                else:
-                    flash(message)
-                    response = make_response(
-                        redirect(request.referrer or url_for("home")))
-                response.headers["Retry-After"] = str(e.retry_after)
-                return response
-            return view(*args, **kwargs)
-        return wrapped
-    return decorate
-
-
-def _rate_limits_on():
-    """Whether to enforce the limits. Read per request, not at import.
-
-    Off in the test suite, which `tests/__init__.py` sets, for the same reason
-    it pins the database: every test file runs in one process, so the buckets
-    are shared across the whole run. Nineteen posts to the planning routes in
-    three seconds is one caller as far as a limiter is concerned, so the later
-    tests were answered 429 by a limit meant for a stranger with a script.
-
-    Default on, and off only when something says "off" out loud, so forgetting
-    to set it leaves the limits in place rather than removing them.
-    """
-    return os.environ.get("RATE_LIMITS", "").strip().lower() != "off"
-
-
-def _caller_address():
-    """The client's address, trusting proxy headers only when told to.
-
-    X-Forwarded-For is set by whoever spoke to us, so off a proxy it is simply
-    a header the caller chose and trusting it would let one attacker look like
-    thousands. Render sits in front of this and sets it, so TRUST_PROXY says
-    when to believe it. `access_route[-1]` rather than `[0]`: the last entry is
-    the one our own proxy added, and the earlier ones are still the caller's
-    to invent.
-    """
-    if TRUST_PROXY and request.access_route:
-        return request.access_route[-1]
-    return request.remote_addr or "unknown"
 
 
 @app.errorhandler(Exception)
@@ -422,7 +315,7 @@ def inject_current_parent():
     available to every template, so the masthead auth-status link and the
     child pickers work without threading them through each render_template
     call."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     children = []
     if parent:
         for child in get_children(parent["id"]):
@@ -548,7 +441,7 @@ def logout():
 @login_required
 def dashboard():
     """The logged-in parent's saved children, trips, and logged places."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     trips = []
     for row in get_trips_for_parent(parent["id"]):
         trip = dict(row)
@@ -680,13 +573,13 @@ def venue_review_decide(venue_id):
     action = request.form.get("action")
     if action == "approve":
         try:
-            promote_submission(venue_id, _current_parent()["id"])
+            promote_submission(venue_id, guards.current_parent()["id"])
         except PromotionError as e:
             flash(str(e).capitalize() + ".")
         else:
             flash("Verified. It can now appear in plans and searches.")
     elif action == "reject":
-        reject_submission(venue_id, _current_parent()["id"])
+        reject_submission(venue_id, guards.current_parent()["id"])
         flash("Set aside. It stays on file and can be restored below.")
     else:
         flash("Unknown action.")
@@ -812,7 +705,7 @@ def venue_review_candidates():
     # unticked, so iterating the whole queue would wipe the flags of everything
     # the reviewer never saw.
     on_page = set(request.form.getlist("on_page"))
-    admin_id = _current_parent()["id"]
+    admin_id = guards.current_parent()["id"]
     saved = approved = rejected = reproposed = 0
     refused = []
 
@@ -1183,7 +1076,7 @@ def venue_hours_decide(check_id):
     tagged as closing at half four is more likely a mis-tagged building than a
     mall that closes at half four.
     """
-    admin_id = _current_parent()["id"]
+    admin_id = guards.current_parent()["id"]
     action = request.form.get("action")
     venue_id = request.form.get("venue_id", type=int)
     note = request.form.get("hours_note", "").strip() or None
@@ -1230,7 +1123,7 @@ def settle_venue_reports(venue_id):
     argued against having a queue here at all, so the queue settles what the
     parent actually did.
     """
-    admin_id = _current_parent()["id"]
+    admin_id = guards.current_parent()["id"]
     reporter = request.form.get("reported_by", type=int)
     approved = request.form.get("decision") == "approve"
     db.settle_reports_for(venue_id, reporter, approved=approved, admin_id=admin_id)
@@ -1300,7 +1193,7 @@ def venue_confirm_batch():
     makes the stamp mean something later: most of these rows have none, so
     "confirmed" would otherwise say only that somebody clicked.
     """
-    admin_id = _current_parent()["id"]
+    admin_id = guards.current_parent()["id"]
     picked = request.form.getlist("picked")
     saved = sum(_save_reviewed_venue(int(vid), vid, admin_id)
                 for vid in request.form.getlist("on_page"))
@@ -1866,7 +1759,7 @@ def results_data():
 @login_required
 def add_child_route():
     """Add another child to the logged-in parent's account."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     name = request.form.get("child_name", "").strip()
     date_of_birth = request.form.get("date_of_birth", "")
     if not name or not date_of_birth:
@@ -1880,7 +1773,7 @@ def add_child_route():
 @login_required
 def edit_child_route(child_id):
     """Update one of the logged-in parent's children."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     if child_id not in {child["id"] for child in get_children(parent["id"])}:
         flash("Child not found.")
         return redirect(url_for("dashboard"))
@@ -1897,7 +1790,7 @@ def edit_child_route(child_id):
 @login_required
 def delete_child_route(child_id):
     """Remove one of the logged-in parent's children (their saved trips are kept)."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     if child_id not in {child["id"] for child in get_children(parent["id"])}:
         flash("Child not found.")
         return redirect(url_for("dashboard"))
@@ -1909,7 +1802,7 @@ def delete_child_route(child_id):
 @login_required
 def delete_trip_route(trip_id):
     """Remove one of the logged-in parent's saved plans."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     if get_trip_for_parent(parent["id"], trip_id) is None:
         flash("Trip not found.")
         return redirect(url_for("dashboard"))
@@ -1936,7 +1829,7 @@ def log_place_page():
     logged_id = request.args.get("logged", type=int)
     return render_template(
         "log_a_place.html", amenity_options=AMENITY_OPTIONS, form={},
-        stored=_logged_place(_current_parent()["id"], logged_id) if logged_id else None)
+        stored=_logged_place(guards.current_parent()["id"], logged_id) if logged_id else None)
 
 
 @app.route("/log-place", methods=["POST"])
@@ -1963,7 +1856,7 @@ def log_place():
             "log_a_place.html", amenity_options=AMENITY_OPTIONS, stored=None,
             form=request.form)
 
-    parent = _current_parent()
+    parent = guards.current_parent()
     try:
         record = log_a_place.store(parent["id"], request.form)
     except ValueError as e:
@@ -2076,7 +1969,7 @@ def _owns_place(parent_id, place_id):
 @login_required
 def edit_place_route(place_id):
     """Correct one of the logged-in parent's own logged places."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     if not _owns_place(parent["id"], place_id):
         flash("Place not found.")
         return redirect(url_for("dashboard"))
@@ -2103,7 +1996,7 @@ def edit_place_route(place_id):
 @login_required
 def delete_place_route(place_id):
     """Remove one of the logged-in parent's own logged places."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     if not _owns_place(parent["id"], place_id):
         flash("Place not found.")
         return redirect(url_for("dashboard"))
@@ -2122,7 +2015,7 @@ def save_trip():
     Requiring one turned Save into a redirect back to /plan that saved nothing
     and said nothing, for the parent least likely to know why.
     """
-    parent = _current_parent()
+    parent = guards.current_parent()
     valid_ids = {str(child["id"]) for child in get_children(parent["id"])}
     try:
         # One day or a whole visit. The in-trip page and the planning page both
@@ -2226,7 +2119,7 @@ def plan():
     else:
         form = default_form()
 
-    resolve_plan_child(form, _current_parent())
+    resolve_plan_child(form, guards.current_parent())
 
     # Every kind of place unticked. The form itself blocks this, so getting
     # here means a hand-made post or a page whose script did not run: say so
@@ -2418,7 +2311,7 @@ def _trip_pending_reports(trip):
     rather than appearing to have swallowed it. Their own only: somebody else's
     unchecked claim is exactly what the queue exists to keep out of view.
     """
-    parent = _current_parent()
+    parent = guards.current_parent()
     ids = _trip_venue_ids(trip)
     if not parent or not ids:
         return {}
@@ -2500,7 +2393,7 @@ def trip():
 @login_required
 def view_trip(trip_id):
     """Re-open a previously saved itinerary from the dashboard."""
-    parent = _current_parent()
+    parent = guards.current_parent()
     row = get_trip_for_parent(parent["id"], trip_id)
     if row is None or not row["plan_json"]:
         flash("That saved trip doesn't have a full itinerary to show.")
@@ -2578,7 +2471,7 @@ def report_amenities(venue_id):
     not be read as "the parent says no". A highchair is not offered at a park,
     and answering for it would invent a claim nobody made.
     """
-    parent = _current_parent()
+    parent = guards.current_parent()
     data = request.get_json(silent=True) or {}
     trip_id = data.get("trip_id")
     if trip_id is not None and get_trip_for_parent(parent["id"], trip_id) is None:

@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -104,8 +105,7 @@ class ReportRouteTest(unittest.TestCase):
         self._as(self.parent, "p@example.com")
 
     def _as(self, parent_id, email):
-        patcher = mock.patch.object(
-            self.app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": parent_id, "is_admin": False,
                           "name": "P", "email": email})
         patcher.start()
@@ -242,8 +242,7 @@ class ReportRouteTest(unittest.TestCase):
         # thing, so the label cannot be hardcoded.
         self._post(hours_wrong=True)
         admin = db.add_parent("a@example.com", "h", name="A")
-        with mock.patch.object(
-                self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                 return_value={"id": admin, "is_admin": True,
                               "name": "A", "email": "a@example.com"}):
             html = self.client.get("/venues/review").get_data(as_text=True)
@@ -252,8 +251,7 @@ class ReportRouteTest(unittest.TestCase):
 
     def test_a_parent_cannot_report_against_another_parents_trip(self):
         other = db.add_parent("z@example.com", "h", name="Z")
-        with mock.patch.object(
-                self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                 return_value={"id": other, "is_admin": False,
                               "name": "Z", "email": "z@example.com"}):
             response = self._post(found=["has_washroom"])
@@ -373,7 +371,7 @@ class SettlingIsAdminOnlyTest(unittest.TestCase):
         self.client = app_module.app.test_client()
 
     def _settle(self, current, decision="approve"):
-        with mock.patch.object(self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value=current):
             return self.client.post(
                 f"/venues/{self.venue}/reports/settle",

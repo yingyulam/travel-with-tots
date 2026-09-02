@@ -1,5 +1,6 @@
 import json
 import unittest
+from src.web import guards
 from unittest import mock
 
 import requests
@@ -319,25 +320,25 @@ class ExtractFormRouteTest(unittest.TestCase):
         self.admin = {"id": 1, "is_admin": True, "name": "Admin", "email": "a@b.com"}
 
     def test_page_renders_for_an_admin(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
+        with mock.patch.object(guards, "current_parent", return_value=self.admin):
             resp = self.client.get("/extract-form")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Form Extractor", resp.get_data(as_text=True))
 
     def test_page_is_admin_only(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=None):
+        with mock.patch.object(guards, "current_parent", return_value=None):
             self.assertEqual(self.client.get("/extract-form").status_code, 302)
         parent = {**self.admin, "is_admin": False}
-        with mock.patch.object(self.app_module, "_current_parent", return_value=parent):
+        with mock.patch.object(guards, "current_parent", return_value=parent):
             self.assertEqual(self.client.get("/extract-form").status_code, 302)
 
     def test_empty_description_is_rejected(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
+        with mock.patch.object(guards, "current_parent", return_value=self.admin):
             resp = self.client.post("/extract-form/run", json={"description": "   "})
         self.assertEqual(resp.status_code, 400)
 
     def test_run_returns_the_form_and_what_was_found(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
+        with mock.patch.object(guards, "current_parent", return_value=self.admin), \
              mock.patch("src.components.extract_form.call_openrouter",
                         return_value=(_reply(destination="Vancouver"), {}, 1.0)):
             resp = self.client.post("/extract-form/run",
@@ -348,14 +349,14 @@ class ExtractFormRouteTest(unittest.TestCase):
         self.assertEqual(body["found"], ["destination"])
 
     def test_missing_api_key_is_a_clean_500(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
+        with mock.patch.object(guards, "current_parent", return_value=self.admin), \
              mock.patch("src.components.extract_form.call_openrouter",
                         side_effect=KeyError("OPENROUTER_API_KEY")):
             resp = self.client.post("/extract-form/run", json={"description": "x"})
         self.assertEqual(resp.status_code, 500)
 
     def test_unusable_reply_is_a_clean_502(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin), \
+        with mock.patch.object(guards, "current_parent", return_value=self.admin), \
              mock.patch("src.components.extract_form.call_openrouter",
                         return_value=("not json", {}, 1.0)):
             resp = self.client.post("/extract-form/run", json={"description": "x"})

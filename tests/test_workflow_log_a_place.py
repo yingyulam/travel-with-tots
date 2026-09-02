@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -255,7 +256,7 @@ class PrefillTest(_VenueDbTest):
                        "is_admin": False}
 
     def _post(self, **fields):
-        with mock.patch.object(self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value=self.parent), \
              mock.patch.object(self.app_module.log_a_place, "store") as stored:
             response = self.client.post("/log-place", data=fields)
@@ -304,7 +305,7 @@ class PrefillTest(_VenueDbTest):
         stored.assert_not_called()
 
     def test_the_empty_form_still_renders(self):
-        with mock.patch.object(self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value=self.parent):
             html = self.client.get("/log-place").get_data(as_text=True)
         self.assertIn('name="name"', html)
@@ -341,7 +342,7 @@ class PageTest(unittest.TestCase):
         self.parent = {"id": 1, "is_admin": False, "name": "P", "email": "p@b.com"}
 
     def _as_parent(self):
-        return mock.patch.object(self.app_module, "_current_parent",
+        return mock.patch.object(guards, "current_parent",
                                  return_value=self.parent)
 
     def test_the_page_renders_for_any_logged_in_parent(self):
@@ -352,7 +353,7 @@ class PageTest(unittest.TestCase):
         self.assertIn("Log a Place", resp.get_data(as_text=True))
 
     def test_the_page_needs_a_login(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=None):
+        with mock.patch.object(guards, "current_parent", return_value=None):
             self.assertEqual(self.client.get("/log-place").status_code, 302)
 
     def test_the_map_needs_no_api_key(self):
@@ -374,7 +375,7 @@ class PageTest(unittest.TestCase):
 
     def test_the_workflows_card_links_to_it(self):
         admin = {**self.parent, "is_admin": True}
-        with mock.patch.object(self.app_module, "_current_parent", return_value=admin):
+        with mock.patch.object(guards, "current_parent", return_value=admin):
             html = self.client.get("/workflows").get_data(as_text=True)
         self.assertIn('href="/log-place"', html)
 

@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -37,8 +38,7 @@ class SaveTripTest(unittest.TestCase):
         self._as(self.parent)
 
     def _as(self, parent_id):
-        patcher = mock.patch.object(
-            self.app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": parent_id, "is_admin": False,
                           "name": "P", "email": "p@example.com"})
         patcher.start()
@@ -115,8 +115,7 @@ class SavePromptTest(unittest.TestCase):
             db.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.client = app_module.app.test_client()
-        patcher = mock.patch.object(
-            self.app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": self.parent, "is_admin": False,
                           "name": "P", "email": "p@example.com"})
         patcher.start()

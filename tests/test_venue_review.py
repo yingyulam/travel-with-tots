@@ -8,6 +8,7 @@ source, the unique indexes and the VERIFIED_SOURCES filter all run for real.
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
@@ -37,8 +38,7 @@ class _ReviewTest(unittest.TestCase):
         self.parent_id = db.add_parent("p@example.com", "h", name="P")
 
         self.client = app_module.app.test_client()
-        patcher = mock.patch.object(
-            app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": self.admin_id, "is_admin": True,
                           "name": "Admin", "email": "admin@example.com"})
         patcher.start()
@@ -330,8 +330,7 @@ class ReviewPageTest(_ReviewTest):
         self.assertIn('queue-count">1<', summary[:120])
 
     def test_a_non_admin_is_redirected(self):
-        with mock.patch.object(
-                self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                 return_value={"id": self.parent_id, "is_admin": False,
                               "name": "P", "email": "p@example.com"}):
             self.assertEqual(self.client.get("/venues/review").status_code, 302)
@@ -789,8 +788,7 @@ class CandidateBatchTest(_ReviewTest):
 
     def test_a_non_admin_cannot_approve(self):
         row = self._propose()
-        with mock.patch.object(
-                self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                 return_value={"id": self.parent_id, "is_admin": False,
                               "name": "P", "email": "p@example.com"}):
             self.assertEqual(self._post("approve", [row["id"]]).status_code, 302)

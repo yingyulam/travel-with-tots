@@ -12,6 +12,7 @@ a mall that closes at half four -- so a finding goes to a person.
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -125,8 +126,7 @@ class HoursDecisionRouteTest(unittest.TestCase):
                               "09:30", "17:00")
         self.check_id = db.get_pending_hours_checks()[0]["id"]
         self.client = app_module.app.test_client()
-        patcher = mock.patch.object(
-            app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": self.admin, "is_admin": True,
                           "name": "A", "email": "a@example.com"})
         patcher.start()
@@ -159,8 +159,7 @@ class HoursDecisionRouteTest(unittest.TestCase):
 
     def test_a_non_admin_cannot_settle_a_finding(self):
         other = db.add_parent("p@example.com", "h", name="P")
-        with mock.patch.object(
-                self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                 return_value={"id": other, "is_admin": False,
                               "name": "P", "email": "p@example.com"}):
             response = self.client.post(f"/venues/hours/{self.check_id}", data={

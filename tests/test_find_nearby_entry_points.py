@@ -8,6 +8,7 @@ having consulted neither.
 """
 
 import unittest
+from src.web import guards
 from unittest import mock
 
 import app as app_module
@@ -142,7 +143,7 @@ class NothingKnownMeansTheCityWeCoverTest(unittest.TestCase):
         # The page and the chat differed on exactly this: same question, no
         # location, one answered Vancouver and the other answered Texas.
         client = app_module.app.test_client()
-        with mock.patch.object(app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value={"id": 1, "is_admin": 1}), \
              mock.patch.object(app_module, "find_nearby_component",
                                return_value=FOUND) as component:

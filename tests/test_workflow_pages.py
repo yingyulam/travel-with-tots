@@ -7,6 +7,7 @@ workflow. The dashboard offered "Try it" and took you somewhere that did not.
 
 import re
 import unittest
+from src.web import guards
 from unittest import mock
 
 import app as app_module
@@ -60,14 +61,14 @@ class WorkflowPagesAreAdminOnlyTest(unittest.TestCase):
     def test_an_admin_gets_the_page(self):
         for endpoint, (url, _) in WORKFLOW_PAGES.items():
             with self.subTest(endpoint=endpoint), \
-                 mock.patch.object(app_module, "_current_parent", return_value=ADMIN):
+                 mock.patch.object(guards, "current_parent", return_value=ADMIN):
                 self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_anonymous_and_non_admin_are_turned_away(self):
         for endpoint, (url, _) in WORKFLOW_PAGES.items():
             for who in (None, PARENT):
                 with self.subTest(endpoint=endpoint, who=who), \
-                     mock.patch.object(app_module, "_current_parent", return_value=who):
+                     mock.patch.object(guards, "current_parent", return_value=who):
                     self.assertEqual(self.client.get(url).status_code, 302)
 
 
@@ -75,7 +76,7 @@ class ThePageOffersRunAndListenTest(unittest.TestCase):
     """The course pattern: run the workflow once, or keep handling messages."""
 
     def setUp(self):
-        with mock.patch.object(app_module, "_current_parent", return_value=ADMIN):
+        with mock.patch.object(guards, "current_parent", return_value=ADMIN):
             self.html = app_module.app.test_client().get(
                 "/workflows/find-nearby-place").get_data(as_text=True)
 

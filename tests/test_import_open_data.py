@@ -9,6 +9,7 @@ prove the importer agrees with itself.
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -386,8 +387,7 @@ class SetHoursRouteTest(_WithDatabase):
         self.venue_id = db.get_venues_missing_hours()[0]["id"]
 
     def _as(self, is_admin=True):
-        return mock.patch.object(
-            app_module, "_current_parent",
+        return mock.patch.object(guards, "current_parent",
             return_value={"id": 1, "is_admin": is_admin,
                           "name": "A", "email": "a@b.com"})
 

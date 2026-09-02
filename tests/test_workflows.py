@@ -1,4 +1,5 @@
 import unittest
+from src.web import guards
 from unittest import mock
 
 from markupsafe import escape
@@ -70,7 +71,7 @@ class WorkflowsPageTest(unittest.TestCase):
         self.admin = {"id": 1, "is_admin": True, "name": "Admin", "email": "a@b.com"}
 
     def test_page_lists_every_workflow_and_its_components(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
+        with mock.patch.object(guards, "current_parent", return_value=self.admin):
             resp = self.client.get("/workflows")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
@@ -84,16 +85,16 @@ class WorkflowsPageTest(unittest.TestCase):
                 self.assertIn(str(escape(step["component"])), html)
 
     def test_unbuilt_steps_are_marked_pending(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
+        with mock.patch.object(guards, "current_parent", return_value=self.admin):
             html = self.client.get("/workflows").get_data(as_text=True)
         unbuilt = sum(1 for w in WORKFLOWS for s in w["steps"] if not s["built"])
         self.assertEqual(html.count("badge-pending"), unbuilt)
 
     def test_requires_an_admin(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=None):
+        with mock.patch.object(guards, "current_parent", return_value=None):
             self.assertEqual(self.client.get("/workflows").status_code, 302)
         parent = {**self.admin, "is_admin": False}
-        with mock.patch.object(self.app_module, "_current_parent", return_value=parent):
+        with mock.patch.object(guards, "current_parent", return_value=parent):
             self.assertEqual(self.client.get("/workflows").status_code, 302)
 
 

@@ -1,4 +1,5 @@
 import unittest
+from src.web import guards
 from unittest import mock
 
 import requests
@@ -149,7 +150,7 @@ class SearchRouteTest(unittest.TestCase):
         self.parent = {"id": 1, "is_admin": False, "name": "P", "email": "p@b.com"}
 
     def _as_parent(self):
-        return mock.patch.object(self.app_module, "_current_parent",
+        return mock.patch.object(guards, "current_parent",
                                  return_value=self.parent)
 
     def test_a_query_is_required(self):
@@ -178,7 +179,7 @@ class SearchRouteTest(unittest.TestCase):
         # this you can only reach the search through the log-a-place form, so a
         # wrong address can't be pinned on the search or the form.
         admin = {**self.parent, "is_admin": True}
-        with mock.patch.object(self.app_module, "_current_parent", return_value=admin):
+        with mock.patch.object(guards, "current_parent", return_value=admin):
             resp = self.client.get("/place-search")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Place Search", resp.get_data(as_text=True))
@@ -189,13 +190,13 @@ class SearchRouteTest(unittest.TestCase):
 
     def test_the_components_page_links_to_it(self):
         admin = {**self.parent, "is_admin": True}
-        with mock.patch.object(self.app_module, "_current_parent", return_value=admin):
+        with mock.patch.object(guards, "current_parent", return_value=admin):
             html = self.client.get("/components").get_data(as_text=True)
         self.assertIn('href="/place-search"', html)
 
     def test_the_component_run_route_returns_results(self):
         admin = {**self.parent, "is_admin": True}
-        with mock.patch.object(self.app_module, "_current_parent", return_value=admin), \
+        with mock.patch.object(guards, "current_parent", return_value=admin), \
              mock.patch.object(self.app_module, "search_places",
                                return_value=[{"name": "Science World"}]):
             resp = self.client.post("/place-search/run", json={"query": "science"})
@@ -203,7 +204,7 @@ class SearchRouteTest(unittest.TestCase):
         self.assertEqual(resp.get_json()["places"][0]["name"], "Science World")
 
     def test_searching_needs_a_login(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=None):
+        with mock.patch.object(guards, "current_parent", return_value=None):
             self.assertEqual(
                 self.client.post("/log-place/search", json={"query": "x"}).status_code,
                 302)

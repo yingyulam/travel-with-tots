@@ -12,6 +12,7 @@ resolver has nothing to look up.
 
 import os
 import unittest
+from src.web import guards
 from unittest import mock
 
 from src import ratelimit, webpage
@@ -84,8 +85,8 @@ class RateLimitedRoutesTest(unittest.TestCase):
         # every test file shares one process, so shared buckets would answer
         # later tests 429 for traffic earlier ones sent.
         with mock.patch.dict(os.environ, {"RATE_LIMITS": "off"}):
-            self.assertFalse(self.app_module._rate_limits_on())
-        self.assertTrue(self.app_module._rate_limits_on())
+            self.assertFalse(self.app_module.guards._rate_limits_on())
+        self.assertTrue(self.app_module.guards._rate_limits_on())
 
     def test_too_many_logins_are_refused_with_how_long_to_wait(self):
         # Guessing repeatedly is the whole attack on this endpoint.
@@ -124,8 +125,8 @@ class CallerIdentityTest(unittest.TestCase):
 
     def _address(self, trust, headers):
         with self.app_module.app.test_request_context(headers=headers), \
-             mock.patch.object(self.app_module, "TRUST_PROXY", trust):
-            return self.app_module._caller_address()
+             mock.patch.object(guards, "TRUST_PROXY", trust):
+            return self.app_module.guards._caller_address()
 
     def test_a_forwarded_header_is_ignored_without_a_proxy(self):
         # Off a proxy, X-Forwarded-For is a header the caller wrote. Trusting

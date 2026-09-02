@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -37,8 +38,7 @@ class WorkflowRouteTest(unittest.TestCase):
         self.admin = db.add_parent("a@example.com", "h", name="A")
 
     def _as(self, is_admin=True):
-        patcher = mock.patch.object(
-            self.app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": self.admin, "is_admin": is_admin,
                           "name": "A", "email": "a@example.com"})
         patcher.start()
@@ -92,7 +92,7 @@ class WorkflowRouteTest(unittest.TestCase):
     def test_a_stranger_cannot_run_one(self):
         # force_workflow was accepted from the body of a public route, so this
         # is stricter than what it replaces.
-        with mock.patch.object(self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value=None):
             self.assertNotEqual(self._post().status_code, 200)
 
@@ -103,7 +103,7 @@ class OneOrchestratorEachTest(unittest.TestCase):
     def test_the_route_calls_run_workflow_turn(self):
         import app as app_module
         app_module.app.config["TESTING"] = True
-        with mock.patch.object(app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value={"id": 1, "is_admin": True,
                                              "name": "A", "email": "a@e.com"}), \
              mock.patch.object(app_module, "run_workflow_turn",

@@ -9,6 +9,7 @@ request body.
 
 import os
 import unittest
+from src.web import guards
 from unittest import mock
 
 os.environ.setdefault("SECRET_KEY", "test-only")
@@ -34,7 +35,7 @@ class ChatIdentityTest(unittest.TestCase):
         """The context the route handed to handle_message for one POST.
 
         `parent_id` puts a real value in the session cookie, for the tests that
-        exercise _current_parent rather than mocking it.
+        exercise current_parent rather than mocking it.
         """
         seen = {}
 
@@ -58,7 +59,7 @@ class ChatIdentityTest(unittest.TestCase):
         self.assertIsNone(self._context({})["parent_id"])
 
     def test_a_logged_in_parent_reaches_the_context(self):
-        with mock.patch.object(app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value={"id": 7}):
             self.assertEqual(self._context({})["parent_id"], 7)
 
@@ -68,26 +69,26 @@ class ChatIdentityTest(unittest.TestCase):
         self.assertIsNone(self._context({"parent_id": 999})["parent_id"])
 
     def test_a_parent_id_in_the_body_cannot_impersonate_another_parent(self):
-        with mock.patch.object(app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                                return_value={"id": 7}):
             context = self._context({"parent_id": 999})
         self.assertEqual(context["parent_id"], 7)
 
     def test_the_real_cookie_path_works_not_just_the_mock(self):
-        # Exercises _current_parent and the session for real, so a change to
+        # Exercises current_parent and the session for real, so a change to
         # either is caught rather than mocked over.
-        with mock.patch.object(app_module, "get_parent",
+        with mock.patch.object(guards, "get_parent",
                                return_value={"id": 4, "is_admin": 0}):
             self.assertEqual(self._context({}, parent_id=4)["parent_id"], 4)
 
     def test_a_cookie_naming_a_parent_who_is_gone_has_no_parent(self):
         # SQLite reuses row ids, so a stale cookie must not resolve to whoever
         # holds that id now. get_parent returning None is that case.
-        with mock.patch.object(app_module, "get_parent", return_value=None):
+        with mock.patch.object(guards, "get_parent", return_value=None):
             self.assertIsNone(self._context({}, parent_id=4)["parent_id"])
 
     def test_the_other_context_keys_still_arrive(self):
-        with mock.patch.object(app_module, "_current_parent", return_value=None):
+        with mock.patch.object(guards, "current_parent", return_value=None):
             context = self._context({"on_trip": True,
                                      "location": {"lat": 49.2, "lng": -123.1}})
         self.assertTrue(context["on_trip"])

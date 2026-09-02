@@ -1,4 +1,5 @@
 import unittest
+from src.web import guards
 from unittest import mock
 
 from src.workflows.plan_from_chat import WORKFLOW
@@ -31,18 +32,18 @@ class PageTest(unittest.TestCase):
         self.admin = {"id": 1, "is_admin": True, "name": "A", "email": "a@b.com"}
 
     def test_page_renders_for_an_admin(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
+        with mock.patch.object(guards, "current_parent", return_value=self.admin):
             resp = self.client.get("/workflows/plan-from-chat")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Fill the form from chat", resp.get_data(as_text=True))
 
     def test_page_is_admin_only(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=None):
+        with mock.patch.object(guards, "current_parent", return_value=None):
             self.assertEqual(
                 self.client.get("/workflows/plan-from-chat").status_code, 302)
 
     def test_the_workflows_page_links_to_it(self):
-        with mock.patch.object(self.app_module, "_current_parent", return_value=self.admin):
+        with mock.patch.object(guards, "current_parent", return_value=self.admin):
             html = self.client.get("/workflows").get_data(as_text=True)
         self.assertIn("/workflows/plan-from-chat", html)
 

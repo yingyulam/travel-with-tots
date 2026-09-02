@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from unittest import mock
 
@@ -50,8 +51,7 @@ class TripPageTest(unittest.TestCase):
             transit=json.dumps(["stroller"]), plan_label="Mixed",
             plan_json=json.dumps(PLAN))
         self.client = app_module.app.test_client()
-        patcher = mock.patch.object(
-            app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": self.parent_id, "is_admin": False,
                           "name": "P", "email": "p@example.com"})
         patcher.start()
@@ -69,8 +69,7 @@ class TripPageTest(unittest.TestCase):
 
     def test_another_parents_trip_is_not_viewable(self):
         other = db.add_parent("q@example.com", "h", name="Q")
-        with mock.patch.object(
-                self.app_module, "_current_parent",
+        with mock.patch.object(guards, "current_parent",
                 return_value={"id": other, "is_admin": False,
                               "name": "Q", "email": "q@example.com"}):
             self.assertEqual(

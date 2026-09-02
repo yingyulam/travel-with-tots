@@ -18,6 +18,7 @@ commonest real closure and a nullable column cannot tell it from "not filled in"
 import os
 import tempfile
 import unittest
+from src.web import guards
 from contextlib import closing
 from datetime import date
 from unittest import mock
@@ -157,8 +158,7 @@ class _HoursTest(unittest.TestCase):
                                   venue_type="museum", open_time="10:00",
                                   close_time="17:00")
         self.client = app_module.app.test_client()
-        patcher = mock.patch.object(
-            app_module, "_current_parent",
+        patcher = mock.patch.object(guards, "current_parent",
             return_value={"id": self.admin, "is_admin": True,
                           "name": "A", "email": "a@example.com"})
         patcher.start()
