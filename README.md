@@ -223,8 +223,11 @@ for.
 
 **How far you are willing to travel is a limit, not a preference.** The form
 asks how you get *between* stops and how long you will spend getting to any one
-of them: 20, 30 or 40 minutes, 20 by default. Everyone is assumed to have a
-stroller once they are there.
+of them: 20, 30 or 40 minutes, 20 by default. Riding, by car or on transit,
+adds 60 and 90: an hour to somewhere worth the trip is an ordinary family day
+out when the child is sitting down for it, and the same hour on foot is not a
+day at all. Change the transit answer and the longer lengths appear or
+disappear with it. Everyone is assumed to have a stroller once they are there.
 
 The limit applies to **each leg**, not to the day's total, and to **every** leg
 including the journey back to where you are staying. A day of four fifteen

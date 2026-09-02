@@ -12,7 +12,8 @@ car and lived downtown.
 
 What the parent controls now, and what these assert:
 
-- a limit in minutes (20/30/40, default 20), per leg, not per day
+- a limit in minutes (20/30/40, default 20, plus 60/90 for a family riding
+  rather than walking), per leg, not per day
 - applied to every leg of the chain, the journey back to the accommodation
   included
 - never widened for them: an out-of-range slot is left empty and explained,
@@ -24,7 +25,8 @@ from unittest import mock
 
 import app as app_module
 from src.components import plan_trip as plan_module
-from src.geo import DEFAULT_WALK_BUDGET_MIN, WALK_BUDGET_OPTIONS, leg_minutes
+from src.geo import (DEFAULT_WALK_BUDGET_MIN, RIDING_BUDGET_OPTIONS,
+                     WALK_BUDGET_OPTIONS, leg_minutes)
 from src.itinerary import generate_plans, over_budget, travel_rules
 
 # The real pin from the report, and two venues from the real data set.
@@ -194,6 +196,18 @@ class TheLimitItselfTest(unittest.TestCase):
     def test_the_three_lengths_the_form_offers(self):
         self.assertEqual(WALK_BUDGET_OPTIONS, (20, 30, 40))
 
+    def test_and_the_two_more_it_offers_a_family_riding(self):
+        self.assertEqual(RIDING_BUDGET_OPTIONS, (20, 30, 40, 60, 90))
+
+    def test_an_hour_and_a_half_reaches_where_forty_minutes_cannot(self):
+        # 20km up the line: Stanley Park from Richmond Centre, the pin from the
+        # report. Out of reach at any walking limit, an ordinary drive at 90.
+        pool = [_venue("Far Up The Line", 0, lat=STANLEY_PARK["lat"], rank=1)]
+        driving = dict(transit="car", stop_count="1")
+        self.assertEqual(_names(_plan(pool, walk_budget="40", **driving)), [])
+        self.assertEqual(_names(_plan(pool, walk_budget="90", **driving)),
+                         ["Far Up The Line"])
+
     def test_a_wider_limit_reaches_further(self):
         pool = [_venue("Two Km", 2, rank=1)]
         self.assertEqual(_names(_plan(pool, stop_count="1",
@@ -315,12 +329,31 @@ class TheFormCarriesItTest(unittest.TestCase):
         self.assertTrue(self._inputs(beyond_budget="1")["beyond_budget"])
 
     def test_the_form_offers_exactly_those_lengths(self):
+        # Every length any mode can pick is rendered; the page hides the ones
+        # the chosen mode is not offered, so nothing here counts on the mode.
         html = self.client.get("/plan").get_data(as_text=True)
-        block = html.split('name="walk_budget"')
-        self.assertEqual(len(block) - 1, len(WALK_BUDGET_OPTIONS))
-        for minutes in WALK_BUDGET_OPTIONS:
+        block = html.split('type="radio" name="walk_budget"')
+        self.assertEqual(len(block) - 1, len(RIDING_BUDGET_OPTIONS))
+        for minutes in RIDING_BUDGET_OPTIONS:
             with self.subTest(minutes=minutes):
                 self.assertIn(f'value="{minutes}"', html)
+
+    def test_a_driver_may_pick_the_long_ones(self):
+        self.assertEqual(
+            self._inputs(transit="car", walk_budget="90")["walk_budget"], "90")
+
+    def test_so_may_a_family_on_transit(self):
+        self.assertEqual(
+            self._inputs(transit="transit", walk_budget="60")["walk_budget"],
+            "60")
+
+    def test_and_a_family_on_foot_may_not(self):
+        # A hidden chip is still a chip, and the transit answer can change
+        # after one was ticked, so the post is checked against the mode it
+        # carries: 90 minutes on foot is seven kilometres with a toddler.
+        self.assertEqual(
+            self._inputs(transit="walk", walk_budget="90")["walk_budget"],
+            str(DEFAULT_WALK_BUDGET_MIN))
 
     def test_the_default_is_the_one_pre_selected(self):
         html = self.client.get("/plan").get_data(as_text=True)

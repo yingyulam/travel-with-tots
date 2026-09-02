@@ -29,8 +29,9 @@ from datetime import date
 
 from src import itinerary
 from src.geo import (DEFAULT_REACH_KM, DEFAULT_WALK_BUDGET_MIN, REACH_KM,
-                     WALK_BUDGET_OPTIONS, haversine_km, reach_km,
-                     walk_budget_min, within_budget, within_reach)
+                     RIDING_BUDGET_OPTIONS, WALK_BUDGET_OPTIONS,
+                     budget_options, haversine_km, reach_km, walk_budget_min,
+                     within_budget, within_reach)
 
 ON = date(2026, 9, 15)
 BASE = {"wake_up": "07:00", "bedtime": "19:30", "naps": [],
@@ -207,6 +208,23 @@ class TheBudgetTest(unittest.TestCase):
         for minutes in WALK_BUDGET_OPTIONS:
             with self.subTest(minutes=minutes):
                 self.assertEqual(walk_budget_min(str(minutes)), minutes)
+
+    def test_riding_is_offered_two_longer_ones(self):
+        for mode in ("car", "transit"):
+            with self.subTest(mode=mode):
+                self.assertEqual(budget_options(mode), RIDING_BUDGET_OPTIONS)
+                for minutes in (60, 90):
+                    self.assertEqual(walk_budget_min(str(minutes), mode),
+                                     minutes)
+
+    def test_and_walking_is_not(self):
+        # An hour riding is an hour sitting down; on foot it is five kilometres
+        # pushing a stroller.
+        for mode in ("walk", "helicopter", None):
+            with self.subTest(mode=mode):
+                self.assertEqual(budget_options(mode), WALK_BUDGET_OPTIONS)
+                self.assertEqual(walk_budget_min("90", mode),
+                                 DEFAULT_WALK_BUDGET_MIN)
 
     def test_an_unmeasurable_leg_does_not_fit(self):
         # The opposite of within_reach, and the reason the two coexist: as a

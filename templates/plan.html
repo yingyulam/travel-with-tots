@@ -206,7 +206,11 @@
       {# The limit is per leg, not per day, and the legend says so: "40 minutes"
          read as a daily total is a very different day from the one we plan. #}
       <legend>How long are you willing to travel to any one stop?</legend>
-      <div class="chips">
+      {# Every length is rendered; the script below shows only the ones the
+         chosen transit mode is offered. An hour sitting in a car or a train is
+         fine and an hour on foot is not, so the longest belong to the modes
+         you ride. #}
+      <div class="chips" id="walk-budget-chips">
         {% for key, label in walk_budget_options %}
         <label class="chip">
           <input type="radio" name="walk_budget" value="{{ key }}"
@@ -492,6 +496,35 @@
   if (years && months) {
     years.addEventListener("input", syncAgeCap);
     syncAgeCap();
+  }
+
+  // Which travel limits are on offer depends on how the family is getting
+  // around: an hour is an easy ride and an impossible walk, so the longest
+  // chips belong to the modes you ride. Hidden rather than removed, so flipping
+  // the transit answer back brings the choice back without a round trip.
+  // read_form applies the same rule to the post: a hidden chip is still a chip.
+  const BUDGET_BY_TRANSIT = {{ walk_budget_by_transit|tojson }};
+  const budgetChips = document.getElementById("walk-budget-chips");
+  const transitRadios = document.querySelectorAll('input[name="transit"]');
+  function syncBudgetOptions() {
+    const mode = document.querySelector('input[name="transit"]:checked');
+    const allowed = BUDGET_BY_TRANSIT[mode && mode.value] || [];
+    let kept = false;
+    budgetChips.querySelectorAll('input[name="walk_budget"]').forEach((radio) => {
+      const offered = allowed.includes(radio.value);
+      radio.closest(".chip").hidden = !offered;
+      radio.disabled = !offered;
+      if (radio.checked && offered) kept = true;
+    });
+    // The chosen length is no longer offered, so it falls back to the shortest
+    // -- the same answer the server gives a length it never offered.
+    if (!kept && allowed.length) {
+      budgetChips.querySelector(`input[value="${allowed[0]}"]`).checked = true;
+    }
+  }
+  if (budgetChips && transitRadios.length) {
+    transitRadios.forEach((r) => r.addEventListener("change", syncBudgetOptions));
+    syncBudgetOptions();
   }
 
   // How long the visit is, said back as it is picked, and the end date held to

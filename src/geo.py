@@ -23,6 +23,14 @@ METRO_VANCOUVER_BOUNDS = (48.9, 49.6, -123.5, -122.5)
 WALK_BUDGET_OPTIONS = (20, 30, 40)
 DEFAULT_WALK_BUDGET_MIN = 20
 
+# Riding is where a longer leg is still an easy leg: an hour in the car or on
+# the SkyTrain to somewhere worth the trip is an ordinary family day out, and
+# the child is sitting down for it. The same hour on foot with a toddler is not
+# a day at all, so the longer limits are offered to anyone riding and to nobody
+# walking.
+RIDING_MODES = ("car", "transit")
+RIDING_BUDGET_OPTIONS = WALK_BUDGET_OPTIONS + (60, 90)
+
 # Pushing a stroller, with a small child, stopping. Not a brisk adult pace.
 WALK_SPEED_KMH = 4.8
 
@@ -37,18 +45,30 @@ MODE_SPEED_KMH = {"walk": WALK_SPEED_KMH, "transit": 16.0, "car": 24.0}
 # the honest side of the real walk.
 DETOUR_FACTOR = 1.35
 
-def walk_budget_min(value):
-    """A walking budget the form offered, or the default.
+
+def budget_options(mode):
+    """The travel limits offered for one transport mode."""
+    return RIDING_BUDGET_OPTIONS if mode in RIDING_MODES else WALK_BUDGET_OPTIONS
+
+
+def walk_budget_min(value, mode="walk"):
+    """A travel budget the form offered for `mode`, or the default.
 
     Client-supplied, so an unrecognised value is the default rather than a
     number nobody chose: a hand-made post asking for 500 minutes is not a
     preference, and a trip saved before this control existed has none at all.
+
+    `mode` matters because the longer limits belong to the modes you ride. 90
+    minutes means a drive or a train; read back off a trip whose mode has since
+    changed to `walk` it would mean a seven-kilometre push, so it falls back to
+    the default like any other length that was never offered.
     """
     try:
         minutes = int(value)
     except (TypeError, ValueError):
         return DEFAULT_WALK_BUDGET_MIN
-    return minutes if minutes in WALK_BUDGET_OPTIONS else DEFAULT_WALK_BUDGET_MIN
+    options = budget_options(mode)
+    return minutes if minutes in options else DEFAULT_WALK_BUDGET_MIN
 
 
 def route_km(a_lat, a_lng, b_lat, b_lng):

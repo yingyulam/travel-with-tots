@@ -5,8 +5,8 @@ import json
 from datetime import date
 
 from .dates import MAX_TRIP_DAYS, compute_age, date_range, days_between, parse_date
-from .geo import (DEFAULT_WALK_BUDGET_MIN, WALK_BUDGET_OPTIONS, as_point,
-                  walk_budget_min)
+from .geo import (DEFAULT_WALK_BUDGET_MIN, RIDING_BUDGET_OPTIONS, as_point,
+                  budget_options, walk_budget_min)
 from .data_loader import SUPPORTED_CITIES, VENUE_TYPES, interest_options
 from .db import get_children
 
@@ -69,7 +69,19 @@ DEFAULT_TRANSIT = "car"
 # between families -- the shortest option is the default, since a day that is
 # too tightly packed can be widened and a day that is too spread out cannot be
 # walked. The values come from geo, which is where the constraint is enforced.
-WALK_BUDGET_FORM_OPTIONS = [(str(m), f"Up to {m} min") for m in WALK_BUDGET_OPTIONS]
+#
+# Every length any mode can pick, rendered for everybody; which of them a given
+# mode may actually pick is below.
+WALK_BUDGET_FORM_OPTIONS = [(str(m), f"Up to {m} min")
+                            for m in RIDING_BUDGET_OPTIONS]
+
+# The lengths each transport mode is offered, for the page: the transit answer
+# is a radio the parent can flip, so the chips it rules out are hidden there
+# rather than on a round trip. Ascending, so the first is the shortest, which
+# is what an unavailable choice falls back to on both sides. read_form applies
+# the same rule to the post, since a hidden chip is still a chip.
+WALK_BUDGET_BY_TRANSIT = {mode: [str(m) for m in budget_options(mode)]
+                          for mode in TRANSIT_KEYS}
 
 # What the old options meant, for trips saved before this was one question.
 # `bus` was the only transit answer; `stroller` and `carrier` were how a family
@@ -214,6 +226,10 @@ def read_form(form):
                                        NAP_DURATION_MAX_MINUTES,
                                        ASSUMED_NAP_DURATION_MIN),
         })
+    # Read before the dict because the travel budget is validated against it:
+    # the longest legs are offered to the modes you ride, not on foot.
+    transit = (form.get("transit") if form.get("transit") in TRANSIT_KEYS
+               else DEFAULT_TRANSIT)
     values = {
         "wake_up": form.get("wake_up") or DEFAULTS["wake_up"],
         "bedtime": form.get("bedtime") or DEFAULTS["bedtime"],
@@ -238,12 +254,12 @@ def read_form(form):
         **_accommodation_point(form),
         # One value, validated. It used to be an unchecked getlist, so any
         # string got through -- the same gap that was closed for `interest`.
-        "transit": (form.get("transit") if form.get("transit") in TRANSIT_KEYS
-                    else DEFAULT_TRANSIT),
+        "transit": transit,
         # walk_budget_min is the same guard the planner uses, so a hand-made
-        # post asking for 500 minutes gets the default rather than a number
-        # nobody was offered.
-        "walk_budget": str(walk_budget_min(form.get("walk_budget"))),
+        # post asking for 500 minutes -- or for a 90 minute walk, which is
+        # offered to a family riding and not to one on foot -- gets the default
+        # rather than a number nobody was offered.
+        "walk_budget": str(walk_budget_min(form.get("walk_budget"), transit)),
         "beyond_budget": form.get("beyond_budget") in ("on", "1", "true"),
         "stop_count": str(clamp_int(form.get("stop_count"), STOP_COUNT_FORM_MIN,
                                      STOP_COUNT_FORM_MAX, int(DEFAULTS["stop_count"]))),

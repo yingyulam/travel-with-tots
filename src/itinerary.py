@@ -607,9 +607,12 @@ def travel_rules(inputs):
     which is every leg that can honestly be measured: a made-up anchor would
     rule out venues over a distance from somewhere the family is not staying.
     """
+    mode = normalise_transit(inputs.get("transit"))
     return (as_point(inputs.get("accommodation_lat"), inputs.get("accommodation_lng")),
-            normalise_transit(inputs.get("transit")),
-            walk_budget_min(inputs.get("walk_budget")),
+            mode,
+            # The mode decides which limits were on offer, so it is read first:
+            # only a driver can have chosen 60 or 90 minutes.
+            walk_budget_min(inputs.get("walk_budget"), mode),
             bool(inputs.get("beyond_budget")))
 
 

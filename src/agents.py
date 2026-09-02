@@ -288,9 +288,10 @@ def _travel_limit_line(walk_budget, transit, beyond_budget):
     if beyond_budget:
         return ("The parent has asked to see places beyond their usual travel "
                 "limit, so there is no limit on this day.")
-    minutes = walk_budget_min(walk_budget)
+    mode = normalise_transit(transit)
+    minutes = walk_budget_min(walk_budget, mode)
     return (f"No leg of this day may take more than {minutes} minutes "
-            f"{MODE_WORD.get(normalise_transit(transit), '')}, including the "
+            f"{MODE_WORD.get(mode, '')}, including the "
             "journey back to the accommodation at the end. A swap that puts a "
             "stop further away than that will be rejected and the whole "
             "adjustment thrown out, so leave a stop alone unless a candidate is "
