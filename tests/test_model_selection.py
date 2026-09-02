@@ -275,5 +275,46 @@ class TheDropdownIsTheSourceTest(unittest.TestCase):
         self.assertNotIn("anthropic/claude-sonnet-5", ALLOWED_CHAT_MODELS)
 
 
+class AStoredChoiceMeansTheParentMadeOneTest(unittest.TestCase):
+    """Why the deployed dropdown kept showing the paid model after the default
+    moved to the free one.
+
+    The widget wrote the dropdown's value to localStorage on every page load,
+    not only when it changed. So whatever the default happened to be on a
+    visitor's first visit was frozen into their browser, and then overrode
+    every later change to that default -- indistinguishable, from the outside,
+    from the change never having shipped.
+
+    Asserted against the script's source, because this is browser storage and
+    there is no JS harness here. Thin, but it pins the two lines that matter.
+    """
+
+    def setUp(self):
+        with open("static/chatbot.js") as f:
+            self.source = f.read()
+
+    def test_the_model_is_stored_in_exactly_one_place(self):
+        # Counted rather than located: the first version of this test checked
+        # the region after `const savedModel` and passed when a setItem was
+        # added just above it, which is the same bug in a different line.
+        self.assertEqual(self.source.count("setItem(TWT_MODEL_STORAGE_KEY"), 1)
+
+    def test_and_that_place_is_the_change_handler(self):
+        # So storing means "the parent picked this", and a page load does not.
+        handler = self.source.index('modelSelect.addEventListener("change"')
+        self.assertGreater(self.source.index("setItem(TWT_MODEL_STORAGE_KEY"),
+                           handler)
+
+    def test_a_stored_model_we_no_longer_offer_is_dropped(self):
+        # Otherwise a page without the widget sends a model nothing can check.
+        self.assertIn("removeItem(TWT_MODEL_STORAGE_KEY)", self.source)
+
+    def test_the_key_was_renamed_to_orphan_the_frozen_values(self):
+        # There is no way to tell retroactively which stored values were real
+        # choices, so the old ones are abandoned rather than guessed at.
+        self.assertIn('TWT_MODEL_STORAGE_KEY = "twt_chatbot_model_v2"', self.source)
+        self.assertIn("removeItem(TWT_MODEL_STORAGE_KEY_LEGACY)", self.source)
+
+
 if __name__ == "__main__":
     unittest.main()

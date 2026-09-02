@@ -9,7 +9,14 @@
 // like buildFeedbackRow below, because the planning and in-trip pages send it
 // with their own AI calls: one visible choice governs every model this app
 // uses, rather than each page keeping a default nobody can see.
-const TWT_MODEL_STORAGE_KEY = "twt_chatbot_model";
+// Only ever holds a model the parent picked themselves. The `_v2` is a reset:
+// the old key was written on every page load, so whatever the default happened
+// to be on somebody's first visit got frozen into their browser and then
+// overrode every later change to that default. Renaming orphans those values
+// rather than trying to guess retroactively which were real choices; the old
+// key is deleted below so it does not sit there forever.
+const TWT_MODEL_STORAGE_KEY = "twt_chatbot_model_v2";
+const TWT_MODEL_STORAGE_KEY_LEGACY = "twt_chatbot_model";
 
 // Empty means "no preference", which the server reads as its own default. The
 // live <select> wins over storage, and storage is only trusted when the widget
@@ -239,14 +246,20 @@ document.addEventListener("click", (e) => {
 
     TWT_OFFERED_MODELS = [...modelSelect.options].map((o) => o.value);
 
+    localStorage.removeItem(TWT_MODEL_STORAGE_KEY_LEGACY);
+
+    // Restored only if it is still on offer. Nothing is written here: an
+    // absent value means "no preference", which is what lets the server's
+    // default move and be followed. Writing the rendered value back on every
+    // load is what pinned a stale default in place.
     const savedModel = localStorage.getItem(TWT_MODEL_STORAGE_KEY);
     if (savedModel && TWT_OFFERED_MODELS.includes(savedModel)) {
       modelSelect.value = savedModel;
+    } else if (savedModel) {
+      // No longer offered. Dropped rather than left to be sent by a page that
+      // has no widget to check it against.
+      localStorage.removeItem(TWT_MODEL_STORAGE_KEY);
     }
-    // Written back whether or not the stored value survived, so a model that is
-    // no longer offered does not linger in storage and get sent by a page that
-    // has no widget to check it against.
-    localStorage.setItem(TWT_MODEL_STORAGE_KEY, modelSelect.value);
 
     modelSelect.addEventListener("change", () => {
       localStorage.setItem(TWT_MODEL_STORAGE_KEY, modelSelect.value);
