@@ -385,7 +385,7 @@
         {%- if days|length > 1 %}💾 Save this trip{% else %}💾 Save this plan{% endif %}</button>
     </form>
     {% else %}
-    <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
+    <p class="save-plan-hint"><a href="{{ url_for('auth.login') }}">Log in</a> to save this plan.</p>
     {% endif %}
     <div class="plan-revise" id="plan-revise-block">
       <p class="panel-title">Not quite right?</p>

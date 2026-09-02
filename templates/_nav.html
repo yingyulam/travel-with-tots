@@ -6,7 +6,7 @@
     <span class="twt-avatar"><span class="twt-avatar-initial">{{ initial }}</span></span>
   </a>
   {% else %}
-  <a class="twt-login-link" href="{{ url_for('login') }}">
+  <a class="twt-login-link" href="{{ url_for('auth.login') }}">
     <span class="twt-login-icon">👤</span>
     <span class="twt-login-text">Log in</span>
   </a>
@@ -32,7 +32,7 @@
     {% endif %}
     {# A form, not a link: logging out changes state, and as a GET any other
        site could trigger it with an <img> tag. #}
-    <li><form method="post" action="{{ url_for('logout') }}" class="nav-logout">
+    <li><form method="post" action="{{ url_for('auth.logout') }}" class="nav-logout">
       <button type="submit">Log out</button></form></li>
   </ul>
 </nav>

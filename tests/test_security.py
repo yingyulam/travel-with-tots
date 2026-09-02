@@ -12,7 +12,7 @@ resolver has nothing to look up.
 
 import os
 import unittest
-from src.web import guards
+from src.web import auth, guards
 from unittest import mock
 
 from src import ratelimit, webpage
@@ -289,7 +289,7 @@ class PasswordPolicyTest(unittest.TestCase):
     def test_a_missing_account_still_costs_a_hash_check(self):
         # Skipping it made a wrong email measurably faster than a wrong
         # password, which is enough to sort real addresses from invented ones.
-        with mock.patch.object(self.app_module, "check_password_hash",
+        with mock.patch.object(auth, "check_password_hash",
                                return_value=False) as checked:
             self.client.post("/login", data={"email": "nobody@example.invalid",
                                              "password": "whatever"})

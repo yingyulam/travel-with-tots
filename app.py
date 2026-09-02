@@ -31,7 +31,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from src import candidates, db, rag
-from src.web import guards
+from src.web import auth, guards
 from src.web.guards import (CHAT_LIMIT, CHAT_WINDOW, LOGIN_LIMIT,
                             LOGIN_WINDOW, LOOKUP_LIMIT, LOOKUP_WINDOW,
                             PLAN_LIMIT, PLAN_WINDOW, admin_required,
@@ -186,6 +186,10 @@ MAX_HISTORY_CHARS = 4_000
 # A rating carries the question and answer it is about, and they are written
 # to data/results.json, which is read whole on every save.
 MAX_FEEDBACK_CHARS = 8_000
+
+# Each blueprint owns one subject's routes. Registered here rather than
+# discovered, so the set is explicit and a broken import is loud.
+app.register_blueprint(auth.bp)
 
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
 # A no-op when the data source is Supabase: the tables are already there.
@@ -359,82 +363,10 @@ def home():
     return render_template("index.html")
 
 
-# The shortest password worth calling one. Not a character-class rule: those
-# push people towards "Passw0rd!" and a long ordinary phrase is stronger. This
-# is the floor, and the login limiter above is what makes guessing expensive.
-MIN_PASSWORD_LENGTH = 10
 
 
-@app.route("/signup", methods=["GET", "POST"])
-@rate_limited(LOGIN_LIMIT, LOGIN_WINDOW)
-def signup():
-    """Create a parent account. Children are added afterward from the dashboard."""
-    if request.method == "POST":
-        form = request.form
-        required = ("parent_name", "email", "password", "confirm_password")
-        if any(not form.get(field, "").strip() for field in required):
-            flash("Please fill in every field.")
-            return render_template("signup.html", form=form)
-        if len(form["password"]) < MIN_PASSWORD_LENGTH:
-            flash(f"Please use a password of at least {MIN_PASSWORD_LENGTH} "
-                  "characters.")
-            return render_template("signup.html", form=form)
-        if form["password"] != form["confirm_password"]:
-            flash("Passwords do not match.")
-            return render_template("signup.html", form=form)
-        email = form["email"].strip().lower()
-        if get_parent_by_email(email) is not None:
-            flash("An account with this email already exists.")
-            return render_template("signup.html", form=form)
-
-        parent_id = add_parent(
-            email, generate_password_hash(form["password"]),
-            name=form["parent_name"].strip())
-        session["parent_id"] = parent_id
-        return redirect(url_for("dashboard"))
-
-    return render_template("signup.html", form={})
 
 
-@app.route("/login", methods=["GET", "POST"])
-@rate_limited(LOGIN_LIMIT, LOGIN_WINDOW)
-def login():
-    """Log an existing parent in.
-
-    The hash is checked even when no such account exists, against a throwaway
-    one. Skipping it made a wrong email answer measurably faster than a wrong
-    password, which is enough to sort real addresses from invented ones.
-    """
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        parent = get_parent_by_email(email)
-        stored = parent["password_hash"] if parent else _ABSENT_ACCOUNT_HASH
-        if not check_password_hash(stored, password) or parent is None:
-            flash("Incorrect email or password.")
-            return render_template("login.html", email=email)
-        session["parent_id"] = parent["id"]
-        return redirect(url_for("dashboard"))
-
-    return render_template("login.html", email="")
-
-
-# Compared against when the email matches no account, purely so that path costs
-# the same as a real check. Hashed from random bytes at import, so no password
-# can match it.
-_ABSENT_ACCOUNT_HASH = generate_password_hash(os.urandom(16).hex())
-
-
-@app.route("/logout", methods=["POST"])
-def logout():
-    """Log the current parent out.
-
-    POST rather than GET, which is what makes SameSite=Lax cover it: Lax still
-    sends the cookie on a cross-site top-level GET, so as a GET this was a link
-    or an <img> on any page that logged a parent out.
-    """
-    session.clear()
-    return redirect(url_for("home"))
 
 
 @app.route("/dashboard")

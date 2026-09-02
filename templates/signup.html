@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="card form-card">
-  <form method="post" action="{{ url_for('signup') }}">
+  <form method="post" action="{{ url_for('auth.signup') }}">
     <h2>You</h2>
     <div class="field-row">
       <label class="field">
@@ -30,6 +30,6 @@
 
     <button type="submit" class="cta">Create account</button>
   </form>
-  <p class="field-hint">Already have an account? <a href="{{ url_for('login') }}">Log in</a>.</p>
+  <p class="field-hint">Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a>.</p>
 </section>
 {% endblock %}

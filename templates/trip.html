@@ -193,7 +193,7 @@
     {# No trip form behind this day, so there is nothing to save it from. #}
     <p class="save-plan-hint">Build this day on the <a href="{{ url_for('plan') }}">planning page</a> to save it.</p>
     {% else %}
-    <p class="save-plan-hint"><a href="{{ url_for('login') }}">Log in</a> to save this plan.</p>
+    <p class="save-plan-hint"><a href="{{ url_for('auth.login') }}">Log in</a> to save this plan.</p>
     {% endif %}
   </div>
   {% endif %}
