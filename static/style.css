@@ -785,8 +785,13 @@ textarea:focus {
   flex: 0 0 auto;
 }
 
+/* Sits inside the panel whose buttons produced it now, rather than in the row
+   at the top of the card, so it needs its own vertical breathing room -- the
+   universal margin reset leaves a bare <p> touching both neighbours. `flex` is
+   kept because this is still a flex child on the planning page. */
 .replan-status {
   flex: 1 1 200px;
+  margin: 0.75rem 0;
   background: #fff7f2;
   border-left: 3px solid var(--orange);
   padding: 0.6rem 0.9rem;

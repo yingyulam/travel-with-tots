@@ -148,7 +148,7 @@ class TheTripPageStaysQuietTest(unittest.TestCase):
         # accepts rather than something that has already happened. The rule is
         # unchanged: this line reports what the parent can act on, and says
         # nothing about whether the AI step ran.
-        status = re.search(r"status\.textContent = `Proposed from.*?;",
+        status = re.search(r"say\(status, `Proposed from.*?\);",
                            self.source, re.DOTALL).group(0)
         for leaking in ("newPlan.adjusted", "nothing to change",
                         "didn't finish this time", "rule-based"):

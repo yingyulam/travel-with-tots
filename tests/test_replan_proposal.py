@@ -220,5 +220,81 @@ class ThePageAsksBeforeChangingAnythingTest(unittest.TestCase):
         self.assertIn("Your other days are unchanged", self.source)
 
 
+class EachAnswerSitsUnderItsOwnQuestionTest(unittest.TestCase):
+    """Where the status lines are, which turned out to matter.
+
+    There was one, at the top of the card above the timeline, and every message
+    went to it: replanning this day, accepting it, reworking the later days.
+    Two consequences, both reported from real use. On a phone the reply landed
+    a screen or two from the button that caused it, so accepting a change and
+    then being asked a second question looked like nothing had happened. And
+    "Updated" could mean this day or the four after it, with no way to tell.
+
+    So: one line under the replan controls, one under the cascade controls.
+    """
+
+    def setUp(self):
+        import json
+        self.source = app_module.app.test_client().post("/trip", data={
+            "plans": json.dumps([{"label": "L", "blurb": "b", "stops": [],
+                                  "trip_date": d}
+                                 for d in ("2026-09-14", "2026-09-15")]),
+            "context": json.dumps({"destination": "Vancouver",
+                                   "trip_date": "2026-09-14",
+                                   "end_date": "2026-09-15"}),
+        }).get_data(as_text=True)
+
+    def _at(self, marker):
+        return self.source.index(marker)
+
+    def test_there_are_two_status_lines(self):
+        self.assertIn('id="replan-status"', self.source)
+        self.assertIn('id="cascade-status"', self.source)
+
+    def test_the_replan_line_is_below_every_control_that_starts_one(self):
+        # Both the situation chips and the Replan button, so wherever the
+        # parent pressed, the answer is beneath their thumb.
+        self.assertGreater(self._at('id="replan-status"'),
+                           self._at('id="situation-bar"'))
+        self.assertGreater(self._at('id="replan-status"'),
+                           self._at('id="replan-note-go"'))
+
+    def test_and_above_the_panels_that_answer_it(self):
+        self.assertLess(self._at('id="replan-status"'),
+                        self._at('id="replan-proposal"'))
+
+    def test_it_is_no_longer_above_the_timeline(self):
+        # The regression this closes: a reply rendered a screen away from the
+        # question that produced it.
+        self.assertGreater(self._at('id="replan-status"'),
+                           self._at('id="timeline-host"'))
+
+    def test_the_later_days_line_is_below_their_own_buttons(self):
+        self.assertGreater(self._at('id="cascade-status"'),
+                           self._at('id="cascade-offer"'))
+        self.assertGreater(self._at('id="cascade-status"'),
+                           self._at('id="cascade-proposal"'))
+
+    def test_the_two_flows_do_not_share_a_line(self):
+        # Otherwise "Updated" is ambiguous about which of them it describes.
+        self.assertIn("say(cascadeStatus,", self.source)
+        for later in ("Replanning your remaining", "Your later days are as they were",
+                      "Left your later days alone"):
+            with self.subTest(message=later):
+                said = self.source.index(later)
+                # The nearest preceding say() call must name the cascade line.
+                before = self.source[:said]
+                self.assertIn("say(cascadeStatus, ",
+                              before[before.rindex("say("):])
+
+    def test_accepting_stops_promising_the_other_days_are_untouched(self):
+        # It was unconditional, and read as a contradiction when the very next
+        # thing on screen offered to change them.
+        self.assertIn('cascading ? "Updated." :', self.source)
+
+    def test_switching_day_clears_both(self):
+        self.assertIn("cascadeStatus.hidden = true", self.source)
+
+
 if __name__ == "__main__":
     unittest.main()

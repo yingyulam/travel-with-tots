@@ -41,7 +41,6 @@
        active version is never ambiguous. A single "Original" pill before any
        replan. -->
   <div class="plan-picker" id="plan-picker"></div>
-  <p id="replan-status" class="replan-status" hidden></p>
 
   <!-- 3. Live timeline of the chosen plan -->
   <div id="timeline-host"></div>
@@ -66,6 +65,12 @@
       <p class="field-hint">Sent along with whichever option you pick above, or
         tap Replan to go on this alone.</p>
     </div>
+    {# Below every control that can start a replan -- the situation chips and
+       the Replan button both -- and above the panels that answer it. This used
+       to sit at the top of the card, above the timeline, which put the reply a
+       screen or two from the question on a phone: a parent pressed Accept down
+       here and the only confirmation appeared up there, out of sight. #}
+    <p id="replan-status" class="replan-status" hidden></p>
     <div class="nap-prompt" id="nap-prompt" hidden>
       <div id="nap-ask">
         <p>Your child fell asleep, want to stay at this stop longer while they nap?</p>
@@ -149,6 +154,10 @@
         <button type="button" class="tap-btn" id="cascade-accept">Accept all</button>
       </div>
     </div>
+    {# The later days have their own line, because they are their own question.
+       One shared status meant "Updated" could refer to this day or to the four
+       after it, and the parent could not tell which. #}
+    <p id="cascade-status" class="replan-status" hidden></p>
   </div>
 
   <!-- 5. Need-nearby panel -->
@@ -248,7 +257,17 @@
   const picker = document.getElementById("plan-picker");
   const host = document.getElementById("timeline-host");
   const timeField = document.getElementById("current-time");
+  // Two status lines, each under the buttons it answers: this day's replan, and
+  // the later days' rework. They were one line at the top of the card, which
+  // made "Updated" ambiguous about which of the two it meant.
   const status = document.getElementById("replan-status");
+  const cascadeStatus = document.getElementById("cascade-status");
+
+  // Every message goes through here, so showing one cannot be forgotten.
+  function say(node, text) {
+    node.hidden = false;
+    node.textContent = text;
+  }
   // Declared up here with the other early handles because renderTimeline now
   // updates it, and renderTimeline runs before the replan-panel handles below.
   const currentStopLabel = document.getElementById("current-stop-label");
@@ -645,6 +664,7 @@
         // under a pill labelled Updated.
         active = day.pending ? 1 : (day.accepted || 0);
         status.hidden = true;
+        cascadeStatus.hidden = true;
         // A proposal belongs to its day and survives being left. Leaving one
         // and coming back must not have quietly accepted or lost it.
         if (day.pending) showProposal(day.plans[1]);
@@ -710,9 +730,8 @@
   // pick: it reads each venue's setting, because rain calls for shelter
   // rather than for a category.
   async function runReplan(situation, minutes, interest, note) {
-    if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
-    status.hidden = false;
-    status.textContent = "Updating your plan…";
+    if (!timeField.value) { say(status, "Set a current time first."); return; }
+    say(status, "Updating your plan…");
     try {
       const res = await fetch("/replan/adjust", {
         method: "POST",
@@ -754,9 +773,9 @@
       showProposal(newPlan);
       const time = newPlan.from_time || nowDisplay();
       logAdjustment(newPlan, "replan");
-      status.textContent = `Proposed from ${time}. Nothing has changed yet.`;
+      say(status, `Proposed from ${time}. Nothing has changed yet.`);
     } catch (e) {
-      status.textContent = e.message || "Couldn't re-plan right now.";
+      say(status, e.message || "Couldn't re-plan right now.");
     }
   }
 
@@ -788,15 +807,16 @@
     const after = new Set(venueNames(day.plans[1]));
     proposalPanel.hidden = true;
     renderTabs();
-    status.hidden = false;
-    status.textContent = "Updated. Your other days are unchanged.";
 
     // Only now, and only if it could matter. Retiming a day changes nothing
     // for the days after it; changing *where* it goes can leave a later day
     // repeating a place, or free one up again.
-    if (DAYS.length > activeDay + 1 && PLAN_INPUTS && !sameSet(before, after)) {
-      offerCascade();
-    }
+    const cascading =
+      DAYS.length > activeDay + 1 && PLAN_INPUTS && !sameSet(before, after);
+    // "Your other days are unchanged" is true, but not if the next thing on
+    // screen is an offer to change them. Let the offer speak for those.
+    say(status, cascading ? "Updated." : "Updated. Your other days are unchanged.");
+    if (cascading) offerCascade();
   }
 
   function discardProposal() {
@@ -807,8 +827,7 @@
     proposalPanel.hidden = true;
     renderTabs();
     renderTimeline();
-    status.hidden = false;
-    status.textContent = "Discarded. Your day is as it was.";
+    say(status, "Discarded. Your day is as it was.");
   }
 
   document.getElementById("proposal-accept").addEventListener("click", acceptProposal);
@@ -865,9 +884,8 @@
   async function runCascade() {
     const later = laterDays();
     cascadeOffer.hidden = true;
-    status.hidden = false;
-    status.textContent = `Replanning your remaining ${later.length} `
-      + `${later.length === 1 ? "day" : "days"}…`;
+    say(cascadeStatus, `Replanning your remaining ${later.length} `
+      + `${later.length === 1 ? "day" : "days"}…`);
     try {
       const res = await fetch("/trip/replan-remaining", {
         method: "POST",
@@ -889,9 +907,9 @@
       // has to put that back, not the day's original.
       body.days.forEach((proposed, i) => { later[i].cascade = proposed; });
       showCascade(later);
-      status.textContent = "Nothing has changed yet.";
+      say(cascadeStatus, "Nothing has changed yet.");
     } catch (e) {
-      status.textContent = e.message || "Couldn't replan the rest right now.";
+      say(cascadeStatus, e.message || "Couldn't replan the rest right now.");
     }
   }
 
@@ -936,24 +954,21 @@
     renderDayTabs();
     renderTabs();
     renderTimeline();
-    status.hidden = false;
-    status.textContent = touched
+    say(cascadeStatus, touched
       ? `Updated ${touched} later ${touched === 1 ? "day" : "days"}.`
-      : "Your later days needed no changes.";
+      : "Your later days needed no changes.");
   }
 
   function discardCascade() {
     DAYS.forEach((day) => { delete day.cascade; });
     hideCascade();
-    status.hidden = false;
-    status.textContent = "Your later days are as they were.";
+    say(cascadeStatus, "Your later days are as they were.");
   }
 
   document.getElementById("cascade-run").addEventListener("click", runCascade);
   document.getElementById("cascade-decline").addEventListener("click", () => {
     hideCascade();
-    status.hidden = false;
-    status.textContent = "Left your later days alone.";
+    say(cascadeStatus, "Left your later days alone.");
   });
   document.getElementById("cascade-accept").addEventListener("click", acceptCascade);
   document.getElementById("cascade-discard").addEventListener("click", discardCascade);
@@ -1020,8 +1035,7 @@
   replanNoteGo.addEventListener("click", () => {
     const note = replanNoteText.value.trim();
     if (!note) {
-      status.hidden = false;
-      status.textContent = "Type what you need first, or pick an option above.";
+      say(status, "Type what you need first, or pick an option above.");
       return;
     }
     hidePrompts();
@@ -1044,7 +1058,7 @@
   document.getElementById("situation-bar").querySelectorAll("[data-situation]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const situation = btn.dataset.situation;
-      if (!timeField.value) { status.hidden = false; status.textContent = "Set a current time first."; return; }
+      if (!timeField.value) { say(status, "Set a current time first."); return; }
       hidePrompts();
       if (situation === "nap_happened" || situation === "running_behind") {
         (situation === "nap_happened" ? napPrompt : behindPrompt).hidden = false;
@@ -1067,8 +1081,7 @@
     function submit() {
       const mins = Number(input.value);
       if (!input.value.trim() || Number.isNaN(mins)) {
-        status.hidden = false;
-        status.textContent = "Type how many minutes first.";
+        say(status, "Type how many minutes first.");
         return;
       }
       hidePrompts();
