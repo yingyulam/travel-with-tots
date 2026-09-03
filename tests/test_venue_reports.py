@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import unittest
+from src.web import places
 from src.web import guards
 from contextlib import closing
 from unittest import mock
@@ -206,7 +207,7 @@ class ReportRouteTest(unittest.TestCase):
         self._post(hours_wrong=True)
         checks = db.get_pending_hours_checks()
         self.assertEqual([c["source"] for c in checks],
-                         [self.app_module.PARENT_HOURS_SOURCE])
+                         [places.PARENT_HOURS_SOURCE])
 
     def test_the_time_they_were_sent_is_recorded(self):
         # The point of the report. "Closed at 17:00" is something a reviewer can

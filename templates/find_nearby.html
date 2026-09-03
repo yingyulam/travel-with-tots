@@ -39,7 +39,7 @@
     <p>Sharing your location needs no key at all. A key is only needed for the "set a location by hand" box above, because turning typed text into coordinates is what geocoding does, and there is nothing to compute it from.</p>
     <ol>
       <li>Open the <a href="https://console.cloud.google.com/google/maps-apis/api-list" target="_blank" rel="noopener">Google Cloud console</a> and create (or pick) a project.</li>
-      <li>Enable the <strong>Geocoding API</strong>, which is all this component uses. The <a href="{{ url_for('log_place_page') }}">Log a Place</a> page also wants <strong>Places API (New)</strong> on the same key, for searching by name.</li>
+      <li>Enable the <strong>Geocoding API</strong>, which is all this component uses. The <a href="{{ url_for('places.log_place_page') }}">Log a Place</a> page also wants <strong>Places API (New)</strong> on the same key, for searching by name.</li>
       <li>Under <strong>Credentials</strong>, create an API key, then restrict it: <em>API restrictions</em> to those APIs only, and <em>Application restrictions</em> to IP addresses. IP rather than referrer is right because every call is server-side; the key never reaches the browser, which is also why the Log a Place map uses Leaflet rather than Google's.</li>
       <li>Paste it below and click <strong>Save Key</strong>.</li>
     </ol>

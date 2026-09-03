@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from src.web import places
 from src.web import guards
 from contextlib import closing
 from unittest import mock
@@ -391,7 +392,7 @@ class PageTest(unittest.TestCase):
         with self._as_parent(), \
              mock.patch.object(self.app_module.log_a_place, "store",
                                return_value={"id": 7}), \
-             mock.patch.object(self.app_module, "_logged_place", return_value=stored):
+             mock.patch.object(places, "_logged_place", return_value=stored):
             resp = self.client.post("/log-place",
                                     data={"name": "Science World", "store": "1"})
             self.assertEqual(resp.status_code, 302)
@@ -405,7 +406,7 @@ class PageTest(unittest.TestCase):
     def test_a_place_that_is_not_yours_shows_nothing(self):
         # ?logged= is a query parameter, so it has to be ownership-checked.
         with self._as_parent(), \
-             mock.patch.object(self.app_module, "_logged_place", return_value=None):
+             mock.patch.object(places, "_logged_place", return_value=None):
             html = self.client.get("/log-place?logged=999").get_data(as_text=True)
         self.assertNotIn("awaiting verification", html)
 

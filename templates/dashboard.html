@@ -88,7 +88,7 @@
 
 <section class="card">
   <h2>Places you've logged</h2>
-  <p class="meta">Yours to correct or remove. Each one waits for a check before other parents can find it. <a href="{{ url_for('log_place_page') }}">Log another →</a></p>
+  <p class="meta">Yours to correct or remove. Each one waits for a check before other parents can find it. <a href="{{ url_for('places.log_place_page') }}">Log another →</a></p>
   {% if places %}
   <div class="plan-grid">
     {% for place in places %}
@@ -108,7 +108,7 @@
       <div class="child-actions">
         <details>
           <summary>Edit</summary>
-          <form method="post" action="{{ url_for('edit_place_route', place_id=place.id) }}" class="child-edit-form">
+          <form method="post" action="{{ url_for('places.edit_place_route', place_id=place.id) }}" class="child-edit-form">
             <label class="field">
               <span>Name</span>
               <input type="text" name="name" value="{{ place.name }}" required>
@@ -136,7 +136,7 @@
             <button type="submit" class="cta-secondary">Save changes</button>
           </form>
         </details>
-        <form method="post" action="{{ url_for('delete_place_route', place_id=place.id) }}"
+        <form method="post" action="{{ url_for('places.delete_place_route', place_id=place.id) }}"
               onsubmit="return confirm('Remove ' + {{ place.name|tojson }} + '?');">
           <button type="submit" class="cta-danger">Remove</button>
         </form>
@@ -145,7 +145,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="empty-plan">No places logged yet. <a href="{{ url_for('log_place_page') }}">Log your first one</a>.</p>
+  <p class="empty-plan">No places logged yet. <a href="{{ url_for('places.log_place_page') }}">Log your first one</a>.</p>
   {% endif %}
 </section>
 

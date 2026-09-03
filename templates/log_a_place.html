@@ -37,7 +37,7 @@
   </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('log_place') }}" class="section-form">
+  <form method="post" action="{{ url_for('places.log_place') }}" class="section-form">
     {# This form exists to log a place, so it always asks to store. The chat's
        hand-off omits it, which is what makes filling the form the safe
        default for any post that loses a flag. #}
