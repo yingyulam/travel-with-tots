@@ -14,6 +14,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import tempfile
 import unittest
+from src import schema
 from contextlib import closing
 from unittest import mock
 
@@ -31,7 +32,7 @@ class _FreshDatabase(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect_sqlite()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def _seed(self, **env):
         with mock.patch.dict(os.environ, env, clear=False):
@@ -39,7 +40,7 @@ class _FreshDatabase(unittest.TestCase):
                 if key not in env:
                     os.environ.pop(key, None)
             with closing(db.connect_sqlite()) as conn:
-                db._seed_admin(conn)
+                schema._seed_admin(conn)
 
 
 class SeedingTest(_FreshDatabase):

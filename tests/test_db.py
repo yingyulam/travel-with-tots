@@ -8,7 +8,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 
 
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
@@ -44,7 +44,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()
@@ -217,7 +217,7 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
     def test_adds_lat_lng_to_an_older_database(self):
         self.assertNotIn("lat", self._venue_columns())
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
+            schema._ensure_columns(conn)
         columns = self._venue_columns()
         self.assertIn("lat", columns)
         self.assertIn("lng", columns)
@@ -226,8 +226,8 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "Already Here")
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
-            db._ensure_columns(conn)  # second run must be a no-op, not an error
+            schema._ensure_columns(conn)
+            schema._ensure_columns(conn)  # second run must be a no-op, not an error
         with closing(db.connect()) as conn:
             rows = conn.execute("SELECT name, lat FROM venues").fetchall()
         self.assertEqual([r["name"] for r in rows], ["Already Here"])
@@ -235,7 +235,7 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
 
     def test_adds_the_provenance_columns_to_an_older_database(self):
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
+            schema._ensure_columns(conn)
         columns = self._venue_columns()
         for column in ("source_url", "external_id", "verified_at",
                        "verified_by", "seed_rank"):
@@ -245,11 +245,11 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
         # What _backfill_venue_coordinates used to do, now a side effect of
         # seeding: a row already in the table gets updated, not skipped.
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
+            schema._ensure_columns(conn)
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "Science World")  # a real seed-file venue
         with closing(db.connect()) as conn:
-            db._seed_venues(conn)
+            schema._seed_venues(conn)
             row = conn.execute(
                 "SELECT lat, lng FROM venues WHERE name = 'Science World'").fetchone()
         self.assertIsNotNone(row["lat"])
@@ -257,11 +257,11 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
 
     def test_seeding_leaves_venues_not_in_the_seed_file_alone(self):
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
+            schema._ensure_columns(conn)
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "Not In The Seed File")
         with closing(db.connect()) as conn:
-            db._seed_venues(conn)
+            schema._seed_venues(conn)
             row = conn.execute("SELECT lat, seed_rank FROM venues "
                                "WHERE name = 'Not In The Seed File'").fetchone()
         self.assertIsNone(row["lat"])
@@ -271,11 +271,11 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
         # The case the old insert-only seed could not express at all: an edit to
         # an existing venue in venues.json never reached a populated database.
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
+            schema._ensure_columns(conn)
         with closing(db.connect()) as conn, conn:
             _insert_venue(conn, "Science World", neighbourhood="Wrong Place")
         with closing(db.connect()) as conn:
-            db._seed_venues(conn)
+            schema._seed_venues(conn)
             row = conn.execute("SELECT neighbourhood FROM venues "
                                "WHERE name = 'Science World'").fetchone()
         self.assertNotEqual(row["neighbourhood"], "Wrong Place")
@@ -285,12 +285,12 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
         # old seed matched names against every row, so they suppressed the
         # curated entry entirely.
         with closing(db.connect()) as conn:
-            db._ensure_columns(conn)
+            schema._ensure_columns(conn)
         with closing(db.connect()) as conn, conn:
             conn.execute("INSERT INTO venues (name, city, source) "
                          "VALUES ('Science World', 'Vancouver', 'user_submitted')")
         with closing(db.connect()) as conn:
-            db._seed_venues(conn)
+            schema._seed_venues(conn)
             sources = [r["source"] for r in conn.execute(
                 "SELECT source FROM venues WHERE name = 'Science World'")]
         self.assertIn("curated", sources)
@@ -307,7 +307,7 @@ class SeedVenuesTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()
@@ -315,7 +315,7 @@ class SeedVenuesTest(unittest.TestCase):
 
     def _seed(self):
         with closing(db.connect()) as conn:
-            db._seed_venues(conn)
+            schema._seed_venues(conn)
 
     def test_is_idempotent(self):
         self._seed()
@@ -334,7 +334,7 @@ class SeedVenuesTest(unittest.TestCase):
         import json
         self._seed()
         names = [v["name"] for v in json.loads(
-            db.VENUES_SEED.read_text(encoding="utf-8"))]
+            schema.VENUES_SEED.read_text(encoding="utf-8"))]
         with closing(db.connect()) as conn:
             seeded = [r["name"] for r in conn.execute(
                 "SELECT name FROM venues WHERE source = 'curated' "

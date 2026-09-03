@@ -17,7 +17,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import data_loader, db
+from src import data_loader, db, schema
 
 
 class GetVenuesTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class GetVenuesTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()

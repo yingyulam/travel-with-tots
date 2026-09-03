@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import requests
 
 from src import db, importers, opendata
+from src import schema
 
 SOURCES = {
     "parks": (opendata.parks, importers.park_entry),
@@ -88,7 +89,7 @@ def main():
             sys.exit(f"unknown source: {wanted[0]}. "
                      f"one of {', '.join(SOURCES)}")
 
-    db.init_db()
+    schema.init_db()
     try:
         washroom_names = importers.washroom_places(opendata.washrooms())
     except requests.exceptions.RequestException as e:

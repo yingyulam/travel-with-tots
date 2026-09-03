@@ -23,7 +23,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 
 
 class WorkflowRouteTest(unittest.TestCase):
@@ -37,7 +37,7 @@ class WorkflowRouteTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         app_module.app.config["TESTING"] = True
         self.client = app_module.app.test_client()
         self.admin = db.add_parent("a@example.com", "h", name="A")

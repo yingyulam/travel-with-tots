@@ -29,6 +29,7 @@ import os
 import re
 import tempfile
 import unittest
+from src import schema
 from src.web import planning as web_planning
 from contextlib import closing
 from unittest import mock
@@ -369,7 +370,7 @@ class SavingAVisitTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect_sqlite()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.client = app_module.app.test_client()
         with self.client.session_transaction() as session:
@@ -529,7 +530,7 @@ class TheColumnsAreRegisteredEverywhereTest(unittest.TestCase):
     def test_the_schema_has_them(self):
         for column in ("trip_group_id", "day_index"):
             with self.subTest(column=column):
-                self.assertIn(column, db.SCHEMA)
+                self.assertIn(column, schema.SCHEMA)
 
     def test_add_trip_will_write_them(self):
         for column in ("trip_group_id", "day_index"):
@@ -537,7 +538,7 @@ class TheColumnsAreRegisteredEverywhereTest(unittest.TestCase):
                 self.assertIn(column, db.TRIP_FIELDS)
 
     def test_supabase_gets_them_too(self):
-        registered = {(t, c) for t, c, _ in db.POSTGRES_ADDED_COLUMNS}
+        registered = {(t, c) for t, c, _ in schema.POSTGRES_ADDED_COLUMNS}
         self.assertIn(("trips", "trip_group_id"), registered)
         self.assertIn(("trips", "day_index"), registered)
 
@@ -548,13 +549,13 @@ class TheColumnsAreRegisteredEverywhereTest(unittest.TestCase):
             path = os.path.join(tmp, "old.db")
             with mock.patch.object(db, "DB_PATH", path):
                 with closing(db.connect_sqlite()) as conn:
-                    db.create_schema(conn)
+                    schema.create_schema(conn)
                     with conn:
                         conn.execute("ALTER TABLE trips DROP COLUMN trip_group_id")
                         conn.execute("ALTER TABLE trips DROP COLUMN day_index")
                     before = {r["name"] for r in
                               conn.execute("PRAGMA table_info(trips)")}
-                    db._ensure_columns(conn)
+                    schema._ensure_columns(conn)
                     after = {r["name"] for r in
                              conn.execute("PRAGMA table_info(trips)")}
         # Both halves: the fixture really was missing them, and the migration

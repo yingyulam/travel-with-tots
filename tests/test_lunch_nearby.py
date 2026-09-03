@@ -21,7 +21,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import db, interactions
+from src import db, interactions, schema
 from src.components import find_nearby as module
 from src.components.find_nearby import find_nearby
 from src.data_loader import maps_search_url
@@ -63,7 +63,7 @@ class _WithVenues(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()

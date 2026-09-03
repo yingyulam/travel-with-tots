@@ -458,7 +458,8 @@ travel-with-tots/
 │   │   ├── settings.py        # data source, knowledge base, prompt
 │   │   ├── devpages.py        # the /components and /workflows test pages
 │   │   └── lookups.py         # map lookups shared by more than one blueprint
-│   ├── db.py                  # the only module with SQL
+│   ├── db.py                  # every query the app runs, and the only SQL besides schema.py
+│   ├── schema.py              # the shape of the database, and migrating an existing one
 │   ├── postgres.py            # the same SQL, translated for Supabase
 │   ├── supabase_sync.py       # clone local rows up; which source is selected
 │   ├── data_loader.py         # venues as plain dicts, hours for a date
@@ -504,8 +505,14 @@ the blueprint, so `url_for` reads `url_for('planning.plan')`. The one import
 between two blueprints runs `trip -> planning`, because replanning mid-trip is
 planning again with the trip's own answers.
 
-**Data lives in SQLite** at `data/app.db`, built by `src/db.py`, which is the
-only module that writes SQL. Everything else works in plain dicts. The tables
+**Data lives in SQLite** at `data/app.db`, built by `src/schema.py` and queried
+by `src/db.py`, which are the only two modules that write SQL. The split is by
+lifecycle rather than by subject: `schema.py` runs once at startup, driven by
+`init_db`, and holds the `CREATE TABLE`s plus the migrations that bring an
+older database up to them. Migrations are write-once and delete-never, so that
+file only grows while doing nothing on any boot after the first, which is why
+it is not in the module 23 files import to run queries. The dependency runs one
+way, `schema` imports `db` for its connections and never the reverse. Everything else works in plain dicts. The tables
 are `parents`, `children`, `trips`, `venues`, `venue_reports` (one amenity claim
 each), `venue_hours` (one day's opening hours, only for venues that vary by day)
 and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a decision). Ratings, candidates and intent logs are flat files in `data/`.

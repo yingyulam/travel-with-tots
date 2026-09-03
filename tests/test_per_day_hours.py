@@ -22,6 +22,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import tempfile
 import unittest
+from src import schema
 from src.web import guards
 from contextlib import closing
 from datetime import date
@@ -156,7 +157,7 @@ class _HoursTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.admin = db.add_parent("a@example.com", "h", name="A")
         self.venue = db.add_venue("A Gallery", source="curated", city="Vancouver",
                                   venue_type="museum", open_time="10:00",
@@ -278,7 +279,7 @@ class TheOldSlotTableIsGoneTest(unittest.TestCase):
                         season TEXT, day_type TEXT,
                         open_time TEXT, close_time TEXT)""")
                     conn.commit()
-                    db.create_schema(conn)
+                    schema.create_schema(conn)
                     columns = {r["name"] for r in
                                conn.execute("PRAGMA table_info(venue_hours)")}
         self.assertIn("weekday", columns)

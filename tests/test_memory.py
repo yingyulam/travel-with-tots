@@ -18,7 +18,7 @@ from contextlib import closing
 from datetime import date, timedelta
 from unittest import mock
 
-from src import db, memory
+from src import db, memory, schema
 from src.form_helpers import DEFAULTS, MAX_AGE_YEARS
 
 PLAN = json.dumps({"label": "Mixed", "blurb": "b", "stops": []})
@@ -44,7 +44,7 @@ class _MemoryTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.other_id = db.add_parent("q@example.com", "hash", name="Q")
 

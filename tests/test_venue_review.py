@@ -18,7 +18,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src import candidates, db
+from src import candidates, db, schema
 
 
 class _ReviewTest(unittest.TestCase):
@@ -38,7 +38,7 @@ class _ReviewTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.admin_id = db.add_parent("admin@example.com", "h", name="Admin")
         self.parent_id = db.add_parent("p@example.com", "h", name="P")
 

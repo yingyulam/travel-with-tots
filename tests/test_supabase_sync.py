@@ -24,6 +24,7 @@ from contextlib import closing
 from unittest import mock
 
 import src.db as db
+from src import schema
 from src import supabase_sync as sync
 
 
@@ -78,7 +79,7 @@ class _SyncTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "hash", name="P")
         self.child = db.add_child(self.parent, "Sam", "2024-01-01")
         self.venue = db.add_venue("A Park", source="curated", city="Vancouver",

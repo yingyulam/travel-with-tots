@@ -1,7 +1,7 @@
 """Read venues out of the database, shaped for the planners.
 
 The venues table is the source of truth; data/venues.json is only its seed
-(see db._seed_venues). This module is the boundary between the two: it turns
+(see schema._seed_venues). This module is the boundary between the two: it turns
 database rows into the plain dicts the rest of the app expects, so nothing
 above it knows which database is underneath.
 """

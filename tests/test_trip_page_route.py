@@ -17,7 +17,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 
 PLAN = {
     "label": "Mixed", "blurb": "A day out.", "source": "rule",
@@ -46,7 +46,7 @@ class TripPageTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "h", name="P")
         self.child_id = db.add_child(self.parent_id, "Sam", "2024-01-01")
         self.trip_id = db.add_trip(

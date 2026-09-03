@@ -18,7 +18,7 @@ from contextlib import closing
 from unittest import mock
 
 import app as app_module
-from src import db, importers, opendata
+from src import db, importers, opendata, schema
 
 # parks. Chosen for what each one proves:
 #   Arbutus Village Park          hyphenated local area; washrooms "N"
@@ -175,7 +175,7 @@ class _WithDatabase(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.washroom_names = importers.washroom_places(WASHROOMS)
 
     def tearDown(self):

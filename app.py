@@ -18,7 +18,8 @@ from werkzeug.exceptions import HTTPException
 from src import rag
 from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 from src.dates import compute_age
-from src.db import get_children, init_db
+from src.db import get_children
+from src.schema import init_db
 from src.web import (account, auth, chat, devpages, guards, places, planning,
                      settings, trip, venues)
 

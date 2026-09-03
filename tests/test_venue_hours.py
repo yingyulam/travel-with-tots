@@ -24,7 +24,7 @@ from contextlib import closing
 from datetime import date
 from unittest import mock
 
-from src import data_loader, db
+from src import data_loader, db, schema
 from src.data_loader import HOURS_ARE_A_CONVENTION
 from src.dates import bc_holidays, day_type_for, parse_date
 
@@ -59,7 +59,7 @@ class _WithVenues(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def _add(self, name, venue_type, opens="10:00", closes="17:00"):
         return db.add_venue(name, source="curated", city="Vancouver",

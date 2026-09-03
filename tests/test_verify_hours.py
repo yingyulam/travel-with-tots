@@ -20,7 +20,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db, osm
+from src import db, osm, schema
 
 
 class CompareTest(unittest.TestCase):
@@ -67,7 +67,7 @@ class HoursCheckTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.admin = db.add_parent("a@example.com", "h", name="A")
         self.venue = db.add_venue("An Aquarium", source="curated", city="Vancouver",
                                   venue_type="aquarium",
@@ -121,7 +121,7 @@ class HoursDecisionRouteTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.admin = db.add_parent("a@example.com", "h", name="A")
         self.venue = db.add_venue("An Aquarium", source="curated", city="Vancouver",
                                   venue_type="aquarium",

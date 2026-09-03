@@ -22,7 +22,8 @@ import unittest
 from unittest import mock
 
 import src.db as db
-from src import postgres, supabase_sync as sync
+from src import postgres, schema
+from src import supabase_sync as sync
 
 
 class TranslationTest(unittest.TestCase):
@@ -309,7 +310,7 @@ class WhichDatabaseServesTest(unittest.TestCase):
         # the tables are already there.
         with self._choose(sync.SUPABASE, "postgresql://somewhere"), \
              mock.patch.object(db, "connect_sqlite") as opened:
-            db.init_db()
+            schema.init_db()
         opened.assert_not_called()
 
 
@@ -325,7 +326,7 @@ class TheRuntimeSchemaTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         from contextlib import closing
         with closing(db.connect_sqlite()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.ddl = sync.postgres_runtime_ddl()
 
     def test_every_id_gets_a_sequence(self):
@@ -360,7 +361,7 @@ class TheRuntimeSchemaTest(unittest.TestCase):
     def test_every_index_reaches_supabase(self):
         # Without idx_venues_curated_identity the review page's duplicate catch
         # is dead code and an import duplicates rows instead of updating them.
-        for line in db.INDEXES.splitlines():
+        for line in schema.INDEXES.splitlines():
             if "INDEX IF NOT EXISTS" in line:
                 with self.subTest(line=line):
                     self.assertIn(line.strip(), self.ddl)
@@ -403,13 +404,13 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
     def test_every_listed_column_exists_in_the_sqlite_schema(self):
         # A typo here would run an ALTER for a column no table wants, and the
         # failure would be a log line nobody reads.
-        for table, column, _spec in db.POSTGRES_ADDED_COLUMNS:
+        for table, column, _spec in schema.POSTGRES_ADDED_COLUMNS:
             with self.subTest(column=f"{table}.{column}"):
-                self.assertIn(f"{column} ", db.SCHEMA,
+                self.assertIn(f"{column} ", schema.SCHEMA,
                               f"{column} is migrated but not in SCHEMA")
 
     def test_the_statements_are_postgres_and_idempotent(self):
-        for table, column, spec in db.POSTGRES_ADDED_COLUMNS:
+        for table, column, spec in schema.POSTGRES_ADDED_COLUMNS:
             with self.subTest(column=f"{table}.{column}"):
                 self.assertTrue(table and column and spec)
 
@@ -418,39 +419,39 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
         # SQLite syntax, so the fallback would run the wrong dialect against
         # the local file.
         with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
-             mock.patch.object(db.postgres, "connect",
+             mock.patch.object(schema.postgres, "connect",
                                side_effect=ImportError("no psycopg")), \
              mock.patch.object(db, "connect_sqlite") as sqlite:
-            db._ensure_postgres_columns()
+            schema._ensure_postgres_columns()
         sqlite.assert_not_called()
 
     def test_boot_runs_it_on_supabase(self):
         # The wiring, and the whole point: init_db returns early on Supabase,
         # so without this line the migration exists and never runs.
         with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
-             mock.patch.object(db, "_ensure_postgres_columns") as migrated:
-            db.init_db()
+             mock.patch.object(schema, "_ensure_postgres_columns") as migrated:
+            schema.init_db()
         migrated.assert_called_once()
 
     def test_boot_does_not_run_it_on_sqlite(self):
         # SQLite has _ensure_columns for this, which handles its own dialect.
         with mock.patch.object(db, "_supabase_dsn", return_value=None), \
-             mock.patch.object(db, "_ensure_postgres_columns") as migrated, \
+             mock.patch.object(schema, "_ensure_postgres_columns") as migrated, \
              mock.patch.object(db, "connect_sqlite"), \
-             mock.patch.object(db, "create_schema"), \
-             mock.patch.object(db, "_drop_dead_columns"), \
-             mock.patch.object(db, "_migrate_trips_ownership"), \
-             mock.patch.object(db, "_seed_venues"), \
-             mock.patch.object(db, "_migrate_seed_claims"), \
-             mock.patch.object(db, "_seed_sample_data"), \
-             mock.patch.object(db, "_seed_admin"):
-            db.init_db()
+             mock.patch.object(schema, "create_schema"), \
+             mock.patch.object(schema, "_drop_dead_columns"), \
+             mock.patch.object(schema, "_migrate_trips_ownership"), \
+             mock.patch.object(schema, "_seed_venues"), \
+             mock.patch.object(schema, "_migrate_seed_claims"), \
+             mock.patch.object(schema, "_seed_sample_data"), \
+             mock.patch.object(schema, "_seed_admin"):
+            schema.init_db()
         migrated.assert_not_called()
 
     def test_it_does_nothing_on_sqlite(self):
         with mock.patch.object(db, "_supabase_dsn", return_value=None), \
-             mock.patch.object(db.postgres, "connect") as opened:
-            db._ensure_postgres_columns()
+             mock.patch.object(schema.postgres, "connect") as opened:
+            schema._ensure_postgres_columns()
         opened.assert_not_called()
 
     def test_one_failing_column_does_not_stop_the_rest(self):
@@ -459,9 +460,9 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
         conn = mock.MagicMock()
         conn.execute.side_effect = [Exception("nope"), None, None]
         with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
-             mock.patch.object(db.postgres, "connect", return_value=conn):
-            db._ensure_postgres_columns()
-        self.assertEqual(conn.execute.call_count, len(db.POSTGRES_ADDED_COLUMNS))
+             mock.patch.object(schema.postgres, "connect", return_value=conn):
+            schema._ensure_postgres_columns()
+        self.assertEqual(conn.execute.call_count, len(schema.POSTGRES_ADDED_COLUMNS))
 
 
 if __name__ == "__main__":

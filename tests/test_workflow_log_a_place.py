@@ -10,7 +10,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 from src.components.geocode import GeocodeError
 from src.workflows import log_a_place
 from src.workflows.log_a_place import WORKFLOW
@@ -27,7 +27,7 @@ class _VenueDbTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.other_id = db.add_parent("q@example.com", "hash", name="Q")
 

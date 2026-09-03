@@ -9,7 +9,7 @@ from unittest import mock
 
 import requests
 
-from src import db
+from src import db, schema
 from src.components.find_nearby import find_nearby
 from src.components.geocode import GeocodeError, geocode, reverse_geocode
 
@@ -67,7 +67,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
 
     def tearDown(self):
         self.patcher.stop()

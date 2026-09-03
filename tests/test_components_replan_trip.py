@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 
 from src.agents import ReplanningAgent, ReplanningAgentError
 from src.components.replan_trip import replan_trip
@@ -47,8 +47,8 @@ class _SeededDBTest(unittest.TestCase):
         self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
         self.patcher.start()
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
-            db._seed_venues(conn)
+            schema.create_schema(conn)
+            schema._seed_venues(conn)
 
     def tearDown(self):
         self.patcher.stop()

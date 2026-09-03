@@ -27,7 +27,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from . import db
+from . import db, schema
 
 _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -161,7 +161,7 @@ def postgres_ddl(tables=TABLES):
     """CREATE TABLE statements for Supabase's SQL editor.
 
     Generated from the live SQLite schema rather than written out by hand, so a
-    column added to `db.SCHEMA` cannot be forgotten here. `IF NOT EXISTS`
+    column added to `schema.SCHEMA` cannot be forgotten here. `IF NOT EXISTS`
     throughout, so running it twice is safe.
 
     Foreign keys are deliberately omitted. They would enforce the copy order
@@ -238,7 +238,7 @@ def postgres_runtime_ddl(tables=TABLES):
 
     Three things postgres_ddl() leaves out because a clone does not need them,
     and every one of which the app does: id sequences, foreign keys, and the
-    unique indexes from `db.INDEXES` that stop a duplicate venue. Run after the
+    unique indexes from `schema.INDEXES` that stop a duplicate venue. Run after the
     first clone, and safe to run again.
 
     Generated from the live SQLite schema, like the CREATE TABLEs, so a new
@@ -255,7 +255,7 @@ def postgres_runtime_ddl(tables=TABLES):
                 if parent in tables:
                     out.append(_foreign_key_ddl(table, column, parent,
                                                 parent_column, on_delete))
-    return "\n\n".join(out) + "\n\n" + db.INDEXES.strip()
+    return "\n\n".join(out) + "\n\n" + schema.INDEXES.strip()
 
 
 def primary_key(table):

@@ -18,7 +18,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 
 
 class ReportedFlagsTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class ReportedFlagsTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.other = db.add_parent("q@example.com", "h", name="Q")
         self.venue = db.add_venue("A Museum", source="curated", city="Vancouver",
@@ -98,7 +98,7 @@ class ReportRouteTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.child = db.add_child(self.parent, "Sam", "2024-01-01")
         self.venue = db.add_venue("A Museum", source="curated", city="Vancouver",
@@ -279,7 +279,7 @@ class TheReviewQueueTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="Pat")
         self.other = db.add_parent("q@example.com", "h", name="Quinn")
         self.admin = db.add_parent("a@example.com", "h", name="Ada")
@@ -366,7 +366,7 @@ class SettlingIsAdminOnlyTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="Pat")
         self.admin = db.add_parent("a@example.com", "h", name="Ada")
         self.venue = db.add_venue("A Mall", source="curated", city="Vancouver")

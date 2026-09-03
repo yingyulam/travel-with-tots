@@ -18,7 +18,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db
+from src import db, schema
 
 
 PLAN = {"label": "Mixed", "stops": [{"time": "10:00", "venue": {"id": 1,
@@ -36,7 +36,7 @@ class SaveTripTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.client = app_module.app.test_client()
         self._as(self.parent)
@@ -116,7 +116,7 @@ class SavePromptTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.client = app_module.app.test_client()
         patcher = mock.patch.object(guards, "current_parent",

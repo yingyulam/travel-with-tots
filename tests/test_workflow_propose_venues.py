@@ -16,7 +16,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src import candidates, db, nominatim, osm
+from src import candidates, db, nominatim, osm, schema
 from src.workflows import propose_venues
 
 RESULTS = [
@@ -47,7 +47,7 @@ class ProposeVenuesTest(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         with closing(db.connect()) as conn:
-            db.create_schema(conn)
+            schema.create_schema(conn)
         # Enrichment reaches two networks. Stubbed for the whole class rather
         # than per test, so a new test cannot accidentally call Overpass for
         # real: it does not fail, it just takes a minute and hammers a shared
