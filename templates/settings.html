@@ -33,7 +33,7 @@
       survive a deploy.</p>
   {% endif %}
 
-  <form method="post" action="{{ url_for('save_data_source') }}" class="section-form">
+  <form method="post" action="{{ url_for('settings.save_data_source') }}" class="section-form">
     <label class="field field-full">
       <span>Read and write from</span>
       <select name="source" {{ 'disabled' if pinned_backend }}>
@@ -79,14 +79,14 @@
     <textarea rows="12" readonly onclick="this.select()">{{ supabase_runtime_ddl }}</textarea>
   </details>
 
-  <form method="post" action="{{ url_for('clone_to_supabase') }}" class="section-form">
+  <form method="post" action="{{ url_for('settings.clone_to_supabase') }}" class="section-form">
     <button type="submit" class="cta" {{ 'disabled' if not supabase_configured }}>
       Step 2: Clone Local Data to Supabase</button>
   </form>
 </section>
 
 <section class="card">
-  <form method="post" action="{{ url_for('save_knowledge_base') }}" class="section-form">
+  <form method="post" action="{{ url_for('settings.save_knowledge_base') }}" class="section-form">
     <h2>Knowledge base</h2>
     <p class="meta">Facts the chatbot uses to answer questions (data/knowledge_base.md).</p>
     <label class="field field-full">
@@ -97,7 +97,7 @@
 </section>
 
 <section class="card">
-  <form method="post" action="{{ url_for('save_prompt') }}" class="section-form">
+  <form method="post" action="{{ url_for('settings.save_prompt') }}" class="section-form">
     <h2>Chatbot prompt</h2>
     <p class="meta">The chatbot's role and instructions (src/prompts/website_chatbot.txt).</p>
     <label class="field field-full">
