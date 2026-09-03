@@ -8,6 +8,7 @@ having consulted neither.
 """
 
 import unittest
+from src.web import trip as web_trip
 from src.web import devpages
 from src.web import guards
 from unittest import mock
@@ -79,7 +80,7 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
     def test_the_no_location_branch_reports_the_source_it_used(self):
         # It used to return a hardcoded "curated" without consulting anything
         # but the sample venue list.
-        with mock.patch.object(app_module, "find_nearby_component",
+        with mock.patch.object(web_trip, "find_nearby_component",
                                return_value=FOUND) as component:
             response = self.client.post("/find_nearby", json={"need": "nursing_room"})
         # Every field, the same ones the test page passes, so the two cannot
@@ -96,7 +97,7 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
         self.assertEqual(body["venues"], FOUND["places"])
 
     def test_the_response_keys_the_trip_page_reads_are_unchanged(self):
-        with mock.patch.object(app_module, "find_nearby_component",
+        with mock.patch.object(web_trip, "find_nearby_component",
                                return_value=FOUND):
             body = self.client.post("/find_nearby",
                                     json={"need": "nursing_room"}).get_json()
@@ -107,7 +108,7 @@ class TheTripPagePanelUsesTheComponentTest(unittest.TestCase):
     def test_the_trip_page_can_anchor_the_lunch_handoff_on_a_stop(self):
         # Sent by the trip page as the stop the parent is standing at, so a
         # Maps search has somewhere to sit when the browser shared no location.
-        with mock.patch.object(app_module, "find_nearby_component",
+        with mock.patch.object(web_trip, "find_nearby_component",
                                return_value=FOUND) as component:
             self.client.post("/find_nearby",
                              json={"need": "restaurant", "transit": "walk",

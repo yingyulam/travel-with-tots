@@ -17,6 +17,7 @@ reads as a drop and an add -- is exactly the kind of bug a browser hides.
 
 import re
 import unittest
+from src.web import trip as web_trip
 from unittest import mock
 
 import app as app_module
@@ -155,7 +156,7 @@ class TheRouteReturnsTheProposalTest(unittest.TestCase):
         self.client = app_module.app.test_client()
 
     def test_the_endpoint_hands_back_the_changes(self):
-        with mock.patch.object(app_module, "replan_trip",
+        with mock.patch.object(web_trip, "replan_trip",
                                return_value={"label": "L", "blurb": "b",
                                              "stops": [], "adjusted": True,
                                              "changed": True,

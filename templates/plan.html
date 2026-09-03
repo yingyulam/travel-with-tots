@@ -371,7 +371,7 @@
 
   {# The whole visit, once. #}
   <div class="plan-actions">
-    <form method="post" action="{{ url_for('trip') }}">
+    <form method="post" action="{{ url_for('trip.trip') }}">
       <textarea name="plans" hidden>{{ plans_json | tojson }}</textarea>
       <textarea name="context" hidden>{{ trip_context | tojson }}</textarea>
       <button type="submit" class="cta cta-fit">

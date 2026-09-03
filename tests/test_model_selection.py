@@ -8,6 +8,7 @@ app does not offer cannot.
 
 import re
 import unittest
+from src.web import trip as web_trip
 from src.web import planning as web_planning
 from unittest import mock
 
@@ -72,7 +73,7 @@ class ReplanUsesTheChosenModelTest(unittest.TestCase):
     def _post(self, **extra):
         body = {"plan": {"stops": []}, "situation": "nap_here",
                 "current_time": "12:00", **extra}
-        with mock.patch.object(app_module, "replan_trip",
+        with mock.patch.object(web_trip, "replan_trip",
                                return_value={**DRAFT, "adjusted": True,
                                              "changed": True}) as replanned:
             self.client.post("/replan/adjust", json=body)

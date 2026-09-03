@@ -7,7 +7,7 @@
 <section class="card">
   <p class="meta">Test page for the "Replan on the go" workflow. Type in the bubble in the corner, which is the agent, and the replan it collected appears here. <a href="{{ url_for('devpages.workflows') }}">← Back to Workflows</a></p>
 
-  <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the replan conversation, and the assistant reads which situation it is from a tapped chip or from your own words. It stops at the confirmed request on purpose. Re-timing the day is the <a href="{{ url_for('trip') }}">in-trip page</a>'s job, because that is where the plan and its versions live. Start a day first, then say "we need to replan" in the bubble.</p>
+  <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the replan conversation, and the assistant reads which situation it is from a tapped chip or from your own words. It stops at the confirmed request on purpose. Re-timing the day is the <a href="{{ url_for('trip.trip') }}">in-trip page</a>'s job, because that is where the plan and its versions live. Start a day first, then say "we need to replan" in the bubble.</p>
 
   <div class="action-panel">
     <p class="panel-title">Watch the chat</p>

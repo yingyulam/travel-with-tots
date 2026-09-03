@@ -17,6 +17,7 @@ told through `used_names` what the days before it have taken.
 import json
 import re
 import unittest
+from src.web import trip as web_trip
 from src.web import planning as web_planning
 from unittest import mock
 
@@ -92,7 +93,7 @@ class TheEndpointOnlyProposesTest(unittest.TestCase):
         self.client = app_module.app.test_client()
 
     def _post(self, days, used=(), form=None, **extra):
-        with mock.patch.object(app_module, "plan_days") as planner:
+        with mock.patch.object(web_trip, "plan_days") as planner:
             planner.return_value = [
                 {**_plan("Fresh Place"), "trip_date": d.get("date", ""),
                  "day_index": i, "adjusted": False, "changed": False,
