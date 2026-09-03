@@ -18,7 +18,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src import candidates, db, schema
+from src.store import candidates, db, schema
 
 
 class _ReviewTest(unittest.TestCase):

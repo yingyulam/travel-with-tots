@@ -10,7 +10,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db, schema
+from src.store import db, schema
 from src.components.geocode import GeocodeError
 from src.workflows import log_a_place
 from src.workflows.log_a_place import WORKFLOW

@@ -10,7 +10,7 @@ attractions are not in any municipal dataset and never will be, which is why
 src/candidates.py and its review queue are not made redundant by this file.
 """
 
-from . import db
+from .store import db
 from .clients import opendata
 from .data_loader import NEIGHBOURHOODS
 

@@ -11,7 +11,8 @@ web search only when the curated table has nothing, the same
 
 import requests
 
-from .. import db, interactions
+from .. import interactions
+from ..store import db
 from ..data_loader import SUPPORTED_CITIES, maps_search_url, maps_url
 from ..geo import haversine_km, reach_km, within_reach
 from .search_web import WebSearchError, search_web

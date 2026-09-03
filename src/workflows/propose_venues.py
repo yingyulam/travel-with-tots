@@ -22,7 +22,7 @@ import requests
 from itertools import zip_longest
 from pathlib import Path
 
-from .. import candidates, db
+from ..store import candidates, db
 from ..clients import nominatim, osm, webpage
 from ..ai.agents import call_openrouter, parse_json_reply
 from ..data_loader import (CITIES, NEIGHBOURHOODS, SETTINGS, SHELTERED,

@@ -8,7 +8,7 @@ import time
 import requests
 from dotenv import load_dotenv
 
-from .. import db
+from ..store import db
 from . import rag
 from ..data_loader import is_nap_friendly, maps_url
 from ..geo import leg_minutes, walk_budget_min

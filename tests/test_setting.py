@@ -130,7 +130,7 @@ class ImportedSettingTest(unittest.TestCase):
                          "indoor")
 
     def test_the_import_can_write_it(self):
-        from src import db
+        from src.store import db
         self.assertIn("setting", db.IMPORT_FIELDS)
 
 

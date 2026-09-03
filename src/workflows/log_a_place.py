@@ -20,7 +20,8 @@ search. Promoting it is a human decision, and the admin page for making that
 decision does not exist yet: submissions accumulate until it does.
 """
 
-from .. import db, interactions
+from .. import interactions
+from ..store import db
 from ..components.geocode import GeocodeError, geocode
 from ..ai.intent import matches_only
 

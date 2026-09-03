@@ -5,7 +5,7 @@ import json
 from flask import (Blueprint, flash, redirect, render_template, request,
                    url_for)
 
-from src.db import (AMENITY_OPTIONS, add_child, delete_child, get_children,
+from src.store.db import (AMENITY_OPTIONS, add_child, delete_child, get_children,
                     get_logged_venues_for_parent, get_trips_for_parent,
                     update_child)
 from src.models import Plan

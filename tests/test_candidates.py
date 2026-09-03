@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from src import candidates
+from src.store import candidates
 
 
 class CandidateStoreTest(unittest.TestCase):
@@ -143,7 +143,7 @@ class CandidateStoreTest(unittest.TestCase):
         # the CSV holds one nobody is asked about. Five of the six become
         # venue_reports on approval and only can_eat stays a column, but the CSV
         # is the reviewer's working copy and needs all six.
-        from src.db import CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS
+        from src.store.db import CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS
         self.assertEqual(set(candidates.REVIEWED_COLUMNS)
                          - set(candidates.PREFILLED_COLUMNS),
                          set(CANDIDATE_FEATURE_COLUMNS) | set(REPORTABLE_FIELDS))

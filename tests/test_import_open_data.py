@@ -18,7 +18,8 @@ from contextlib import closing
 from unittest import mock
 
 import app as app_module
-from src import db, importers, schema
+from src import importers
+from src.store import db, schema
 from src.clients import opendata
 
 # parks. Chosen for what each one proves:

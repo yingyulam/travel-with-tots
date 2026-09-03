@@ -8,7 +8,7 @@ from .dates import MAX_TRIP_DAYS, compute_age, date_range, days_between, parse_d
 from .geo import (DEFAULT_WALK_BUDGET_MIN, RIDING_BUDGET_OPTIONS, as_point,
                   budget_options, walk_budget_min)
 from .data_loader import SUPPORTED_CITIES, VENUE_TYPES, interest_options
-from .db import get_children
+from .store.db import get_children
 
 # Age is capped at this many years, 0 months.
 MAX_AGE_YEARS = 5

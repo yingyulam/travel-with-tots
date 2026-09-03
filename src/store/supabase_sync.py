@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 
 from . import db, schema
 
-_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 
 # Parents before children, venues before the rows that reference them. A copy
 # into a database with foreign keys fails on order, and Supabase's generated
@@ -354,7 +354,7 @@ def clone(client=None, tables=TABLES):
 # Where `pull` writes. Timestamped rather than one overwritten file: a backup
 # you replace on every run only ever protects you from the last mistake, and
 # these are a few hundred KB each.
-BACKUPS_DIR = Path(__file__).resolve().parent.parent / "data" / "backups"
+BACKUPS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "backups"
 
 
 def remote_rows(table, client=None):

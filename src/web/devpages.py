@@ -28,7 +28,7 @@ from src.form_helpers import (DEFAULTS, MAX_AGE_YEARS, MAX_MONTHS,
                               STOP_COUNT_FORM_MAX, STOP_COUNT_FORM_MIN,
                               clamp_int)
 from src.interactions import NEED_OPTIONS, SITUATION_OPTIONS
-from src.results import get_results, get_stats
+from src.store.results import get_results, get_stats
 from src.web import lookups
 from src.web.guards import admin_required, login_required
 from src.workflows import workflows_by_trigger

@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import db
+from src.store import db
 from src.clients import osm
 from src.data_loader import HOURS_ARE_A_CONVENTION
 

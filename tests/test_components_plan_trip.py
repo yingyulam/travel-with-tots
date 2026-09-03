@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import db, schema
+from src.store import db, schema
 
 from src.ai.agents import PlanningAgent, PlanningAgentError
 from src.components.plan_trip import plan_trip

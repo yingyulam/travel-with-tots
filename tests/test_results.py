@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from src import results
+from src.store import results
 
 
 class ResultsTest(unittest.TestCase):

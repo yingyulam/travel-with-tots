@@ -22,13 +22,13 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import tempfile
 import unittest
-from src import schema
+from src.store import schema
 from src.web import guards
 from contextlib import closing
 from datetime import date
 from unittest import mock
 
-import src.db as db
+import src.store.db as db
 from src.data_loader import _hours_for
 from src.clients.osm import compare, per_day_hours
 

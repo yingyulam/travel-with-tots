@@ -9,7 +9,7 @@ from unittest import mock
 
 import requests
 
-from src import db, schema
+from src.store import db, schema
 from src.components.find_nearby import find_nearby
 from src.components.geocode import GeocodeError, geocode, reverse_geocode
 

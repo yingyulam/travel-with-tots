@@ -29,7 +29,7 @@ import os
 import re
 import tempfile
 import unittest
-from src import schema
+from src.store import schema
 from src.web import planning as web_planning
 from contextlib import closing
 from unittest import mock
@@ -37,7 +37,7 @@ from unittest import mock
 from werkzeug.datastructures import MultiDict
 
 import app as app_module
-import src.db as db
+import src.store.db as db
 from src.components import plan_trip as plan_module
 from src.dates import MAX_TRIP_DAYS, date_range, days_between
 from src.form_helpers import read_form, trip_dates, trip_too_long

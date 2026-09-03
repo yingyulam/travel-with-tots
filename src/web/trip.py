@@ -14,7 +14,7 @@ import json
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src import db
+from src.store import db
 from src.components.find_nearby import find_nearby as find_nearby_component
 from src.components.find_nearby import searchable
 from src.components.geocode import UNKNOWN_LOCATION, GeocodeError
@@ -22,7 +22,7 @@ from src.components.plan_trip import plan_days
 from src.components.replan_trip import replan_trip
 from src.data_loader import FEATURE_LABELS, get_venues, interest_options
 from src.dates import MAX_TRIP_DAYS, compute_age, parse_date
-from src.db import get_trip_for_parent, get_trip_group
+from src.store.db import get_trip_for_parent, get_trip_group
 from src.form_helpers import DEFAULTS, TRANSIT_OPTIONS, normalise_transit, trip_dates
 from src.interactions import (MAX_REPLAN_MINUTES, MIN_REPLAN_MINUTES,
                               NEED_OPTIONS, SITUATION_OPTIONS, replan)

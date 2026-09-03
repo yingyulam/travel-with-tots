@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import db  # noqa: E402
+from src.store import db  # noqa: E402
 
 MIN_LENGTH = 10
 

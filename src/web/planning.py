@@ -21,7 +21,7 @@ from src.ai.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 from src.components.plan_trip import plan_days
 from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, interest_options
 from src.dates import MAX_TRIP_DAYS
-from src.db import TRIP_FIELDS, add_trip, delete_trip, get_children, get_trip_for_parent
+from src.store.db import TRIP_FIELDS, add_trip, delete_trip, get_children, get_trip_for_parent
 from src.form_helpers import (DEFAULTS, DEFAULT_TRANSIT, DINING_OPTIONS,
                               MAX_NAPS, NAP_DURATION_MAX_MINUTES,
                               NAP_DURATION_MIN_MINUTES, TRANSIT_NAP_OPTIONS,

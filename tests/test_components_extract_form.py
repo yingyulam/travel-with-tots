@@ -186,7 +186,7 @@ class ExtractionRegressionTest(unittest.TestCase):
         # The quiet one: a destination the venue table cannot match leaves the
         # AI adjuster with nothing to swap in and Find Nearby with no curated
         # venues. Only a bare city name matches.
-        from src import db
+        from src.store import db
         result, _ = _run(_reply(destination="Vancouver"))
         self.assertTrue(db.get_candidate_venues(
             result["form"]["destination"], age_months=18))

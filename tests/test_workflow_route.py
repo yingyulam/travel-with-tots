@@ -23,7 +23,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db, schema
+from src.store import db, schema
 
 
 class WorkflowRouteTest(unittest.TestCase):

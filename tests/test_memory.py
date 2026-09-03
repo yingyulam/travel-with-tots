@@ -18,7 +18,8 @@ from contextlib import closing
 from datetime import date, timedelta
 from unittest import mock
 
-from src import db, memory, schema
+from src import memory
+from src.store import db, schema
 from src.form_helpers import DEFAULTS, MAX_AGE_YEARS
 
 PLAN = json.dumps({"label": "Mixed", "blurb": "b", "stops": []})

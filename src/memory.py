@@ -29,7 +29,7 @@ from datetime import date
 from werkzeug.datastructures import MultiDict
 
 from .dates import compute_age
-from .db import get_children, get_trips_for_parent
+from .store.db import get_children, get_trips_for_parent
 from .form_helpers import MAX_AGE_YEARS, normalise_transit, read_form
 
 # How the child sleeps and eats moves every few months at these ages, and it is

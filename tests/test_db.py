@@ -8,7 +8,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import db, schema
+from src.store import db, schema
 
 
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
@@ -27,7 +27,7 @@ def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
         "open_time, close_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (name, city, neighbourhood, venue_type, int(can_eat), source,
          open_time, close_time))
-    from src.db import REPORTABLE_FIELDS
+    from src.store.db import REPORTABLE_FIELDS
     for field, value in flags.items():
         if field in REPORTABLE_FIELDS:
             conn.execute(

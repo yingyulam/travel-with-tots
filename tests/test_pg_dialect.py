@@ -21,9 +21,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-import src.db as db
-from src import postgres, schema
-from src import supabase_sync as sync
+import src.store.db as db
+from src.store import postgres, schema
+from src.store import supabase_sync as sync
 
 
 class TranslationTest(unittest.TestCase):

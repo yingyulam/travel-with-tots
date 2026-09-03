@@ -24,7 +24,8 @@ from contextlib import closing
 from datetime import date
 from unittest import mock
 
-from src import data_loader, db, schema
+from src import data_loader
+from src.store import db, schema
 from src.data_loader import HOURS_ARE_A_CONVENTION
 from src.dates import bc_holidays, day_type_for, parse_date
 

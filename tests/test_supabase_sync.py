@@ -23,9 +23,9 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-import src.db as db
-from src import schema
-from src import supabase_sync as sync
+import src.store.db as db
+from src.store import schema
+from src.store import supabase_sync as sync
 
 
 class FakeTable:

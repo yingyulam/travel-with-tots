@@ -21,7 +21,8 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import db, interactions, schema
+from src import interactions
+from src.store import db, schema
 from src.components import find_nearby as module
 from src.components.find_nearby import find_nearby
 from src.data_loader import maps_search_url

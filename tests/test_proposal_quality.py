@@ -21,7 +21,7 @@ from src.web import venues as web_venues
 from unittest import mock
 
 import app as app_module
-from src import candidates
+from src.store import candidates
 from src.clients import nominatim, osm
 from src.data_loader import CITIES, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
 from src.workflows import propose_venues as pv

@@ -21,7 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from . import postgres
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 DB_PATH = _DATA_DIR / "app.db"
 
 # What DB_PATH is when nobody has redirected it. Tests and one-off scripts point

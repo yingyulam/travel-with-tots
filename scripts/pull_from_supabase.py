@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import supabase_sync
+from src.store import supabase_sync
 
 
 def main():

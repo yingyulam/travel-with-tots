@@ -22,7 +22,7 @@ from contextlib import closing
 
 from werkzeug.security import generate_password_hash
 
-from src import db, postgres
+from . import db, postgres
 
 # db's own names are reached through the module rather than imported, so
 # whichever module owns a name is the one place to patch it: db.connect_sqlite

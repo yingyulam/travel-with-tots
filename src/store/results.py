@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-RESULTS_PATH = Path(__file__).resolve().parent.parent / "data" / "results.json"
+RESULTS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "results.json"
 _lock = threading.Lock()
 
 

@@ -18,7 +18,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db, schema
+from src.store import db, schema
 
 
 PLAN = {"label": "Mixed", "stops": [{"time": "10:00", "venue": {"id": 1,

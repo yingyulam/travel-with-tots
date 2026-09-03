@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .db import CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS
 
-CANDIDATES_PATH = Path(__file__).resolve().parent.parent / "data" / "venue_candidates.csv"
+CANDIDATES_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "venue_candidates.csv"
 _lock = threading.Lock()
 
 PENDING = "pending"

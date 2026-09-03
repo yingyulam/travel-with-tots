@@ -14,13 +14,13 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import tempfile
 import unittest
-from src import schema
+from src.store import schema
 from contextlib import closing
 from unittest import mock
 
 from werkzeug.security import check_password_hash
 
-import src.db as db
+import src.store.db as db
 
 
 class _FreshDatabase(unittest.TestCase):

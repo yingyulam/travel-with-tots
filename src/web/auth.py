@@ -6,7 +6,7 @@ from flask import (Blueprint, flash, redirect, render_template, request,
                    session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from src.db import add_parent, get_parent_by_email
+from src.store.db import add_parent, get_parent_by_email
 from src.web.guards import LOGIN_LIMIT, LOGIN_WINDOW, rate_limited
 
 bp = Blueprint("auth", __name__)

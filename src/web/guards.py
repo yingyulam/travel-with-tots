@@ -13,7 +13,7 @@ from flask import (flash, jsonify, make_response, redirect, request, session,
                    url_for)
 
 from src.web import ratelimit
-from src.db import get_parent
+from src.store.db import get_parent
 
 # Whether X-Forwarded-For can be believed. True only behind a proxy that sets
 # it; off a proxy it is a header the caller wrote, and trusting it would let one

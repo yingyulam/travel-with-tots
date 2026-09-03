@@ -17,7 +17,8 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src import data_loader, db, schema
+from src import data_loader
+from src.store import db, schema
 
 
 class GetVenuesTest(unittest.TestCase):

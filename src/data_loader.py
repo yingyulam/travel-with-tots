@@ -9,7 +9,7 @@ above it knows which database is underneath.
 from datetime import date
 from urllib.parse import quote_plus
 
-from . import db
+from .store import db
 from .dates import day_type_for
 
 # Feature keys we know about, with display labels, in presentation order.

@@ -14,9 +14,9 @@ from datetime import date
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src import db
+from src.store import db
 from src.components.geocode import GeocodeError, reverse_geocode
-from src.db import (AMENITY_OPTIONS, delete_venue, get_logged_venues_for_parent,
+from src.store.db import (AMENITY_OPTIONS, delete_venue, get_logged_venues_for_parent,
                     get_trip_for_parent, update_venue)
 from src.web import guards, lookups
 from src.web.guards import login_required

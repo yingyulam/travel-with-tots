@@ -10,7 +10,7 @@ from contextlib import closing
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src import db, postgres, supabase_sync
+from src.store import db, postgres, supabase_sync
 from src.ai import rag
 from src.ai.agents import WEBSITE_CHATBOT_PROMPT_PATH, reload_website_chatbot_prompt
 from src.form_helpers import clamp_int
