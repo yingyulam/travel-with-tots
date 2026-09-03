@@ -458,10 +458,23 @@ travel-with-tots/
 │   │   ├── settings.py        # data source, knowledge base, prompt
 │   │   ├── devpages.py        # the /components and /workflows test pages
 │   │   └── lookups.py         # map lookups shared by more than one blueprint
-│   ├── db.py                  # every query the app runs, and the only SQL besides schema.py
-│   ├── schema.py              # the shape of the database, and migrating an existing one
-│   ├── postgres.py            # the same SQL, translated for Supabase
-│   ├── supabase_sync.py       # clone local rows up; which source is selected
+│   ├── store/                 # everything that persists, the only SQL
+│   │   ├── db.py              # every query the app runs
+│   │   ├── schema.py          # the tables, and migrating an existing database
+│   │   ├── postgres.py        # the same SQL, translated for Supabase
+│   │   ├── supabase_sync.py   # clone rows up, pull them back down
+│   │   ├── candidates.py      # proposed venues awaiting review
+│   │   └── results.py         # thumbs up/down ratings
+│   ├── ai/                    # what asks a model, and what reads its answer
+│   │   ├── agents.py          # the transport, and the plan/replan adjusters
+│   │   ├── tool_agent.py      # the LangGraph tool-calling agent
+│   │   ├── rag.py             # chunking, embeddings, retrieval
+│   │   └── intent.py          # cancel words, and the routing log
+│   ├── clients/               # outbound calls to third parties
+│   │   ├── osm.py             # OpenStreetMap hours, via Overpass
+│   │   ├── nominatim.py       # keyless geocoding
+│   │   ├── opendata.py        # Vancouver Open Data client
+│   │   └── webpage.py         # plain text from one page
 │   ├── data_loader.py         # venues as plain dicts, hours for a date
 │   ├── models.py              # Plan and Trip objects
 │   ├── itinerary.py           # builds the day
@@ -470,16 +483,7 @@ travel-with-tots/
 │   ├── geo.py                 # distance, and reach per transport mode
 │   ├── dates.py               # date and age helpers
 │   ├── memory.py              # what the app already knows about a parent
-│   ├── agents.py              # chatbot and the plan/replan adjusters
-│   ├── agent.py               # the LangGraph tool-calling agent
-│   ├── intent.py              # routes a message to a workflow, or not
-│   ├── rag.py                 # chunking, embeddings, retrieval
-│   ├── results.py             # thumbs up/down ratings
-│   ├── candidates.py          # proposed venues awaiting review
-│   ├── opendata.py            # Vancouver Open Data client
 │   ├── importers.py           # open data onto venue rows
-│   ├── osm.py                 # OpenStreetMap hours, via Overpass
-│   ├── nominatim.py           # keyless geocoding
 │   ├── components/            # one file per component
 │   ├── workflows/             # one file per workflow
 │   └── prompts/               # system prompts, editable at /settings
@@ -505,8 +509,8 @@ the blueprint, so `url_for` reads `url_for('planning.plan')`. The one import
 between two blueprints runs `trip -> planning`, because replanning mid-trip is
 planning again with the trip's own answers.
 
-**Data lives in SQLite** at `data/app.db`, built by `src/schema.py` and queried
-by `src/db.py`, which are the only two modules that write SQL. The split is by
+**Data lives in SQLite** at `data/app.db`, built by `src/store/schema.py` and
+queried by `src/store/db.py`, the only two modules that write SQL. The split is by
 lifecycle rather than by subject: `schema.py` runs once at startup, driven by
 `init_db`, and holds the `CREATE TABLE`s plus the migrations that bring an
 older database up to them. Migrations are write-once and delete-never, so that
@@ -517,7 +521,7 @@ are `parents`, `children`, `trips`, `venues`, `venue_reports` (one amenity claim
 each), `venue_hours` (one day's opening hours, only for venues that vary by day)
 and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a decision). Ratings, candidates and intent logs are flat files in `data/`.
 
-**Supabase is the same SQL over a different connection.** `src/postgres.py`
+**Supabase is the same SQL over a different connection.** `src/store/postgres.py`
 translates SQLite's dialect on the way through (`?` to `%s`, `IFNULL` to
 `COALESCE`, `LIKE` to `ILIKE`) and returns rows as dicts, so nothing above
 `db.py` knows which database it is talking to. Setting it up is three steps on
