@@ -31,7 +31,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from src import candidates, db, rag
-from src.web import auth, guards
+from src.web import account, auth, guards
 from src.web.guards import (CHAT_LIMIT, CHAT_WINDOW, LOGIN_LIMIT,
                             LOGIN_WINDOW, LOOKUP_LIMIT, LOOKUP_WINDOW,
                             PLAN_LIMIT, PLAN_WINDOW, admin_required,
@@ -189,6 +189,7 @@ MAX_FEEDBACK_CHARS = 8_000
 
 # Each blueprint owns one subject's routes. Registered here rather than
 # discovered, so the set is explicit and a broken import is loud.
+app.register_blueprint(account.bp)
 app.register_blueprint(auth.bp)
 
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
@@ -369,20 +370,6 @@ def home():
 
 
 
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    """The logged-in parent's saved children, trips, and logged places."""
-    parent = guards.current_parent()
-    trips = []
-    for row in get_trips_for_parent(parent["id"]):
-        trip = dict(row)
-        trip["plan"] = Plan.from_dict(json.loads(row["plan_json"]))
-        trips.append(trip)
-    places = get_logged_venues_for_parent(parent["id"])
-
-    return render_template("dashboard.html", parent=parent, trips=trips,
-                           places=places, amenity_options=AMENITY_OPTIONS)
 
 
 def _grouped_reports(rows):
@@ -1687,47 +1674,10 @@ def results_data():
     return jsonify({"sessions": _results_sessions()})
 
 
-@app.route("/add-child", methods=["POST"])
-@login_required
-def add_child_route():
-    """Add another child to the logged-in parent's account."""
-    parent = guards.current_parent()
-    name = request.form.get("child_name", "").strip()
-    date_of_birth = request.form.get("date_of_birth", "")
-    if not name or not date_of_birth:
-        flash("A child needs both a name and a date of birth.")
-        return redirect(url_for("dashboard"))
-    add_child(parent["id"], name, date_of_birth)
-    return redirect(url_for("dashboard"))
 
 
-@app.route("/edit-child/<int:child_id>", methods=["POST"])
-@login_required
-def edit_child_route(child_id):
-    """Update one of the logged-in parent's children."""
-    parent = guards.current_parent()
-    if child_id not in {child["id"] for child in get_children(parent["id"])}:
-        flash("Child not found.")
-        return redirect(url_for("dashboard"))
-    name = request.form.get("child_name", "").strip()
-    date_of_birth = request.form.get("date_of_birth", "")
-    if not name or not date_of_birth:
-        flash("A child needs both a name and a date of birth.")
-        return redirect(url_for("dashboard"))
-    update_child(child_id, name, date_of_birth)
-    return redirect(url_for("dashboard"))
 
 
-@app.route("/delete-child/<int:child_id>", methods=["POST"])
-@login_required
-def delete_child_route(child_id):
-    """Remove one of the logged-in parent's children (their saved trips are kept)."""
-    parent = guards.current_parent()
-    if child_id not in {child["id"] for child in get_children(parent["id"])}:
-        flash("Child not found.")
-        return redirect(url_for("dashboard"))
-    delete_child(child_id)
-    return redirect(url_for("dashboard"))
 
 
 @app.route("/delete-trip/<int:trip_id>", methods=["POST"])
@@ -1737,9 +1687,9 @@ def delete_trip_route(trip_id):
     parent = guards.current_parent()
     if get_trip_for_parent(parent["id"], trip_id) is None:
         flash("Trip not found.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
     delete_trip(trip_id, parent["id"])
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("account.dashboard"))
 
 
 @app.route("/log-place")
@@ -1904,11 +1854,11 @@ def edit_place_route(place_id):
     parent = guards.current_parent()
     if not _owns_place(parent["id"], place_id):
         flash("Place not found.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
     name = request.form.get("name", "").strip()
     if not name:
         flash("A place needs a name.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
     update_venue(
         place_id, parent["id"],
         name=name,
@@ -1921,7 +1871,7 @@ def edit_place_route(place_id):
         place_id,
         {key: bool(request.form.get(key)) for key, _ in AMENITY_OPTIONS},
         reported_by=parent["id"], note="Corrected by the parent who logged it.")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("account.dashboard"))
 
 
 @app.route("/delete-place/<int:place_id>", methods=["POST"])
@@ -1931,9 +1881,9 @@ def delete_place_route(place_id):
     parent = guards.current_parent()
     if not _owns_place(parent["id"], place_id):
         flash("Place not found.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
     delete_venue(place_id, parent["id"])
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("account.dashboard"))
 
 
 @app.route("/save-trip", methods=["POST"])
@@ -1990,7 +1940,7 @@ def save_trip():
                                 or (dates[index] if index < len(dates) else "")
                                 or date.today().isoformat())
             add_trip(parent["id"], int(child_id) if child_id else None, **day)
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("account.dashboard"))
 
 
 def _planner_kwargs(form, extra_notes, model):
@@ -2329,7 +2279,7 @@ def view_trip(trip_id):
     row = get_trip_for_parent(parent["id"], trip_id)
     if row is None or not row["plan_json"]:
         flash("That saved trip doesn't have a full itinerary to show.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
     if row["child_dob"]:
         years, months = compute_age(row["child_dob"])
         age_months = years * 12 + months

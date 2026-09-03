@@ -2,7 +2,7 @@
 
 <div class="twt-user-menu">
   {% if current_parent %}
-  <a class="twt-avatar-link" href="{{ url_for('dashboard') }}" aria-label="Go to your dashboard">
+  <a class="twt-avatar-link" href="{{ url_for('account.dashboard') }}" aria-label="Go to your dashboard">
     <span class="twt-avatar"><span class="twt-avatar-initial">{{ initial }}</span></span>
   </a>
   {% else %}

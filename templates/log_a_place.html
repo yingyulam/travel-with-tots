@@ -10,7 +10,7 @@
 
 {% block content %}
 <section class="card">
-  <p class="meta">Add a place we don't have yet, so other parents can find it once it's checked. It goes to your <a href="{{ url_for('dashboard') }}">dashboard</a> straight away.</p>
+  <p class="meta">Add a place we don't have yet, so other parents can find it once it's checked. It goes to your <a href="{{ url_for('account.dashboard') }}">dashboard</a> straight away.</p>
 
   {% if stored %}
   {# Exactly what went into the database, so the whole chain is visible where
@@ -33,7 +33,7 @@
       <span class="badge badge-pending">awaiting verification</span>
     </div>
     <p class="field-hint">Not searchable until an admin checks it. It's on your
-      <a href="{{ url_for('dashboard') }}">dashboard</a>, where you can correct or remove it.</p>
+      <a href="{{ url_for('account.dashboard') }}">dashboard</a>, where you can correct or remove it.</p>
   </div>
   {% endif %}
 

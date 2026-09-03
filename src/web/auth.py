@@ -47,7 +47,7 @@ def signup():
             email, generate_password_hash(form["password"]),
             name=form["parent_name"].strip())
         session["parent_id"] = parent_id
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
 
     return render_template("signup.html", form={})
 
@@ -70,7 +70,7 @@ def login():
             flash("Incorrect email or password.")
             return render_template("login.html", email=email)
         session["parent_id"] = parent["id"]
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("account.dashboard"))
 
     return render_template("login.html", email="")
 

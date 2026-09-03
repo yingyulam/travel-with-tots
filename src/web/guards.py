@@ -54,7 +54,7 @@ def admin_required(view):
     def wrapped(*args, **kwargs):
         if not current_parent()["is_admin"]:
             flash("You don't have access to that page.")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("account.dashboard"))
         return view(*args, **kwargs)
     return wrapped
 

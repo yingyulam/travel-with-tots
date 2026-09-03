@@ -9,7 +9,7 @@
 {% set transit_label = transit_labels.get(trip.transit, trip.transit) %}
 <header class="masthead">
   {% if saved %}
-  <a class="home-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+  <a class="home-link" href="{{ url_for('account.dashboard') }}">← Back to dashboard</a>
   {% else %}
   <a class="home-link" href="{{ url_for('plan') }}">← Back to plans</a>
   {% endif %}
