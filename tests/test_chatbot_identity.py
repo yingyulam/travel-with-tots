@@ -9,6 +9,7 @@ request body.
 
 import os
 import unittest
+from src.web import chat as web_chat
 from src.web import guards
 from unittest import mock
 
@@ -44,8 +45,8 @@ class ChatIdentityTest(unittest.TestCase):
             return dict(REPLY)
 
         patches = [
-            mock.patch.object(app_module, "handle_message", side_effect=capture),
-            mock.patch.object(app_module.rag, "get_status",
+            mock.patch.object(web_chat, "handle_message", side_effect=capture),
+            mock.patch.object(web_chat.rag, "get_status",
                               return_value={"state": "ready"}),
         ]
         if parent_id is not None:

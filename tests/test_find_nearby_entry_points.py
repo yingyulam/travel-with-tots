@@ -8,6 +8,7 @@ having consulted neither.
 """
 
 import unittest
+from src.web import chat as web_chat
 from src.web import trip as web_trip
 from src.web import devpages
 from src.web import guards
@@ -160,7 +161,7 @@ class TheRequestCarriesCoordinatesTest(unittest.TestCase):
 
     @staticmethod
     def _coords(body):
-        context = app_module._message_context(body)
+        context = web_chat._message_context(body)
         return {k: v for k, v in context.items() if k in ("lat", "lng")}
 
     def test_a_real_pair_is_passed_through(self):
@@ -181,7 +182,7 @@ class TheRequestCarriesCoordinatesTest(unittest.TestCase):
     def test_a_bad_location_does_not_take_the_rest_of_the_context_with_it(self):
         # They are read independently: an unusable location must not also lose
         # the flag saying a trip is open.
-        self.assertTrue(app_module._message_context(
+        self.assertTrue(web_chat._message_context(
             {"on_trip": True, "location": "nonsense"})["on_trip"])
 
 

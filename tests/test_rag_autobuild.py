@@ -14,6 +14,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from src.web import chat as web_chat
 from unittest import mock
 
 from src import rag
@@ -81,7 +82,7 @@ class StartupWithNoIndexTest(unittest.TestCase):
         with mock.patch.object(rag, "get_status",
                                return_value={"state": state, "error": None,
                                              "chunk_size": 128}), \
-             mock.patch.object(app_module, "handle_message",
+             mock.patch.object(web_chat, "handle_message",
                                return_value={"reply": "ok", "workflow": None}):
             return app_module.app.test_client().post(
                 "/chatbot", json={"message": "hello"})

@@ -10,6 +10,7 @@ behind an admin login, and /chatbot is the agent's alone.
 """
 
 import unittest
+from src.web import chat as web_chat
 from unittest import mock
 
 import app as app_module
@@ -102,9 +103,9 @@ class TheRouteIgnoresItTest(unittest.TestCase):
     """
 
     def _post(self, **body):
-        with mock.patch.object(app_module, "handle_message",
+        with mock.patch.object(web_chat, "handle_message",
                                return_value={"reply": "ok"}) as handled, \
-             mock.patch.object(app_module.rag, "get_status",
+             mock.patch.object(web_chat.rag, "get_status",
                                return_value={"state": "ready"}):
             app_module.app.test_client().post("/chatbot",
                                               json={"message": "hi", **body})

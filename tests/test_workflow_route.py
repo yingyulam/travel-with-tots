@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import unittest
+from src.web import chat as web_chat
 from src.web import guards
 from contextlib import closing
 from unittest import mock
@@ -76,7 +77,7 @@ class WorkflowRouteTest(unittest.TestCase):
 
     def test_an_over_long_message_is_refused(self):
         self._as()
-        long = "x" * (self.app_module.MAX_MESSAGE_CHARS + 1)
+        long = "x" * (web_chat.MAX_MESSAGE_CHARS + 1)
         self.assertEqual(self._post(message=long).status_code, 413)
 
     def test_a_non_dict_conversation_is_dropped_not_handed_over(self):
@@ -106,7 +107,7 @@ class OneOrchestratorEachTest(unittest.TestCase):
         with mock.patch.object(guards, "current_parent",
                                return_value={"id": 1, "is_admin": True,
                                              "name": "A", "email": "a@e.com"}), \
-             mock.patch.object(app_module, "run_workflow_turn",
+             mock.patch.object(web_chat, "run_workflow_turn",
                                return_value={"reply": "ok"}) as ran:
             app_module.app.test_client().post(
                 "/workflows/Find a nearby place/run", json={"message": "hi"})
