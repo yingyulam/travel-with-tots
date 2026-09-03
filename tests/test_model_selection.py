@@ -17,7 +17,7 @@ from src.web import planning as web_planning
 from unittest import mock
 
 import app as app_module
-from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
+from src.ai.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 
 # Deliberately not DEFAULT_MODEL. A test that "picks" the default cannot tell a
 # choice being honoured from a choice being dropped. This has now swapped twice
@@ -134,7 +134,7 @@ class TheChatCarriesTheChoiceTest(unittest.TestCase):
         """Run one turn in which the agent calls `tool`, and hand back the
         mocks."""
         from langchain_core.messages import ToolMessage
-        from src import agent as module
+        from src.ai import tool_agent as module
 
         called = ToolMessage(content="ok", name=tool, tool_call_id="1",
                              artifact={"reply": "ok"})
@@ -193,7 +193,7 @@ class ThePinnedThreeDoNotFollowTheDropdownTest(unittest.TestCase):
         # reasoning model did not put 25-75s on the critical path of every
         # message. Routing is the agent's tool selection now, on the parent's
         # own choice like everything else, so there is no second call to pin.
-        from src import intent
+        from src.ai import intent
         self.assertFalse(hasattr(intent, "INTENT_MODEL"))
 
     def test_form_extraction_stays_pinned(self):
@@ -210,7 +210,7 @@ class ThePinnedThreeDoNotFollowTheDropdownTest(unittest.TestCase):
         # path of every message. The agent's tool selection is the routing
         # decision now, and it runs on the parent's choice like everything
         # else, so there is no second call left to pin.
-        from src import agent as module
+        from src.ai import tool_agent as module
         self.assertFalse(hasattr(module, "classify_intent"))
 
     def test_the_extractor_tool_does_not_take_the_turns_model(self):

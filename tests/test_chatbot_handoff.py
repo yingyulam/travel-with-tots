@@ -22,7 +22,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import re
 import unittest
 
-from src.agent import TOOLS
+from src.ai.tool_agent import TOOLS
 
 CHATBOT_JS = "static/chatbot.js"
 

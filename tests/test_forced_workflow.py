@@ -18,7 +18,7 @@ from src.web import chat as web_chat
 from unittest import mock
 
 import app as app_module
-from src import agent
+from src.ai import tool_agent as agent
 from src.form_helpers import DEFAULTS
 from src.workflows import plan_from_chat, runnable_message_workflows
 

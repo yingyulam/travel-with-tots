@@ -123,7 +123,7 @@ class OneOrchestratorEachTest(unittest.TestCase):
         # run_workflow_turn too while the classifier still routed; it does not
         # now, and a workflow appearing there again would be the dual router
         # coming back.
-        from src import agent
+        from src.ai import tool_agent as agent
         with mock.patch.object(agent, "run_workflow_turn") as ran, \
              mock.patch.object(agent, "run_agent",
                                return_value={"reply": "ok", "tool_calls": []}), \

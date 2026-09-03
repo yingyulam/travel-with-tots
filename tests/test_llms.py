@@ -8,7 +8,7 @@ import requests
 from langchain_core.messages import AIMessage, ToolMessage
 
 from src.components.extract_form import FormExtractionError
-from src.agent import (
+from src.ai.tool_agent import (
     TOOLS,
     answer_faq_tool,
     run_agent,
@@ -31,7 +31,7 @@ class ToolArtifactTest(unittest.TestCase):
         answer = {"reply": "Tap Save this plan.", "sources": [{"index": 1}],
                   "model": "m", "response_time": 1.0,
                   "input_tokens": 10, "output_tokens": 5}
-        with mock.patch("src.agent.ask_website_chatbot", return_value=answer):
+        with mock.patch("src.ai.tool_agent.ask_website_chatbot", return_value=answer):
             message = answer_faq_tool.invoke(
                 {"args": {"question": "how do I save a plan?"}, "id": "1",
                  "name": "answer_faq_tool", "type": "tool_call"})
@@ -45,7 +45,7 @@ class ToolErrorHandlingTest(unittest.TestCase):
     older tools, so each tool has to swallow its own failures."""
 
     def test_faq_failure_becomes_a_readable_result(self):
-        with mock.patch("src.agent.ask_website_chatbot",
+        with mock.patch("src.ai.tool_agent.ask_website_chatbot",
                         side_effect=requests.exceptions.RequestException("down")):
             message = answer_faq_tool.invoke(
                 {"args": {"question": "x"}, "id": "1",
@@ -61,7 +61,7 @@ class RunAgentContractTest(unittest.TestCase):
     def _run(self, reply="ok", tool_messages=(), model=None):
         agent = mock.Mock()
         agent.invoke.return_value = _fake_result(reply, tool_messages)
-        with mock.patch("src.agent._build_agent", return_value=agent) as build:
+        with mock.patch("src.ai.tool_agent._build_agent", return_value=agent) as build:
             result = run_agent("hello", model=model) if model else run_agent("hello")
         return result, build
 
@@ -130,8 +130,8 @@ class ChatBubbleContractTest(unittest.TestCase):
         agent = mock.Mock()
         agent.invoke.return_value = _fake_result(
             "Tap Save this plan. [Source 1]", (faq,))
-        with mock.patch("src.agent._build_agent", return_value=agent), \
-             mock.patch("src.rag.get_status", return_value={"state": "ready"}):
+        with mock.patch("src.ai.tool_agent._build_agent", return_value=agent), \
+             mock.patch("src.ai.rag.get_status", return_value={"state": "ready"}):
             return self.client.post("/chatbot", json={"message": message,
                                                       "model": "openai/gpt-4o-mini"})
 
@@ -149,7 +149,7 @@ class ChatBubbleContractTest(unittest.TestCase):
             self.client.post("/chatbot", json={"message": "  "}).status_code, 400)
 
     def test_still_waits_for_the_knowledge_base(self):
-        with mock.patch("src.rag.get_status", return_value={"state": "indexing"}):
+        with mock.patch("src.ai.rag.get_status", return_value={"state": "indexing"}):
             resp = self.client.post("/chatbot", json={"message": "hi"})
         self.assertEqual(resp.status_code, 503)
 

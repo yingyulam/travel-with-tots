@@ -8,12 +8,13 @@ import time
 import requests
 from dotenv import load_dotenv
 
-from . import db, rag
-from .data_loader import is_nap_friendly, maps_url
-from .geo import leg_minutes, walk_budget_min
-from .interactions import SITUATION_LABELS
-from .form_helpers import normalise_transit
-from .itinerary import (
+from .. import db
+from . import rag
+from ..data_loader import is_nap_friendly, maps_url
+from ..geo import leg_minutes, walk_budget_min
+from ..interactions import SITUATION_LABELS
+from ..form_helpers import normalise_transit
+from ..itinerary import (
     DEFAULT_LUNCH_TARGET_MIN, LUNCH_SEARCH_RADIUS_MIN, MODE_WORD,
     display_to_min, hhmm_to_min, min_to_display, stop_duration,
     transit_buffer_min, venue_open_for,
@@ -64,7 +65,10 @@ REQUEST_TIMEOUT_SECONDS = 60
 # condition worth one retry before giving up.
 MAX_MALFORMED_BODY_RETRIES = 1
 
-PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+# src/prompts/, one level up: components/ and workflows/ read the same
+# directory, so it sits above this package rather than inside it.
+PROMPTS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "prompts")
 WEBSITE_CHATBOT_PROMPT_PATH = os.path.join(PROMPTS_DIR, "website_chatbot.txt")
 PLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "plan_adjust.txt")
 REPLAN_ADJUST_PROMPT_PATH = os.path.join(PROMPTS_DIR, "replan_adjust.txt")

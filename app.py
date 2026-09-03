@@ -15,8 +15,8 @@ import traceback
 from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
-from src import rag
-from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
+from src.ai import rag
+from src.ai.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 from src.dates import compute_age
 from src.db import get_children
 from src.schema import init_db

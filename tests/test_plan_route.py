@@ -6,7 +6,7 @@ import unittest
 from src.web import planning as web_planning
 from unittest import mock
 
-from src.agents import PlanningAgent, PlanningAgentError
+from src.ai.agents import PlanningAgent, PlanningAgentError
 
 BASE_FORM = {
     # The planning form asks for a day; /plan only builds one when asked.
@@ -63,7 +63,7 @@ class PlanRouteFormWiringTest(unittest.TestCase):
                 captured["prompt"] = messages[0]["content"]
                 return '{"edits": []}', {}, 1.0
 
-            with mock.patch("src.agents.call_openrouter", side_effect=fake_call):
+            with mock.patch("src.ai.agents.call_openrouter", side_effect=fake_call):
                 self.client.post("/plan", data={**BASE_FORM, "transit_nap": choice})
             with self.subTest(transit_nap=choice):
                 self.assertIn(f"Can nap during transit: {choice}", captured["prompt"])

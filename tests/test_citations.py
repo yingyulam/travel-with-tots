@@ -20,7 +20,7 @@ from unittest import mock
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from src.agent import _only_earned_citations, run_agent
+from src.ai.tool_agent import _only_earned_citations, run_agent
 
 
 class OnlyEarnedCitationsTest(unittest.TestCase):
@@ -61,7 +61,7 @@ class ThroughRunAgentTest(unittest.TestCase):
     def _run(self, messages):
         graph = mock.Mock()
         graph.invoke.return_value = {"messages": messages}
-        with mock.patch("src.agent._build_agent", return_value=graph):
+        with mock.patch("src.ai.tool_agent._build_agent", return_value=graph):
             return run_agent("hello")
 
     def test_the_reported_case_no_tool_but_a_citation(self):
@@ -101,9 +101,9 @@ class AlwaysGroundedTest(unittest.TestCase):
     def _turn(self, retrieved, faq_reply="Grounded. [Source 1]"):
         graph = mock.Mock()
         graph.invoke.return_value = {"messages": [AIMessage("From memory.")]}
-        with mock.patch("src.agent._build_agent", return_value=graph), \
-             mock.patch("src.agent.rag.retrieve", return_value=retrieved), \
-             mock.patch("src.agent.ask_website_chatbot",
+        with mock.patch("src.ai.tool_agent._build_agent", return_value=graph), \
+             mock.patch("src.ai.tool_agent.rag.retrieve", return_value=retrieved), \
+             mock.patch("src.ai.tool_agent.ask_website_chatbot",
                         return_value={"reply": faq_reply,
                                       "sources": retrieved,
                                       "response_time": 1.0,
@@ -135,8 +135,8 @@ class AlwaysGroundedTest(unittest.TestCase):
         import requests
         graph = mock.Mock()
         graph.invoke.return_value = {"messages": [AIMessage("From memory.")]}
-        with mock.patch("src.agent._build_agent", return_value=graph), \
-             mock.patch("src.agent.rag.retrieve",
+        with mock.patch("src.ai.tool_agent._build_agent", return_value=graph), \
+             mock.patch("src.ai.tool_agent.rag.retrieve",
                         side_effect=requests.exceptions.RequestException("down")):
             result = run_agent("how does replanning work")
         self.assertEqual(result["reply"], "From memory.")

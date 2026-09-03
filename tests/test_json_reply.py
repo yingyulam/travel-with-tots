@@ -3,7 +3,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
               # suite is invoked. See tests/__init__.py.
 import unittest
 
-from src.agents import parse_json_reply
+from src.ai.agents import parse_json_reply
 
 
 class CleanRepliesTest(unittest.TestCase):

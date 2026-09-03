@@ -13,7 +13,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import unittest
 from unittest import mock
 
-from src import agent
+from src.ai import tool_agent as agent
 from src.workflows import log_a_place, runnable_message_workflows
 from src.workflows.log_a_place import (
     AMENITY_OPTIONS,

@@ -9,7 +9,7 @@ instead of each having their own copy.
 
 import requests
 
-from ..agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
+from ..ai.agents import DEFAULT_MODEL, PlanningAgent, PlanningAgentError
 from ..data_loader import get_venues
 from ..components.validate_hours import enforce
 from ..dates import parse_date

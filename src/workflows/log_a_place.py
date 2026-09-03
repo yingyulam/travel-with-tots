@@ -22,7 +22,7 @@ decision does not exist yet: submissions accumulate until it does.
 
 from .. import db, interactions
 from ..components.geocode import GeocodeError, geocode
-from ..intent import matches_only
+from ..ai.intent import matches_only
 
 # Read from db, not defined here. The Log a Place page, the dashboard's edit
 # form, this workflow and the chat agent's tool all offer the same list, and

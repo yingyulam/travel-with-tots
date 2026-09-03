@@ -17,7 +17,8 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import unittest
 from unittest import mock
 
-from src import agent, interactions
+from src import interactions
+from src.ai import tool_agent as agent
 from src.workflows import replan_on_the_go
 from src.workflows.replan_on_the_go import (
     FREE_TEXT_SITUATION,

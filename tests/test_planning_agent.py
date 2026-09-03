@@ -4,7 +4,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import unittest
 from unittest import mock
 
-from src.agents import (
+from src.ai.agents import (
     PLAN_EDITS_RESPONSE_FORMAT,
     PlanningAgent,
     PlanningAgentError,
@@ -231,8 +231,8 @@ class AdjustPlanTest(unittest.TestCase):
             return ('{"edits": [{"current_venue_name": "Old Park", "new_venue_id": 7, '
                     '"new_time": null, "reason": "better fit"}]}'), {}, 1.0
 
-        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents.call_openrouter", side_effect=fake_call):
+        with mock.patch("src.ai.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.ai.agents.call_openrouter", side_effect=fake_call):
             result = self.agent.adjust_plan(
                 self.draft, destination="Vancouver", age_months=30,
                 wake_up="07:00", bedtime="19:30", stop_count=3, dining="dine_out")
@@ -245,8 +245,8 @@ class AdjustPlanTest(unittest.TestCase):
         def fake_call(messages, model, response_format=None):
             return '{"edits": []}', {}, 1.0
 
-        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents.call_openrouter", side_effect=fake_call):
+        with mock.patch("src.ai.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.ai.agents.call_openrouter", side_effect=fake_call):
             result = self.agent.adjust_plan(
                 self.draft, destination="Vancouver", age_months=30,
                 wake_up="07:00", bedtime="19:30", stop_count=3, dining="dine_out")
@@ -262,8 +262,8 @@ class AdjustPlanTest(unittest.TestCase):
             return ('{"edits": [{"current_venue_name": "Nonexistent", "new_venue_id": 7, '
                     '"new_time": null, "reason": "r"}]}'), {}, 1.0
 
-        with mock.patch("src.agents.db.get_candidate_venues", return_value=self.candidates), \
-             mock.patch("src.agents.call_openrouter", side_effect=fake_call):
+        with mock.patch("src.ai.agents.db.get_candidate_venues", return_value=self.candidates), \
+             mock.patch("src.ai.agents.call_openrouter", side_effect=fake_call):
             with self.assertRaises(PlanningAgentError):
                 self.agent.adjust_plan(
                     self.draft, destination="Vancouver", age_months=30,

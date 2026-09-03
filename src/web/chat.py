@@ -10,9 +10,9 @@ import openai
 import requests
 from flask import Blueprint, jsonify, request
 
-from src import rag
-from src.agent import handle_message, run_workflow_turn
-from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
+from src.ai import rag
+from src.ai.tool_agent import handle_message, run_workflow_turn
+from src.ai.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 from src.results import save_result
 from src.web import guards
 from src.web.guards import (CHAT_LIMIT, CHAT_WINDOW, admin_required,

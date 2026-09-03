@@ -5,10 +5,10 @@ import unittest
 from src.web import planning as web_planning
 from unittest import mock
 
-from src import agent
+from src.ai import tool_agent as agent
 from src.form_helpers import DEFAULTS
 from src.data_loader import SUPPORTED_CITIES
-from src.intent import matches_only
+from src.ai.intent import matches_only
 from src.workflows import plan_from_chat
 from src.workflows.plan_from_chat import (
     CONFIRM_CHOICE,

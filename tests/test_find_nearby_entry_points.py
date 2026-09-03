@@ -19,7 +19,7 @@ from src.web import guards
 from unittest import mock
 
 import app as app_module
-from src import agent
+from src.ai import tool_agent as agent
 from src.components.find_nearby import searchable
 from src.data_loader import SUPPORTED_CITIES
 

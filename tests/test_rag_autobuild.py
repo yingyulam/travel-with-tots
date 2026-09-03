@@ -21,7 +21,7 @@ import unittest
 from src.web import chat as web_chat
 from unittest import mock
 
-from src import rag
+from src.ai import rag
 
 
 class AutobuildSwitchTest(unittest.TestCase):

@@ -31,10 +31,10 @@ from . import rag
 # The vocabularies and readers these tools used to need are gone with them:
 # collecting a need, a situation or a place's amenities is the workflow's job,
 # and the workflow reads them from interactions and db directly.
-from .components.extract_form import FormExtractionError
-from .components.plan_trip import plan_trip
+from ..components.extract_form import FormExtractionError
+from ..components.plan_trip import plan_trip
 from .intent import CANCEL_CHOICE, is_cancel, log_decision
-from .workflows import runnable_message_workflows
+from ..workflows import runnable_message_workflows
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 

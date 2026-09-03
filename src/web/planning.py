@@ -17,7 +17,7 @@ from datetime import date
 from flask import (Blueprint, flash, redirect, render_template, request,
                    url_for)
 
-from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
+from src.ai.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
 from src.components.plan_trip import plan_days
 from src.data_loader import FEATURE_LABELS, SUPPORTED_CITIES, interest_options
 from src.dates import MAX_TRIP_DAYS

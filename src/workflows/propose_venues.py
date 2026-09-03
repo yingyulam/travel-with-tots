@@ -24,7 +24,7 @@ from pathlib import Path
 
 from .. import candidates, db
 from ..clients import nominatim, osm, webpage
-from ..agents import call_openrouter, parse_json_reply
+from ..ai.agents import call_openrouter, parse_json_reply
 from ..data_loader import (CITIES, NEIGHBOURHOODS, SETTINGS, SHELTERED,
                            VENUE_TYPES)
 from ..geo import in_metro_vancouver

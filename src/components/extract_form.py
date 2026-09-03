@@ -24,7 +24,7 @@ import re
 
 from werkzeug.datastructures import MultiDict
 
-from ..agents import call_openrouter, parse_json_reply
+from ..ai.agents import call_openrouter, parse_json_reply
 from ..data_loader import SUPPORTED_CITIES, VENUE_TYPES
 from ..form_helpers import (
     DINING_OPTIONS,

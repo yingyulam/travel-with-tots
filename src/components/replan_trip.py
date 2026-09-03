@@ -8,7 +8,7 @@ and agents.py (AI adjustment) -- this file only composes them, so app.py's
 
 import requests
 
-from ..agents import DEFAULT_MODEL, ReplanningAgent, ReplanningAgentError
+from ..ai.agents import DEFAULT_MODEL, ReplanningAgent, ReplanningAgentError
 from ..data_loader import get_venues
 from ..dates import parse_date
 from ..interactions import replan

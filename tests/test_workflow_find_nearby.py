@@ -13,7 +13,8 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import unittest
 from unittest import mock
 
-from src import agent, interactions
+from src import interactions
+from src.ai import tool_agent as agent
 from src.data_loader import SUPPORTED_CITIES
 from src.workflows import find_nearby_place
 from src.workflows.find_nearby_place import (

@@ -23,7 +23,7 @@ from ..components.extract_form import extract_form
 from ..data_loader import SUPPORTED_CITIES
 from ..dates import format_age
 from ..form_helpers import DEFAULTS
-from ..intent import matches_only
+from ..ai.intent import matches_only
 from ..memory import recall
 
 # Asked for before handing the form over, in the order they are asked. Not the

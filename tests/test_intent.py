@@ -11,8 +11,9 @@ from unittest import mock
 
 import requests
 
-from src import agent, intent
-from src.intent import log_decision
+from src.ai import tool_agent as agent
+from src.ai import intent
+from src.ai.intent import log_decision
 from src import workflows as workflows_module
 from src.workflows import WORKFLOWS, runnable_message_workflows
 

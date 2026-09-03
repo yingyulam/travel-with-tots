@@ -24,7 +24,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from src import rag
+from src.ai import rag
 
 
 class NothingAsksChromaForAnIndexTest(unittest.TestCase):

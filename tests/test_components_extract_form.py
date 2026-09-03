@@ -292,7 +292,7 @@ class ExtractedFormDrivesThePlannerTest(unittest.TestCase):
     shape mismatch here would pass every per-field assertion above."""
 
     def test_plan_trip_accepts_an_extracted_form(self):
-        from src.agents import PlanningAgent, PlanningAgentError
+        from src.ai.agents import PlanningAgent, PlanningAgentError
         from src.components.plan_trip import plan_trip
 
         result, _ = _run(_reply(

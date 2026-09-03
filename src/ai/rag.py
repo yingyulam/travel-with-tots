@@ -35,7 +35,7 @@ from pathlib import Path
 import numpy
 from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 KNOWLEDGE_BASE_PATH = DATA_DIR / "knowledge_base.md"
 # The chunks and their vectors, written by build_index and read at startup.
 # A JSON file rather than a ChromaDB collection: measured on the deployed

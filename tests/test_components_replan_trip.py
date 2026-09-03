@@ -9,7 +9,7 @@ from unittest import mock
 
 from src import db, schema
 
-from src.agents import ReplanningAgent, ReplanningAgentError
+from src.ai.agents import ReplanningAgent, ReplanningAgentError
 from src.components.replan_trip import replan_trip
 
 

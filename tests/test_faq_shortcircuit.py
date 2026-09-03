@@ -19,7 +19,7 @@ from unittest import mock
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from src.agent import FINAL_ANSWER_TOOLS, run_agent
+from src.ai.tool_agent import FINAL_ANSWER_TOOLS, run_agent
 
 
 def _faq_message(content="Tap Save on the plan page. [Source 1]"):
@@ -60,7 +60,7 @@ class StopsAtTheToolTest(unittest.TestCase):
             built.append(stop_after_tools)
             return graph
 
-        with mock.patch("src.agent._build_agent", side_effect=build):
+        with mock.patch("src.ai.tool_agent._build_agent", side_effect=build):
             return run_agent("hello"), built
 
     def test_the_faq_answer_is_returned_word_for_word(self):
@@ -165,7 +165,7 @@ class StopsAtTheToolTest(unittest.TestCase):
         # answer is already written and cited) and for the extractor (a turn
         # there is a turn to write an itinerary in).
         from src.workflows import runnable_message_workflows
-        from src.agent import _slug
+        from src.ai.tool_agent import _slug
         self.assertEqual(
             set(FINAL_ANSWER_TOOLS),
             {"answer_faq_tool"} | {_slug(w["name"])

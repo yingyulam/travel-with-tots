@@ -14,9 +14,9 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import unittest
 from unittest import mock
 
-from src import agent
+from src.ai import tool_agent as agent
 from src.form_helpers import DEFAULTS
-from src.intent import CANCEL_CHOICE, CANCEL_WORDS, is_cancel
+from src.ai.intent import CANCEL_CHOICE, CANCEL_WORDS, is_cancel
 from src.workflows import find_nearby_place, plan_from_chat
 from src.workflows.plan_from_chat import STAGE_COLLECTING, STAGE_CONFIRMING
 

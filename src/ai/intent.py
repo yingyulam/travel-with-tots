@@ -20,7 +20,8 @@ from pathlib import Path
 # Every decision, one JSON line, so a crash cannot lose the earlier ones. The
 # app has no logging framework and results.json is the wrong home: it is written
 # only when someone clicks a rating, and it rewrites the whole file with no lock.
-INTENT_LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "intents.jsonl"
+INTENT_LOG_PATH = (Path(__file__).resolve().parent.parent.parent
+                   / "data" / "intents.jsonl")
 
 # Leaving a workflow. Read here rather than by the model above: a parent backing
 # out should not wait on a network call, and "cancel" is not a judgement.
