@@ -22,7 +22,9 @@ this can be tested against a fake.
 
 import json
 import os
+import sqlite3
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -347,3 +349,80 @@ def clone(client=None, tables=TABLES):
         total += copied
     summary["_total"] = total
     return summary
+
+
+# Where `pull` writes. Timestamped rather than one overwritten file: a backup
+# you replace on every run only ever protects you from the last mistake, and
+# these are a few hundred KB each.
+BACKUPS_DIR = Path(__file__).resolve().parent.parent / "data" / "backups"
+
+
+def remote_rows(table, client=None):
+    """Every row of one Supabase table, paged so a large one still arrives.
+
+    PostgREST caps a response, so this asks by range until a page comes back
+    short. Ordered by primary key, because an unordered paged read can repeat
+    or skip a row between requests.
+    """
+    client = client or get_client()
+    keys = primary_key(table) or ["id"]
+    rows, start = [], 0
+    while True:
+        query = client.table(table).select("*")
+        for key in keys:
+            query = query.order(key)
+        page = query.range(start, start + CHUNK - 1).execute().data or []
+        rows.extend(page)
+        if len(page) < CHUNK:
+            return rows
+        start += CHUNK
+
+
+def pull(dest=None, client=None, tables=TABLES):
+    """Copy every Supabase row into a fresh SQLite file. Returns (path, summary).
+
+    The direction `clone` does not go, and the reason this exists: nothing else
+    in the app reads Supabase downward, so the live project is the only copy of
+    production data. A row written there stays there.
+
+    Writes a new file rather than touching data/app.db. Production and the local
+    database have diverged in both directions, so overwriting the one you
+    develop against would destroy local-only rows to fix a backup problem. Copy
+    the result over app.db yourself when that is what you actually want.
+
+    The schema comes from schema.create_schema, the same one the app uses, so
+    the result is a database the app can open rather than a dump only Postgres
+    can read.
+    """
+    from . import schema
+    client = client or get_client()
+    dest = Path(dest) if dest else (
+        BACKUPS_DIR / f"supabase-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}.db")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        raise SyncError(f"{dest} already exists; pick another name.")
+
+    summary = {}
+    with closing(sqlite3.connect(dest)) as conn:
+        conn.row_factory = sqlite3.Row
+        schema.create_schema(conn)
+        for table in tables:
+            # Seeded rows first: create_schema seeds venues, and those rows
+            # would collide with the real ones arriving next.
+            with conn:
+                conn.execute(f"DELETE FROM {table}")
+        for table in tables:
+            rows = remote_rows(table, client)
+            summary[table] = len(rows)
+            if not rows:
+                continue
+            columns = [name for name, *_rest in _columns(conn, table)]
+            keep = [c for c in columns if c in rows[0]]
+            placeholders = ", ".join("?" for _ in keep)
+            statement = (f"INSERT INTO {table} ({', '.join(keep)}) "
+                         f"VALUES ({placeholders})")
+            with conn:
+                conn.executemany(
+                    statement, [[row.get(c) for c in keep] for row in rows])
+    summary["_total"] = sum(v for k, v in summary.items() if not k.startswith("_"))
+    return dest, summary

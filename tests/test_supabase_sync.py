@@ -292,3 +292,104 @@ class TheSelectedSourceTest(_SyncTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeReadTable:
+    """Enough of the client to exercise pull(): ordered, ranged reads."""
+
+    def __init__(self, rows):
+        self.rows, self._lo, self._hi = rows, 0, None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def range(self, lo, hi):
+        self._lo, self._hi = lo, hi
+        return self
+
+    def execute(self):
+        return mock.Mock(data=self.rows[self._lo:self._hi + 1])
+
+
+class FakeReadClient:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def table(self, name):
+        return FakeReadTable(self.tables.get(name, []))
+
+
+class PullBringsProductionBackTest(_SyncTest):
+    """The direction clone() does not go.
+
+    Supabase is the only copy of production data: a row written on the deployed
+    site is nowhere else, because nothing read it downward until this. So the
+    thing worth testing is that the file it writes is a database the app can
+    actually open, not merely that rows arrived.
+    """
+
+    def _client(self):
+        return FakeReadClient({
+            "parents": [{"id": 14, "email": "only-in-prod@example.com",
+                         "password_hash": "x", "name": "Prod",
+                         "is_admin": 1, "created_at": "2026-09-01"}],
+            "venues": [{"id": 900, "name": "Remote Park", "city": "Vancouver",
+                        "type": "park", "source": "curated"}],
+        })
+
+    def _pull(self, **kwargs):
+        dest = os.path.join(self._tmp.name, "backup.db")
+        return sync.pull(dest=dest, client=self._client(), **kwargs)
+
+    def test_it_writes_the_rows_supabase_holds(self):
+        _dest, summary = self._pull()
+        self.assertEqual(summary["parents"], 1)
+        self.assertEqual(summary["venues"], 1)
+        self.assertEqual(summary["_total"], 2)
+
+    def test_the_result_is_a_database_the_app_can_open(self):
+        # The point of building it with schema.create_schema rather than
+        # dumping SQL: the app's own query functions must work against it.
+        dest, _summary = self._pull()
+        with mock.patch.object(db, "DB_PATH", str(dest)):
+            parent = db.get_parent(14)
+        self.assertEqual(parent["email"], "only-in-prod@example.com")
+        self.assertTrue(parent["is_admin"])
+
+    def test_the_seeded_venues_do_not_survive(self):
+        # create_schema seeds venues.json, and those rows would sit alongside
+        # production's, making the backup a mix of two databases.
+        dest, summary = self._pull()
+        with mock.patch.object(db, "DB_PATH", str(dest)):
+            names = [v["name"] for v in db.get_venues_in_city("")]
+        self.assertEqual(summary["venues"], 1)
+        self.assertEqual(names, ["Remote Park"])
+
+    def test_it_does_not_touch_the_database_you_develop_against(self):
+        # The two have diverged in both directions, so overwriting app.db to
+        # fix a backup problem would destroy local-only rows.
+        local_id = db.add_parent("local-only@example.com", "h", name="Local")
+        self._pull()
+        self.assertIsNotNone(db.get_parent(local_id))
+
+    def test_it_refuses_to_overwrite_an_existing_backup(self):
+        dest, _ = self._pull()
+        with self.assertRaises(sync.SyncError):
+            sync.pull(dest=dest, client=self._client())
+
+    def test_the_default_name_is_timestamped(self):
+        # One overwritten file only protects you from the last mistake.
+        self.assertIn("supabase-", sync.BACKUPS_DIR.name + "supabase-")
+        self.assertTrue(str(sync.BACKUPS_DIR).endswith(os.path.join("data", "backups")))
+
+    def test_a_table_longer_than_a_page_arrives_whole(self):
+        many = [{"id": i, "name": f"V{i}", "city": "Vancouver",
+                 "type": "park", "source": "curated"}
+                for i in range(sync.CHUNK + 7)]
+        dest = os.path.join(self._tmp.name, "big.db")
+        _dest, summary = sync.pull(dest=dest,
+                                   client=FakeReadClient({"venues": many}))
+        self.assertEqual(summary["venues"], sync.CHUNK + 7)

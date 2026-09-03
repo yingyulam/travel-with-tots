@@ -528,7 +528,33 @@ Supabase do not come back down.
 
 **Scripts** cover the jobs too slow or too rude for a web request:
 `import_open_data.py` (dry run by default), `propose_venues.py`,
-`verify_hours.py`, `geocode_venues.py` and `replay_candidates.py`.
+`verify_hours.py`, `geocode_venues.py`, `replay_candidates.py` and
+`pull_from_supabase.py`.
+
+**Develop against SQLite, deploy against Supabase.** Set `DB_BACKEND=local` in
+`.env`, which overrides the dropdown on `/settings` in both directions. With a
+`SUPABASE_DB_URL` configured, that dropdown is all that stands between a local
+run and the live project, and one click removes it: generating a plan on your
+machine then writes a row production serves. `render.yaml` pins the opposite
+value, because the dropdown lives in `data/data_source.json` and an ephemeral
+disk loses it on every deploy.
+
+**Supabase is the only copy of production data**, because `clone` only goes
+upward. `scripts/pull_from_supabase.py` is the other direction: it reads every
+row out of Supabase and writes a timestamped SQLite file under `data/backups/`,
+built with the same `schema.create_schema` the app uses, so the result is a
+database the app can open rather than a dump only Postgres can read. It needs
+no `pg_dump`, and it never touches `data/app.db` -- the two have diverged in
+both directions, so overwriting the one you develop against would destroy
+local-only rows to fix a backup problem. Copy it over deliberately when that is
+what you want:
+
+```bash
+python3 scripts/pull_from_supabase.py
+cp data/backups/supabase-<stamp>.db data/app.db   # only if you mean it
+```
+
+`data/backups/` is gitignored: it holds real emails, password hashes and trips.
 
 ---
 

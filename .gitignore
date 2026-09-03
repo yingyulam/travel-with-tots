@@ -19,6 +19,9 @@ instance/
 *.sqlite3
 data/app.db
 
+# Supabase backups (scripts/pull_from_supabase.py); real user data
+data/backups/
+
 # RAG index (rebuildable from data/knowledge_base.md)
 data/chroma/
 data/rag_index.json
