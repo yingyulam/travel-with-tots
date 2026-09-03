@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the AI Agent. It has no chat of its own on purpose: use the bubble in the corner, which is the agent, and this panel shows what it did. <a href="{{ url_for('components') }}">← Back to Components</a></p>
+  <p class="meta">Test page for the AI Agent. It has no chat of its own on purpose: use the bubble in the corner, which is the agent, and this panel shows what it did. <a href="{{ url_for('devpages.components') }}">← Back to Components</a></p>
 
   <p class="field-hint">The bubble is the agent's interface, so what you test here is what a parent gets. Its model dropdown picks the agent's model, which makes this the place to check whether a given model can call tools at all. Ask a question about the site and the agent should use its knowledge-base tool; describe a day out and it should use the form extractor.</p>
 

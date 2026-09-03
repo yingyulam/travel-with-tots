@@ -319,7 +319,7 @@ class DeclarationTest(unittest.TestCase):
         # The card now leads to where the conversation can be watched. The page
         # a parent submits on is /log-place, which the nav links to and which
         # this workflow hands off to, so it cannot also be the watch surface.
-        self.assertEqual(WORKFLOW["page"], "log_place_from_chat_page")
+        self.assertEqual(WORKFLOW["page"], "devpages.log_place_from_chat_page")
 
     def test_it_is_reachable_from_the_chat(self):
         # The reported bug: trigger "event" excluded it from the classifier's

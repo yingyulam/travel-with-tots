@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the "Fill the form from a chat message" workflow. Type in the bubble in the corner, which is the agent, and the form as it stands after each message appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+  <p class="meta">Test page for the "Fill the form from a chat message" workflow. Type in the bubble in the corner, which is the agent, and the form as it stands after each message appears here. <a href="{{ url_for('devpages.workflows') }}">← Back to Workflows</a></p>
 
   <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the form-filling conversation, and the extractor runs on every message after that, merging what it reads into the form below. It stops at the confirmed form on purpose. Building the day is the planning page's job, so one description does not become a finished itinerary. Say "plan a trip" to start, then answer over a few messages and watch the form fill in. Pick the model in the bubble's own dropdown.</p>
 

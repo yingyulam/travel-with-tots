@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the "Find a nearby place" workflow. Type in the bubble in the corner, which is the agent, and the places it found appear here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+  <p class="meta">Test page for the "Find a nearby place" workflow. Type in the bubble in the corner, which is the agent, and the places it found appear here. <a href="{{ url_for('devpages.workflows') }}">← Back to Workflows</a></p>
 
   <p class="field-hint">The chain is: your message goes to the intent classifier, a match runs the workflow, the geocoder turns any shared location into a place, and Find Nearby searches the curated venues, falling back to a live web search when nothing there matches. Try "find the nearest nursing room", or "where can I change a nappy". Sharing your location in the bubble ranks the results by real distance.</p>
 

@@ -1,4 +1,5 @@
 import unittest
+from src.web import lookups
 from src.web import guards
 from unittest import mock
 
@@ -160,7 +161,7 @@ class SearchRouteTest(unittest.TestCase):
 
     def test_results_come_back_as_json(self):
         with self._as_parent(), \
-             mock.patch.object(self.app_module, "search_places",
+             mock.patch.object(lookups, "search_places",
                                return_value=[{"name": "Science World"}]):
             resp = self.client.post("/log-place/search", json={"query": "science"})
         self.assertEqual(resp.status_code, 200)
@@ -168,7 +169,7 @@ class SearchRouteTest(unittest.TestCase):
 
     def test_a_missing_key_says_so_rather_than_500ing(self):
         with self._as_parent(), \
-             mock.patch.object(self.app_module, "search_places",
+             mock.patch.object(lookups, "search_places",
                                side_effect=KeyError("GOOGLE_MAPS_API_KEY")):
             resp = self.client.post("/log-place/search", json={"query": "x"})
         self.assertEqual(resp.status_code, 503)
@@ -197,7 +198,7 @@ class SearchRouteTest(unittest.TestCase):
     def test_the_component_run_route_returns_results(self):
         admin = {**self.parent, "is_admin": True}
         with mock.patch.object(guards, "current_parent", return_value=admin), \
-             mock.patch.object(self.app_module, "search_places",
+             mock.patch.object(lookups, "search_places",
                                return_value=[{"name": "Science World"}]):
             resp = self.client.post("/place-search/run", json={"query": "science"})
         self.assertEqual(resp.status_code, 200)

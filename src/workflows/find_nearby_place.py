@@ -147,7 +147,7 @@ WORKFLOW = {
     "trigger": "message",
     # This workflow's own test page. Not the component's page, which calls
     # find_nearby directly and so never runs the workflow this card names.
-    "page": "find_nearby_place_page",
+    "page": "devpages.find_nearby_place_page",
     "description": (
         "A parent asks the chat for something they need right now and the agent "
         "hands it to Find nearby stops, which picks its own source: the curated "

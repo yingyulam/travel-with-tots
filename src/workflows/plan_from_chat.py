@@ -682,7 +682,7 @@ WORKFLOW = {
     "emoji": "📝",
     "trigger": "message",
     # Endpoint name for its test page, so /workflows can offer a "Try it" link.
-    "page": "plan_from_chat_page",
+    "page": "devpages.plan_from_chat_page",
     "description": (
         "A parent says they want to plan a day and the assistant fills the "
         "planning form in with them over a few messages, showing what it read "

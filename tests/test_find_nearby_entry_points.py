@@ -8,6 +8,7 @@ having consulted neither.
 """
 
 import unittest
+from src.web import devpages
 from src.web import guards
 from unittest import mock
 
@@ -145,7 +146,7 @@ class NothingKnownMeansTheCityWeCoverTest(unittest.TestCase):
         client = app_module.app.test_client()
         with mock.patch.object(guards, "current_parent",
                                return_value={"id": 1, "is_admin": 1}), \
-             mock.patch.object(app_module, "find_nearby_component",
+             mock.patch.object(devpages, "find_nearby_component",
                                return_value=FOUND) as component:
             client.post("/find-nearby/run", json={"need": "restaurant"})
         self.assertEqual(component.call_args.kwargs["city"], SUPPORTED_CITIES[0])

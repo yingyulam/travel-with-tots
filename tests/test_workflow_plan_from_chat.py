@@ -7,7 +7,7 @@ from src.workflows.plan_from_chat import WORKFLOW
 
 class DeclarationTest(unittest.TestCase):
     def test_the_declaration_points_at_its_test_page(self):
-        self.assertEqual(WORKFLOW["page"], "plan_from_chat_page")
+        self.assertEqual(WORKFLOW["page"], "devpages.plan_from_chat_page")
 
     def test_every_step_is_built_now(self):
         self.assertTrue(all(step["built"] for step in WORKFLOW["steps"]))

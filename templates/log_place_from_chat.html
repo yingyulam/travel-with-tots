@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="card">
-  <p class="meta">Test page for the "Log a place we don't have" workflow. Type in the bubble in the corner, which is the agent, and the submission as it stands after each message appears here. <a href="{{ url_for('workflows') }}">← Back to Workflows</a></p>
+  <p class="meta">Test page for the "Log a place we don't have" workflow. Type in the bubble in the corner, which is the agent, and the submission as it stands after each message appears here. <a href="{{ url_for('devpages.workflows') }}">← Back to Workflows</a></p>
 
   <p class="field-hint">The chain is: your message goes to the intent classifier, a match starts the logging conversation, and the assistant asks what the place is called, what it offers, and anything else worth knowing. It stops at the filled submission on purpose. Storing it is the <a href="{{ url_for('log_place_page') }}">Log a Place</a> page's job, so the parent can check the map pin first. Say "log this place" to start.</p>
 

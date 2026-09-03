@@ -271,7 +271,7 @@ WORKFLOW = {
     "trigger": "message",
     # This workflow's own watch page. The real page a parent uses is
     # /log-place, which the nav links to and which this hands off to.
-    "page": "log_place_from_chat_page",
+    "page": "devpages.log_place_from_chat_page",
     "description": (
         "A parent tells the chat about somewhere good that isn't in the venue "
         "table, naming it and saying what it offers, and the assistant hands "

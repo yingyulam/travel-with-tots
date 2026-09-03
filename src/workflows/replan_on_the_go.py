@@ -93,7 +93,7 @@ WORKFLOW = {
     "name": "Replan on the go",
     "emoji": "🔄",
     "trigger": "message",
-    "page": "replan_on_the_go_page",
+    "page": "devpages.replan_on_the_go_page",
     "description": (
         "Something changes mid-trip, a nap that ran long, a closed stop, rain, "
         "or simply wanting to stay put, and the parent says so in the chat. "

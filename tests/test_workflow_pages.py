@@ -40,7 +40,7 @@ def _script(path):
 class EveryWorkflowPageRunsItsOwnWorkflowTest(unittest.TestCase):
     def test_find_nearby_no_longer_points_at_the_component_page(self):
         workflow = next(w for w in WORKFLOWS if w["name"] == "Find a nearby place")
-        self.assertEqual(workflow["page"], "find_nearby_place_page")
+        self.assertEqual(workflow["page"], "devpages.find_nearby_place_page")
         self.assertNotEqual(workflow["page"], "find_nearby_page",
                             "that page calls the component, not the workflow")
 
