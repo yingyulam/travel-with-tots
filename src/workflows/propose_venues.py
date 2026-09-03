@@ -796,7 +796,7 @@ WORKFLOW = {
     "name": "Propose new venues",
     "emoji": "🌱",
     "trigger": "scheduled",
-    "page": "propose_venues_page",
+    "page": "venues.propose_venues_page",
     "description": (
         "The agent searches the web for real places a parent could take a "
         "toddler, checks each one against what the search actually said, and "

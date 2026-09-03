@@ -146,10 +146,10 @@
       OpenStreetMap, never from the model, and only where OSM reads as one plain
       pair; anything richer is left for the reviewer. It proposes no amenity,
       because a search result cannot establish one. A person approves candidates
-      in the <a href="{{ url_for('venue_review') }}">review queue</a>, which is
+      in the <a href="{{ url_for('venues.venue_review') }}">review queue</a>, which is
       the only path that turns a candidate into a venue, and rejections are
       remembered so a place you turn down is not offered again.</p>
-      <a class="cta-secondary" href="{{ url_for('propose_venues_page') }}">Try it</a>
+      <a class="cta-secondary" href="{{ url_for('venues.propose_venues_page') }}">Try it</a>
     </div>
 
     <div class="plan-option">

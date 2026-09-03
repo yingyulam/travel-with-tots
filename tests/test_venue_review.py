@@ -8,6 +8,7 @@ source, the unique indexes and the VERIFIED_SOURCES filter all run for real.
 import os
 import tempfile
 import unittest
+from src.web import venues as web_venues
 from src.web import guards
 from contextlib import closing
 from pathlib import Path
@@ -799,7 +800,7 @@ class CandidateBatchTest(_ReviewTest):
             self._propose(f"Venue {i:02}")
         body = self.client.get("/venues/review").get_data(as_text=True)
         shown = [f"Venue {i:02}" for i in range(23) if f"Venue {i:02}" in body]
-        self.assertEqual(len(shown), self.app_module.PROPOSAL_PAGE_SIZE)
+        self.assertEqual(len(shown), web_venues.PROPOSAL_PAGE_SIZE)
         self.assertIn(f"of {23}", body)
 
     def test_the_queue_advances_as_batches_are_decided(self):

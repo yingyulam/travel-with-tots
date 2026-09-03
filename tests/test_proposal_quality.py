@@ -13,6 +13,7 @@ Two failures this file exists to prevent, both seen in a live batch:
 
 import json
 import unittest
+from src.web import venues as web_venues
 from unittest import mock
 
 import app as app_module
@@ -354,52 +355,52 @@ class ApprovalGuardTest(unittest.TestCase):
              "open_time": "09:00", "close_time": "17:00"}
 
     def test_a_ready_candidate_passes(self):
-        self.assertEqual(app_module._cannot_approve(dict(self.READY)), "")
+        self.assertEqual(web_venues._cannot_approve(dict(self.READY)), "")
 
     def test_a_type_outside_the_enum_cannot_be_approved(self):
         # The check that did not exist: is_nap_friendly answers False for a
         # type it does not know rather than failing, so nothing downstream
         # would ever have noticed.
-        why = app_module._cannot_approve({**self.READY, "type": "activity"})
+        why = web_venues._cannot_approve({**self.READY, "type": "activity"})
         self.assertIn("activity", why)
 
     def test_a_neighbourhood_outside_the_enum_cannot_be_approved(self):
-        why = app_module._cannot_approve(
+        why = web_venues._cannot_approve(
             {**self.READY, "neighbourhood": "Central Vancouver"})
         self.assertIn("Central Vancouver", why)
 
     def test_a_blank_neighbourhood_is_fine(self):
         self.assertEqual(
-            app_module._cannot_approve({**self.READY, "neighbourhood": ""}), "")
+            web_venues._cannot_approve({**self.READY, "neighbourhood": ""}), "")
 
     def test_a_city_outside_the_enum_cannot_be_approved(self):
         self.assertIn("Toronto",
-                      app_module._cannot_approve({**self.READY, "city": "Toronto"}))
+                      web_venues._cannot_approve({**self.READY, "city": "Toronto"}))
 
     def test_hours_are_still_required(self):
         self.assertIn("opening time",
-                      app_module._cannot_approve({**self.READY, "open_time": ""}))
+                      web_venues._cannot_approve({**self.READY, "open_time": ""}))
 
     def test_every_enum_the_guard_checks_is_the_one_the_form_offers(self):
-        self.assertEqual(dict(app_module.APPROVAL_ENUMS)["type"], VENUE_TYPES)
-        self.assertEqual(dict(app_module.APPROVAL_ENUMS)["city"], CITIES)
-        self.assertEqual(dict(app_module.APPROVAL_ENUMS)["setting"], SETTINGS)
+        self.assertEqual(dict(web_venues.APPROVAL_ENUMS)["type"], VENUE_TYPES)
+        self.assertEqual(dict(web_venues.APPROVAL_ENUMS)["city"], CITIES)
+        self.assertEqual(dict(web_venues.APPROVAL_ENUMS)["setting"], SETTINGS)
 
 
 class UnknownValueDisplayTest(unittest.TestCase):
     def test_the_fields_a_reviewer_must_answer_are_named(self):
         row = {"type": "activity", "setting": "indoor",
                "neighbourhood": "Central Vancouver", "city": "Vancouver"}
-        self.assertEqual(app_module._unknown_values(row),
+        self.assertEqual(web_venues._unknown_values(row),
                          ["type", "neighbourhood"])
 
     def test_a_clean_row_asks_nothing(self):
         row = {"type": "museum", "setting": "indoor",
                "neighbourhood": "Downtown", "city": "Vancouver"}
-        self.assertEqual(app_module._unknown_values(row), [])
+        self.assertEqual(web_venues._unknown_values(row), [])
 
     def test_a_blank_is_not_an_unknown_value(self):
-        self.assertEqual(app_module._unknown_values(
+        self.assertEqual(web_venues._unknown_values(
             {"type": "", "setting": "", "neighbourhood": None,
              "city": "Vancouver"}), [])
 

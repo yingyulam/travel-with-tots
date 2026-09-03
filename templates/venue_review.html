@@ -74,14 +74,14 @@
   <h3>Proposed by the agent</h3>
   <p class="meta">
     Fix what is wrong, then approve.
-    <a href="{{ url_for('propose_venues_page') }}">Find more</a>
+    <a href="{{ url_for('venues.propose_venues_page') }}">Find more</a>
   </p>
 
   {% if not proposals %}
     <p class="meta">Nothing proposed yet.</p>
-    <a class="cta" href="{{ url_for('propose_venues_page') }}">Find some venues</a>
+    <a class="cta" href="{{ url_for('venues.propose_venues_page') }}">Find some venues</a>
   {% else %}
-  <form method="post" action="{{ url_for('venue_review_candidates') }}" class="section-form">
+  <form method="post" action="{{ url_for('venues.venue_review_candidates') }}" class="section-form">
     <p class="meta">
       {{ proposals|length }} of {{ proposals_total }}.
       {%- if proposals_total > proposals|length %} Next {{ page_size }} after these.{% endif %}
@@ -250,7 +250,7 @@
       {% endif %}
       <p class="meta">{{ v.submitted_by or 'deleted account' }} &middot; {{ v.created_at }}</p>
 
-      <form method="post" action="{{ url_for('venue_review_decide', venue_id=v.id) }}" class="section-form">
+      <form method="post" action="{{ url_for('venues.venue_review_decide', venue_id=v.id) }}" class="section-form">
         <button type="submit" name="action" value="approve" class="cta">Verify</button>
         <button type="submit" name="action" value="reject" class="cta-secondary">Reject</button>
       </form>
@@ -285,7 +285,7 @@
             <strong>{{ 'yes' if claim.value else 'no' }}</strong></li>
         {% endfor %}
       </ul>
-      <form method="post" action="{{ url_for('settle_venue_reports', venue_id=r.venue_id) }}">
+      <form method="post" action="{{ url_for('venues.settle_venue_reports', venue_id=r.venue_id) }}">
         <input type="hidden" name="reported_by" value="{{ r.reported_by }}">
         <button type="submit" name="decision" value="approve" class="cta-secondary cta-inline">Approve</button>
         <button type="submit" name="decision" value="reject" class="cta-secondary cta-inline">Reject</button>
@@ -313,7 +313,7 @@
         <a href="{{ v.source_link }}" target="_blank" rel="noopener noreferrer">Source</a>
       </p>
       {% endif %}
-      <form method="post" action="{{ url_for('venue_set_hours', venue_id=v.id) }}" class="section-form">
+      <form method="post" action="{{ url_for('venues.venue_set_hours', venue_id=v.id) }}" class="section-form">
         {{ hour_fields(weekdays, note=v.hours_note) }}
         <button type="submit" class="cta">Set hours</button>
       </form>
@@ -361,7 +361,7 @@
           Set the ordinary week below and put the rest in the note.</p>
       {% endif %}
 
-      <form method="post" action="{{ url_for('venue_hours_decide', check_id=c.id) }}" class="section-form">
+      <form method="post" action="{{ url_for('venues.venue_hours_decide', check_id=c.id) }}" class="section-form">
         <input type="hidden" name="venue_id" value="{{ c.venue_id }}">
         <input type="hidden" name="source_says" value="{{ c.source_says }}">
         {{ hour_fields(weekdays, (c.current_open, c.current_close),
@@ -390,7 +390,7 @@
   {% if not unverified %}
     <p class="meta">All confirmed.</p>
   {% else %}
-  <form method="post" action="{{ url_for('venue_confirm_batch') }}" class="section-form">
+  <form method="post" action="{{ url_for('venues.venue_confirm_batch') }}" class="section-form">
     <p class="meta">
       {{ unverified|length }} of {{ unverified_total }}.
     </p>
@@ -477,7 +477,7 @@
         <p class="meta"><a href="{{ c.source_link }}" target="_blank" rel="noopener noreferrer">Source</a></p>
       {% endif %}
       <p class="meta">Agent &middot; {{ c.decided_at }}</p>
-      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+      <form method="post" action="{{ url_for('venues.venue_restore') }}" class="section-form">
         <input type="hidden" name="candidate_id" value="{{ c.id }}">
         <button type="submit" class="cta-secondary">Put back</button>
       </form>
@@ -490,7 +490,7 @@
         <span class="meta">{{ v.type or 'no type' }}{% if v.neighbourhood %}, {{ v.neighbourhood }}{% endif %}</span></p>
       {% if v.notes %}<p class="meta">&ldquo;{{ v.notes }}&rdquo;</p>{% endif %}
       <p class="meta">{{ v.submitted_by or 'deleted account' }} &middot; {{ v.rejected_at }}</p>
-      <form method="post" action="{{ url_for('venue_restore') }}" class="section-form">
+      <form method="post" action="{{ url_for('venues.venue_restore') }}" class="section-form">
         <input type="hidden" name="venue_id" value="{{ v.id }}">
         <button type="submit" class="cta-secondary">Put back</button>
       </form>

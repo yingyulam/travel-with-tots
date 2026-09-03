@@ -23,7 +23,7 @@
     <li><a href="{{ url_for('plan') }}">Planning</a></li>
     <li><a href="{{ url_for('log_place_page') }}">Log a Place</a></li>
     {% if current_parent.is_admin %}
-    <li><a href="{{ url_for('venue_review') }}">Review queue</a></li>
+    <li><a href="{{ url_for('venues.venue_review') }}">Review queue</a></li>
     <li><a href="{{ url_for('settings') }}">Settings</a></li>
     <li><a href="{{ url_for('chunks') }}">Chunks</a></li>
     <li><a href="{{ url_for('results') }}">Results</a></li>
