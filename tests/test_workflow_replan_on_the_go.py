@@ -10,6 +10,10 @@ does not do is replan: that page holds the plan, its versions and the current
 time, and its runReplan is the one implementation.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

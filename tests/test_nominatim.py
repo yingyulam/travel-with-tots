@@ -10,6 +10,10 @@ hit is accepted only when the result is in British Columbia, and the caller
 checks Metro Vancouver's bounds.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

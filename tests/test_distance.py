@@ -24,6 +24,10 @@ as estimates wherever a parent sees them, and both are what the Routes API
 replaces when it is enabled.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from datetime import date
 

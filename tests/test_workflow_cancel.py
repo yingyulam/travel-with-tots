@@ -7,6 +7,10 @@ chat and losing the transcript. Cancelling is checked before dispatch, so it
 works for every workflow rather than each one having to remember.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

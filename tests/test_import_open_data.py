@@ -6,6 +6,10 @@ feature most likely to be wrong, and a hand-written fixture would only ever
 prove the importer agrees with itself.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

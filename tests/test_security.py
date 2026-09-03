@@ -10,6 +10,10 @@ Nothing here touches the network. Every address is written numerically, so the
 resolver has nothing to look up.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import unittest
 from src.web import chat as web_chat

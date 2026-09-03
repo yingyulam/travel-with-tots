@@ -11,6 +11,10 @@ Two failures this file exists to prevent, both seen in a live batch:
    another to a Facebook group post, both shown as an unlabelled "Source" link.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import unittest
 from src.web import venues as web_venues

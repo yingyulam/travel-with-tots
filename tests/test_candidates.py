@@ -5,6 +5,10 @@ what separates a loop that converges from one that spends a reviewer's capacity
 re-rejecting the same places.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

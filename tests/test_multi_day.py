@@ -20,6 +20,10 @@ What that buys, and what these pin:
   the seam a different hotel on Thursday goes through.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import os
 import re

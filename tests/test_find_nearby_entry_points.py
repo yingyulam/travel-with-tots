@@ -7,6 +7,10 @@ narrowing and no web fallback, and the trip page reported source "curated"
 having consulted neither.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from src.web import chat as web_chat
 from src.web import trip as web_trip

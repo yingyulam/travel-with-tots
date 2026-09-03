@@ -6,6 +6,10 @@ given, so most of these are shape guards: if one fails, something downstream
 than loudly.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import sqlite3
 import tempfile

@@ -9,6 +9,10 @@ a mall tagged as closing at half four is more likely a mis-tagged building than
 a mall that closes at half four -- so a finding goes to a person.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

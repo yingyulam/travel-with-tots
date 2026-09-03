@@ -6,6 +6,10 @@ one meant a parent who had logged nobody pressed Save and was redirected back
 to /plan with nothing saved and no explanation.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import os
 import tempfile

@@ -10,6 +10,10 @@ So a deployment builds the index during the deploy and forbids it at startup.
 A missing index has to degrade honestly instead of taking the app down with it.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import pathlib
 import tempfile

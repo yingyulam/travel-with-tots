@@ -6,6 +6,10 @@ cover the server half: that the choice reaches the agent, and that a value the
 app does not offer cannot.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import re
 import unittest
 from src.web import trip as web_trip

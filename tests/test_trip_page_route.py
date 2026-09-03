@@ -5,6 +5,10 @@ the route, so dropping a trips column broke reopening a saved itinerary with a
 500 and every test still passed. This closes that.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import os
 import tempfile

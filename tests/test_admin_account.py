@@ -7,6 +7,10 @@ chatbot's prompt. The same argument SECRET_KEY already carries in this
 codebase: a default that works is one an attacker also has.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

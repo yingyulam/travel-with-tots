@@ -10,6 +10,10 @@ working note rather than an answer. "Filled in from their words: destination."
 is not something to show anybody; the FAQ's reply is.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

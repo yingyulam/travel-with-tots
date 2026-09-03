@@ -12,6 +12,10 @@ back. Worth having anyway: this is inline JS with no unit-test harness, so a
 future edit reaching for a template literal would otherwise go unnoticed.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import re
 import unittest
 

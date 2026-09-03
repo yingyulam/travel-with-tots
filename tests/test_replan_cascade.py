@@ -14,6 +14,10 @@ has not started. So it is plan_days, the same planner the trip was built with,
 told through `used_names` what the days before it have taken.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import re
 import unittest

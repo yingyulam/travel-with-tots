@@ -5,6 +5,10 @@ a value the browser refuses is a value the parent cannot enter at all, and
 there is no error message explaining a rule the server does not have.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import re
 import unittest
 

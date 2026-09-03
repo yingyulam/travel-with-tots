@@ -15,6 +15,10 @@ file. Behaviour was verified separately against a DOM shim, posting the fields
 the widget really builds into the real route.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import re
 import unittest
 

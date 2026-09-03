@@ -6,6 +6,10 @@ was "event", so the classifier's enum could not emit its name at any
 confidence, and its `run` took `(parent_id, values)` rather than a message.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

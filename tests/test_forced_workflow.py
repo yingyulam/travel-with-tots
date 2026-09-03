@@ -9,6 +9,10 @@ It is a URL now rather than a flag. The page posts to /workflows/<name>/run,
 behind an admin login, and /chatbot is the agent's alone.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from src.web import chat as web_chat
 from unittest import mock

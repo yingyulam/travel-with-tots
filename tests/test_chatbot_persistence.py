@@ -10,6 +10,10 @@ code with no runner in this project. Behaviour was verified separately against
 a DOM shim.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import re
 import unittest
 

@@ -11,6 +11,10 @@ called, so no sources -- carrying a [2]. The model had answered a follow-up
 from the conversation and copied a marker out of its own earlier answer.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

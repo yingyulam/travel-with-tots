@@ -116,9 +116,26 @@ login follows the data across.
 python3 -m unittest discover -s tests -t .
 ```
 
-Around 1250 tests, all offline: every external service is stubbed, and
-`tests/__init__.py` pins the database to local SQLite so the suite never reads
-Supabase. `-t .` is what makes that file load.
+1662 tests, all offline and about 9 seconds. Every external service is stubbed,
+and `tests/__init__.py` pins the database to local SQLite, turns rate limiting
+off, and refuses any request to OpenRouter so a stale mock cannot quietly spend
+money. Both ways the app reaches OpenRouter are covered: `requests` for the
+chatbot and the adjusters, and `httpx2` for the LangGraph agent, which is the
+one the openai SDK actually uses.
+
+Every test file starts with `import tests`, which is what applies those
+settings however the suite is invoked. Without it, `discover tests` alone would
+import the files as top-level modules, `tests/__init__.py` would never run, and
+between 26 and 46 planning tests would fail on the rate limiter looking exactly
+like real regressions. `tests/test_safety_net.py` is what keeps a new test file
+from leaving that line out.
+
+To let a check really call the model, opt in by name rather than by removing
+the block:
+
+```bash
+ALLOW_LIVE_AI=1 python3 -m unittest discover -s tests -t . -k live
+```
 
 ---
 

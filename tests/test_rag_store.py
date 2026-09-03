@@ -14,6 +14,10 @@ Retrieval is unchanged and that is asserted rather than assumed: cosine over
 the vectors gives the same number Chroma returned as 1 - distance.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import pathlib
 import tempfile

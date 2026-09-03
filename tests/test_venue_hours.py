@@ -13,6 +13,10 @@ for. What a single pair cannot hold now goes in `hours_note`, in words a parent
 reads, and the planner is honest that it does not model the rest.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

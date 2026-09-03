@@ -6,6 +6,10 @@ logged as no workflow at all. These pin both halves, that the message routes to
 a registered workflow and that the workflow runs the real component.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

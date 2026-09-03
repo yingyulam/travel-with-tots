@@ -15,6 +15,10 @@ getting a pairing wrong at an edge -- a venue kept but retimed, a swap that
 reads as a drop and an add -- is exactly the kind of bug a browser hides.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import re
 import unittest
 from src.web import trip as web_trip

@@ -11,6 +11,10 @@ Every other need is untouched, which several of these assert directly, because
 the easiest way to get this wrong is to break them on the way past.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

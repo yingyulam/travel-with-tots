@@ -51,3 +51,65 @@ def _no_paid_calls(url, *args, **kwargs):
 
 
 requests.post = _no_paid_calls
+
+
+# The same block again, for the other way this app reaches OpenRouter. The
+# chatbot and the plan/replan adjusters go through requests.post above, but
+# src/agent.py's LangGraph agent uses ChatOpenAI, which is the openai SDK and
+# never touches requests at all. Measured with only the block above installed:
+# a ChatOpenAI call went straight past it and came back with a real 401 from
+# OpenRouter, so half the app was uncovered. The key is in the environment
+# during every run, because src/agents.py calls load_dotenv() at import, so an
+# unmocked agent path is a billable call with a slow suite as its only symptom.
+#
+# Both httpx and httpx2 are patched because the SDK uses httpx2 -- a separate
+# distribution with its own Client class, so patching httpx alone changes
+# nothing the agent will ever call. That is exactly how this was missed the
+# first time. Each is optional: whichever is installed gets blocked.
+#
+# Client.send is the one method every request passes through, sync and async
+# alike, whatever the caller above it looks like.
+_BLOCKED_HOSTS = ("openrouter.ai", "api.openai.com")
+
+# The deliberate way out, for a live check somebody actually meant to run:
+#   ALLOW_LIVE_AI=1 python3 -m unittest discover -s tests -t .
+# Opt in by name rather than by deleting the block, so it is one visible
+# variable on one command instead of an edit that outlives its reason.
+ALLOW_LIVE_AI = os.environ.get(
+    "ALLOW_LIVE_AI", "").strip().lower() in ("1", "true", "yes")
+
+
+def _block(module):
+    """Refuse paid hosts on one httpx-shaped module. Returns False if absent."""
+    try:
+        client_module = __import__(module)
+    except ImportError:
+        return False
+    real_send = client_module.Client.send
+    real_async_send = client_module.AsyncClient.send
+
+    def refuse(url):
+        raise client_module.ConnectError(
+            f"Blocked: a test tried to call {url.host} for real. Mock the agent "
+            "it goes through, or the component that calls it. Set "
+            "ALLOW_LIVE_AI=1 to allow it on purpose.")
+
+    def send(self, request, **kwargs):
+        if any(host in request.url.host for host in _BLOCKED_HOSTS):
+            refuse(request.url)
+        return real_send(self, request, **kwargs)
+
+    async def async_send(self, request, **kwargs):
+        if any(host in request.url.host for host in _BLOCKED_HOSTS):
+            refuse(request.url)
+        return await real_async_send(self, request, **kwargs)
+
+    client_module.Client.send = send
+    client_module.AsyncClient.send = async_send
+    return True
+
+
+if ALLOW_LIVE_AI:
+    requests.post = _real_post
+else:
+    BLOCKED_TRANSPORTS = tuple(m for m in ("httpx", "httpx2") if _block(m))

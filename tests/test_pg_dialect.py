@@ -11,6 +11,10 @@ one thing worth asserting in code is that the translation cannot silently stop
 happening.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import pathlib
 import tempfile

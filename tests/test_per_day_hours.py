@@ -15,6 +15,10 @@ The second is why this is a table and not columns: "closed on Mondays" is the
 commonest real closure and a nullable column cannot tell it from "not filled in".
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import tempfile
 import unittest

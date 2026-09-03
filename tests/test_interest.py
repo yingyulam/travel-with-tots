@@ -23,6 +23,10 @@ behaviour asked in a way a parent can see -- which is what the last class here
 pins.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from datetime import date
 from unittest import mock

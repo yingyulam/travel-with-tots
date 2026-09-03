@@ -11,6 +11,10 @@ ranking came back untouched, so the first stop of the morning was Stanley Park,
 empties the day and says why, which is a worse-looking plan and a true one.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import unittest
 from unittest import mock
 

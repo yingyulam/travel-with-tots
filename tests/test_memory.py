@@ -6,6 +6,10 @@ exists: most saved trips have no naps at all, and the stop_count column still
 holds legacy words.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import os
 import tempfile

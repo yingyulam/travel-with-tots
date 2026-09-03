@@ -1,3 +1,6 @@
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
 import os
 import tempfile
 import unittest

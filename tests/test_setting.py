@@ -10,6 +10,10 @@ once: nap suitability, calm, admission, whether the hours are real, or
 seasonality. Two readers, both about shelter.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import json
 import unittest
 from datetime import date

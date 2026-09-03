@@ -12,6 +12,10 @@ and an absent table raises PGRST205, which is turned into a sentence naming the
 table and pointing at the SQL on the settings page.
 """
 
+import tests  # noqa: F401  -- applies the suite-wide safety settings
+              # (local DB, no rate limits, no paid AI calls) however the
+              # suite is invoked. See tests/__init__.py.
+
 import os
 import pathlib
 import tempfile
