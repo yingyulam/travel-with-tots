@@ -12,7 +12,7 @@ from functools import wraps
 from flask import (flash, jsonify, make_response, redirect, request, session,
                    url_for)
 
-from src import ratelimit
+from src.web import ratelimit
 from src.db import get_parent
 
 # Whether X-Forwarded-For can be believed. True only behind a proxy that sets
