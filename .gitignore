@@ -42,6 +42,15 @@ supabase_schema.sql
 data/results.json
 data/intents.jsonl
 
+# The same files by name, wherever they land. A path constant derived from
+# __file__ points somewhere new the moment a module moves, and a run then
+# writes its log beside the code instead of into data/. Ignoring the path
+# alone let src/data/intents.jsonl be committed once.
+intents.jsonl
+rag_trace.log
+results.json
+app.db
+
 # Environment variables
 .env
 .flaskenv
