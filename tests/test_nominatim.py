@@ -19,7 +19,7 @@ from unittest import mock
 
 import requests
 
-from src import nominatim
+from src.clients import nominatim
 from src.geo import in_metro_vancouver
 
 
@@ -181,7 +181,8 @@ class BoundsTest(unittest.TestCase):
         # osm.BBOX bounds a query rather than validating a result, and is
         # tighter on purpose: widening it would make every Overpass call scan
         # more of the map for no benefit.
-        from src import geo, osm
+        from src import geo
+        from src.clients import osm
         self.assertNotEqual(tuple(geo.METRO_VANCOUVER_BOUNDS), tuple(osm.BBOX))
 
 

@@ -20,7 +20,8 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src import db, osm, schema
+from src import db, schema
+from src.clients import osm
 
 
 class CompareTest(unittest.TestCase):

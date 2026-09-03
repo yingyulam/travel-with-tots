@@ -18,7 +18,8 @@ from contextlib import closing
 from unittest import mock
 
 import app as app_module
-from src import db, importers, opendata, schema
+from src import db, importers, schema
+from src.clients import opendata
 
 # parks. Chosen for what each one proves:
 #   Arbutus Village Park          hyphenated local area; washrooms "N"

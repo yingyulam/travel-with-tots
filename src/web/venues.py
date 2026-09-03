@@ -15,7 +15,8 @@ import requests
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src import candidates, db, osm
+from src import candidates, db
+from src.clients import osm
 from src.data_loader import CITIES, FEATURE_LABELS, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
 from src.db import (PromotionError, add_venue, get_pending_hours_checks,
                     get_pending_submissions, get_rejected_submissions,

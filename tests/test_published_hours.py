@@ -22,7 +22,7 @@ from unittest import mock
 
 import requests
 
-from src import osm, webpage
+from src.clients import osm, webpage
 from src.workflows import propose_venues as pv
 
 # The real page, in the shape a browser gets it.

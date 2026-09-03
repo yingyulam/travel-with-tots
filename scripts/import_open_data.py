@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
 
-from src import db, importers, opendata
+from src import db, importers
+from src.clients import opendata
 from src import schema
 
 SOURCES = {

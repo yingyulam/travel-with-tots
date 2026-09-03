@@ -22,7 +22,8 @@ import requests
 from itertools import zip_longest
 from pathlib import Path
 
-from .. import candidates, db, nominatim, osm, webpage
+from .. import candidates, db
+from ..clients import nominatim, osm, webpage
 from ..agents import call_openrouter, parse_json_reply
 from ..data_loader import (CITIES, NEIGHBOURHOODS, SETTINGS, SHELTERED,
                            VENUE_TYPES)

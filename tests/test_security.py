@@ -20,7 +20,7 @@ from src.web import chat as web_chat
 from src.web import auth, guards
 from unittest import mock
 
-from src import webpage
+from src.clients import webpage
 from src.web import ratelimit
 
 

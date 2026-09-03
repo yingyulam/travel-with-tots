@@ -30,7 +30,7 @@ from unittest import mock
 
 import src.db as db
 from src.data_loader import _hours_for
-from src.osm import compare, per_day_hours
+from src.clients.osm import compare, per_day_hours
 
 # Real strings, from the review queue and from one batched Overpass query about
 # the community centres that have no hours.
