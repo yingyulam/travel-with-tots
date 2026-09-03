@@ -427,8 +427,20 @@ It is read-only, and the chat shows you what it remembered so you can reject it.
 
 ```
 travel-with-tots/
-├── app.py                     # Flask entry point: routes, auth, forms
+├── app.py                     # Flask entry point: creates the app, registers blueprints
 ├── src/
+│   ├── web/                   # one blueprint per subject, every route lives here
+│   │   ├── guards.py          # who is asking, and how often they may ask
+│   │   ├── auth.py            # signup, login, logout
+│   │   ├── account.py         # dashboard, children
+│   │   ├── planning.py        # /plan, saving a trip
+│   │   ├── trip.py            # the in-trip page, replanning, find-nearby
+│   │   ├── places.py          # places a parent logged, amenity reports
+│   │   ├── chat.py            # the chat widget's endpoints
+│   │   ├── venues.py          # the admin review queue
+│   │   ├── settings.py        # data source, knowledge base, prompt
+│   │   ├── devpages.py        # the /components and /workflows test pages
+│   │   └── lookups.py         # map lookups shared by more than one blueprint
 │   ├── db.py                  # the only module with SQL
 │   ├── postgres.py            # the same SQL, translated for Supabase
 │   ├── supabase_sync.py       # clone local rows up; which source is selected
@@ -465,6 +477,15 @@ travel-with-tots/
 ├── scripts/                   # CLI jobs
 └── tests/                     # stdlib unittest
 ```
+
+**Routes live in `src/web/`, one blueprint per subject.** `app.py` creates the
+app, configures it, and registers them; it holds no feature routes. A blueprint
+is Flask's way of collecting routes without an app object to decorate them, so
+the split is a file boundary rather than a new layer: nothing is wrapped, no
+URL changed, and the route bodies moved verbatim. Endpoints are namespaced by
+the blueprint, so `url_for` reads `url_for('planning.plan')`. The one import
+between two blueprints runs `trip -> planning`, because replanning mid-trip is
+planning again with the trip's own answers.
 
 **Data lives in SQLite** at `data/app.db`, built by `src/db.py`, which is the
 only module that writes SQL. Everything else works in plain dicts. The tables

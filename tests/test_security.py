@@ -92,7 +92,7 @@ class RateLimitedRoutesTest(unittest.TestCase):
     def test_too_many_logins_are_refused_with_how_long_to_wait(self):
         # Guessing repeatedly is the whole attack on this endpoint.
         last = None
-        for _ in range(self.app_module.LOGIN_LIMIT + 1):
+        for _ in range(guards.LOGIN_LIMIT + 1):
             last = self.client.post(
                 "/login", data={"email": "nobody@example.invalid",
                                 "password": "wrong-password"})
@@ -110,7 +110,7 @@ class RateLimitedRoutesTest(unittest.TestCase):
         last = None
         with mock.patch.object(web_chat, "handle_message",
                                return_value={"reply": "hi"}):
-            for _ in range(self.app_module.CHAT_LIMIT + 1):
+            for _ in range(guards.CHAT_LIMIT + 1):
                 last = self.client.post("/chatbot", json={"message": "hello"})
         self.assertEqual(last.status_code, 429)
         self.assertIn("error", last.get_json())

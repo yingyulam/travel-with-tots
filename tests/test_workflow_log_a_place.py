@@ -259,7 +259,7 @@ class PrefillTest(_VenueDbTest):
     def _post(self, **fields):
         with mock.patch.object(guards, "current_parent",
                                return_value=self.parent), \
-             mock.patch.object(self.app_module.log_a_place, "store") as stored:
+             mock.patch.object(places.log_a_place, "store") as stored:
             response = self.client.post("/log-place", data=fields)
         return response, stored
 
@@ -390,7 +390,7 @@ class PageTest(unittest.TestCase):
                   "kid_friendly": 1, "has_family_room": 0,
                   "has_nursing_room": 0, "stroller_accessible": 0}
         with self._as_parent(), \
-             mock.patch.object(self.app_module.log_a_place, "store",
+             mock.patch.object(places.log_a_place, "store",
                                return_value={"id": 7}), \
              mock.patch.object(places, "_logged_place", return_value=stored):
             resp = self.client.post("/log-place",

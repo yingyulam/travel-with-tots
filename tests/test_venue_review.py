@@ -475,7 +475,7 @@ class CandidateBatchTest(_ReviewTest):
             proposals[0]["close_time"] = "16:00"
             proposals[0]["hours_week"] = "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00"
             proposals[0]["hours_source"] = "read from example.org"
-        with mock.patch.object(self.app_module.propose_venues, "enrich",
+        with mock.patch.object(web_venues.propose_venues, "enrich",
                                side_effect=fill):
             self._post("repropose", [row["id"]])
         after = candidates.load()[0]
@@ -489,7 +489,7 @@ class CandidateBatchTest(_ReviewTest):
         # corrected name must not be undone by looking the hours up again.
         row = self._propose()
         self._post("save", **self._required(row, name="Corrected Name"))
-        with mock.patch.object(self.app_module.propose_venues, "enrich"):
+        with mock.patch.object(web_venues.propose_venues, "enrich"):
             self._post("repropose", [row["id"]])
         after = candidates.load()[0]
         self.assertEqual(after["id"], row["id"])
@@ -501,7 +501,7 @@ class CandidateBatchTest(_ReviewTest):
         row = self._propose()
         candidates.update(row["id"], open_time="10:00", close_time="16:00",
                           hours_week="Mo-Th 10:00-16:00; Fr-Su 08:30-16:00")
-        with mock.patch.object(self.app_module.propose_venues, "enrich"):
+        with mock.patch.object(web_venues.propose_venues, "enrich"):
             self._post("repropose", [row["id"]])
         after = candidates.load()[0]
         self.assertEqual(after["open_time"], "10:00")
@@ -517,7 +517,7 @@ class CandidateBatchTest(_ReviewTest):
             self.assertEqual(proposals[0]["open_time"], "")   # asked as if new
             proposals[0]["open_time"] = "10:00"
             proposals[0]["close_time"] = "16:00"
-        with mock.patch.object(self.app_module.propose_venues, "enrich",
+        with mock.patch.object(web_venues.propose_venues, "enrich",
                                side_effect=fresh):
             self._post("repropose", [row["id"]])
         self.assertEqual(candidates.load()[0]["open_time"], "10:00")
@@ -526,8 +526,8 @@ class CandidateBatchTest(_ReviewTest):
         # Automatic first, manual second: a paste means the fetch could not do
         # it, so the paste wins and the site is not touched.
         row = self._propose()
-        with mock.patch.object(self.app_module.propose_venues, "enrich") as fetched, \
-             mock.patch.object(self.app_module.propose_venues, "hours_from_page",
+        with mock.patch.object(web_venues.propose_venues, "enrich") as fetched, \
+             mock.patch.object(web_venues.propose_venues, "hours_from_page",
                                return_value=({d: ("09:30", "18:00")
                                               for d in range(7)}, None, set())):
             self._post("repropose", [row["id"]],
@@ -537,7 +537,7 @@ class CandidateBatchTest(_ReviewTest):
 
     def test_a_paste_records_where_it_came_from(self):
         row = self._propose()
-        with mock.patch.object(self.app_module.propose_venues, "hours_from_page",
+        with mock.patch.object(web_venues.propose_venues, "hours_from_page",
                                return_value=({d: ("09:00", "17:00")
                                               for d in range(7)}, None, set())):
             self._post("repropose", [row["id"]],
@@ -546,7 +546,7 @@ class CandidateBatchTest(_ReviewTest):
 
     def test_a_partial_paste_keeps_what_it_read_and_names_the_rest(self):
         row = self._propose()
-        with mock.patch.object(self.app_module.propose_venues, "hours_from_page",
+        with mock.patch.object(web_venues.propose_venues, "hours_from_page",
                                return_value=({d: ("09:00", "17:00")
                                               for d in range(5)}, None, {5, 6})):
             self._post("repropose", [row["id"]],
@@ -591,7 +591,7 @@ class CandidateBatchTest(_ReviewTest):
         def uniform(proposals):
             proposals[0]["open_time"] = "10:00"
             proposals[0]["close_time"] = "17:00"
-        with mock.patch.object(self.app_module.propose_venues, "enrich",
+        with mock.patch.object(web_venues.propose_venues, "enrich",
                                side_effect=uniform):
             self._post("repropose", [row["id"]])
         after = candidates.load()[0]
@@ -600,7 +600,7 @@ class CandidateBatchTest(_ReviewTest):
 
     def test_reproposing_an_unticked_row_leaves_it_alone(self):
         row = self._propose()
-        with mock.patch.object(self.app_module.propose_venues, "enrich") as looked:
+        with mock.patch.object(web_venues.propose_venues, "enrich") as looked:
             self._post("repropose", picked=[])
         looked.assert_not_called()
 

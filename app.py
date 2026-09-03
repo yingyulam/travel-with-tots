@@ -1,144 +1,26 @@
 """Travel with Tots -- Flask entry point.
 
-Two pages: a planning page (``/plan``) that compares candidate plans, and an
-in-trip page (``/trip``) that runs the chosen plan. All the real work lives in
-the src/ package; this file just wires HTTP requests to that logic.
+Creates the app, configures it, registers one blueprint per subject, and holds
+the handful of things that are the app's rather than any one subject's: the
+error handler, the security headers, the two context processors every template
+reads, and the landing page.
+
+Every feature route lives in src/web/, and the logic those routes call lives in
+src/components, src/workflows and the domain modules. See src/web/__init__.py.
 """
 
-import json
 import os
-import secrets
 import traceback
-from contextlib import closing
-from datetime import date, datetime, timezone
-from functools import wraps
 
-import openai
-import requests
-from dotenv import set_key
-from flask import (
-    Flask,
-    flash,
-    jsonify,
-    make_response,
-    redirect,
-    render_template,
-    request,
-    session,
-    url_for,
-)
+from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
-from werkzeug.security import check_password_hash, generate_password_hash
 
-from src import candidates, db, rag
-from src.web import (account, auth, chat, devpages, guards, lookups, places,
-                      planning, settings, trip,
-                     venues)
-from src.web.guards import (CHAT_LIMIT, CHAT_WINDOW, LOGIN_LIMIT,
-                            LOGIN_WINDOW, LOOKUP_LIMIT, LOOKUP_WINDOW,
-                            PLAN_LIMIT, PLAN_WINDOW, admin_required,
-                            login_required, rate_limited)
-from src.workflows import propose_venues
-from src.agents import (
-    ALLOWED_CHAT_MODELS,
-    DEFAULT_MODEL,
-    WEBSITE_CHATBOT_PROMPT_PATH,
-    reload_website_chatbot_prompt,
-)
-from src.components.extract_form import FormExtractionError, extract_form
-from src.components.find_nearby import find_nearby as find_nearby_component
-from src.components.find_nearby import searchable
-from src.components.geocode import (
-    UNKNOWN_LOCATION,
-    GeocodeError,
-    resolve_location,
-    reverse_geocode,
-)
-from src.components.place_search import PlaceSearchError, search_places
-from src import osm, postgres, ratelimit, supabase_sync
-from src.components.plan_trip import plan_days, plan_trip
-from src.components.replan_trip import replan_trip
-from src.components.search_web import WebSearchError, search_web
-
-from src.data_loader import (
-    CITIES,
-    FEATURE_LABELS,
-    NEIGHBOURHOODS,
-    SETTINGS,
-    SUPPORTED_CITIES,
-    VENUE_TYPES,
-    get_venues,
-    interest_options,
-)
-from src.dates import MAX_TRIP_DAYS, compute_age, parse_date
-from src.db import (
-    AMENITY_OPTIONS,
-    PromotionError,
-    TRIP_FIELDS,
-    add_child,
-    add_parent,
-    add_trip,
-    add_venue,
-    delete_child,
-    delete_trip,
-    delete_venue,
-    get_children,
-    get_logged_venues_for_parent,
-    get_parent,
-    get_parent_by_email,
-    get_pending_hours_checks,
-    get_pending_submissions,
-    get_rejected_submissions,
-    get_trip_for_parent,
-    get_trip_group,
-    get_trips_for_parent,
-    get_unverified_venues,
-    get_venues_missing_hours,
-    init_db,
-    mark_verified,
-    promote_submission,
-    reject_submission,
-    resolve_hours_check,
-    restore_submission,
-    set_venue_default_hours,
-    update_child,
-    update_venue,
-)
-from src.form_helpers import (
-    DEFAULT_TRANSIT,
-    normalise_transit,
-    DEFAULTS,
-    default_form,
-    DINING_OPTIONS,
-    MAX_AGE_YEARS,
-    MAX_MONTHS,
-    MAX_NAPS,
-    NAP_DURATION_MAX_MINUTES,
-    NAP_DURATION_MIN_MINUTES,
-    STOP_COUNT_FORM_MIN,
-    STOP_COUNT_FORM_MAX,
-    TRANSIT_NAP_OPTIONS,
-    TRANSIT_OPTIONS,
-    WALK_BUDGET_BY_TRANSIT,
-    WALK_BUDGET_FORM_OPTIONS,
-    clamp_int,
-    read_form,
-    resolve_plan_child,
-    trip_dates,
-    trip_too_long,
-)
-from src.interactions import (
-    MAX_REPLAN_MINUTES,
-    MIN_REPLAN_MINUTES,
-    NEED_OPTIONS,
-    SITUATION_OPTIONS,
-    replan,
-)
-from src.agent import handle_message, run_workflow_turn
-from src.models import Day, Plan, Trip
-from src.plan_diff import describe_changes, summarise
-from src.results import get_results, get_stats, save_result
-from src.workflows import log_a_place, workflows_by_trigger
+from src import rag
+from src.agents import ALLOWED_CHAT_MODELS, DEFAULT_MODEL
+from src.dates import compute_age
+from src.db import get_children, init_db
+from src.web import (account, auth, chat, devpages, guards, places, planning,
+                     settings, trip, venues)
 
 app = Flask(__name__)
 
@@ -183,14 +65,14 @@ app.config.update(
 # Each blueprint owns one subject's routes. Registered here rather than
 # discovered, so the set is explicit and a broken import is loud.
 app.register_blueprint(account.bp)
+app.register_blueprint(auth.bp)
 app.register_blueprint(chat.bp)
 app.register_blueprint(devpages.bp)
 app.register_blueprint(places.bp)
 app.register_blueprint(planning.bp)
-app.register_blueprint(trip.bp)
 app.register_blueprint(settings.bp)
+app.register_blueprint(trip.bp)
 app.register_blueprint(venues.bp)
-app.register_blueprint(auth.bp)
 
 # Create the SQLite tables (data/app.db) on startup if they don't exist yet.
 # A no-op when the data source is Supabase: the tables are already there.
@@ -199,13 +81,6 @@ init_db()
 # Chunk + embed the knowledge base in the background; the chatbot widget
 # polls /rag/status and shows a progress animation until this finishes.
 rag.init_index_async()
-
-
-
-
-
-
-
 
 
 @app.errorhandler(Exception)
@@ -300,70 +175,6 @@ def inject_chat_models():
 def home():
     """Marketing landing page."""
     return render_template("index.html")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
