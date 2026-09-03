@@ -52,7 +52,9 @@ class NapDurationAcceptsAnyMinuteTest(unittest.TestCase):
                 self.assertIn("{{ nap_duration_max }}", field)
 
     def test_the_route_supplies_those_bounds(self):
-        with open("app.py") as f:
+        # The /plan route, which is in src/web/planning.py since app.py was
+        # split into blueprints.
+        with open("src/web/planning.py") as f:
             source = f.read()
         self.assertIn("nap_duration_min=NAP_DURATION_MIN_MINUTES", source)
         self.assertIn("nap_duration_max=NAP_DURATION_MAX_MINUTES", source)

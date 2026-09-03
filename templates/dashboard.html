@@ -74,7 +74,7 @@
         <li class="preview-more"><button type="button" class="preview-more-toggle">+ {{ trip.plan.remaining()|length }} more…</button></li>
         {% endif %}
       </ol>
-      <form method="post" action="{{ url_for('delete_trip_route', trip_id=trip.id) }}"
+      <form method="post" action="{{ url_for('planning.delete_trip_route', trip_id=trip.id) }}"
             onsubmit="return confirm('Remove this saved plan?');">
         <button type="submit" class="cta-danger">Remove</button>
       </form>

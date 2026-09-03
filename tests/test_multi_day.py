@@ -25,6 +25,7 @@ import os
 import re
 import tempfile
 import unittest
+from src.web import planning as web_planning
 from contextlib import closing
 from unittest import mock
 
@@ -268,7 +269,7 @@ class TheRouteRendersEveryDayTest(unittest.TestCase):
                "out_of_range": []}
         dates = extra.pop("_dates", ["2026-09-14"])
         plans = [dict(day, trip_date=d) for d in dates]
-        with mock.patch.object(app_module, "plan_days",
+        with mock.patch.object(web_planning, "plan_days",
                                return_value=plans) as planned:
             page = self.client.post("/plan", data={
                 "generate": "1", "destination": "Vancouver", "age_years": "3",
@@ -327,7 +328,7 @@ class TooLongIsRefusedTest(unittest.TestCase):
         day = {"label": "L", "blurb": "b", "stops": [], "source": "rule",
                "adjusted": True, "changed": False, "hours": None,
                "out_of_range": [], "trip_date": "2026-09-14"}
-        with mock.patch.object(app_module, "plan_days",
+        with mock.patch.object(web_planning, "plan_days",
                                return_value=[day]) as planned:
             page = self.client.post("/plan", data={
                 "generate": "1", "destination": "Vancouver", "age_years": "3",

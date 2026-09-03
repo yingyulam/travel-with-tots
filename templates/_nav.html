@@ -20,7 +20,7 @@
 <nav class="twt-sidebar" id="twtSidebarNav">
   <ul class="twt-sidebar-nav">
     <li><a href="{{ url_for('home') }}">Home</a></li>
-    <li><a href="{{ url_for('plan') }}">Planning</a></li>
+    <li><a href="{{ url_for('planning.plan') }}">Planning</a></li>
     <li><a href="{{ url_for('places.log_place_page') }}">Log a Place</a></li>
     {% if current_parent.is_admin %}
     <li><a href="{{ url_for('venues.venue_review') }}">Review queue</a></li>

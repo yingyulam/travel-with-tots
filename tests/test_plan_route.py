@@ -1,5 +1,6 @@
 import re
 import unittest
+from src.web import planning as web_planning
 from unittest import mock
 
 from src.agents import PlanningAgent, PlanningAgentError
@@ -78,7 +79,7 @@ class PlanRouteFormWiringTest(unittest.TestCase):
         from src.components.plan_trip import plan_trip
         from src.form_helpers import DEFAULTS
 
-        with mock.patch.object(app_module, "plan_days") as planner:
+        with mock.patch.object(web_planning, "plan_days") as planner:
             planner.return_value = [{"label": "Mixed", "blurb": "b", "stops": [],
                                      "source": "rule", "adjusted": False,
                                      "changed": False}]

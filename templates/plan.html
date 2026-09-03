@@ -14,7 +14,7 @@
 <!-- Trip details form -->
 <section class="card form-card">
   <h2>Your trip</h2>
-  <form method="post" action="{{ url_for('plan') }}" id="plan-form">
+  <form method="post" action="{{ url_for('planning.plan') }}" id="plan-form">
     {# This form exists to build a day, so it always asks for one. A hidden
        field rather than the submit button's name, because the revise flow
        calls planForm.submit(), which records no submitter and would drop it. #}
@@ -378,7 +378,7 @@
         {%- if days|length > 1 %}Start this trip{% else %}Start this day{% endif %}</button>
     </form>
     {% if current_parent %}
-    <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form">
+    <form method="post" action="{{ url_for('planning.save_trip') }}" class="save-plan-form">
       <textarea name="plans" hidden>{{ plans_json | tojson }}</textarea>
       <textarea name="trip_form" hidden>{{ form | tojson }}</textarea>
       <button type="submit" class="cta-secondary cta-fit">

@@ -17,6 +17,7 @@ told through `used_names` what the days before it have taken.
 import json
 import re
 import unittest
+from src.web import planning as web_planning
 from unittest import mock
 
 import app as app_module
@@ -49,7 +50,7 @@ class TheFormIsReadOnceTest(unittest.TestCase):
     """
 
     def test_age_comes_from_the_two_fields_the_form_asks_in(self):
-        kwargs = app_module._planner_kwargs(
+        kwargs = web_planning._planner_kwargs(
             {**FORM, "age_years": "3", "age_months": "7"}, "", "m")
         self.assertEqual(kwargs["age_months"], 43)
 
@@ -57,17 +58,17 @@ class TheFormIsReadOnceTest(unittest.TestCase):
         # This also reads a form that arrived as JSON from the in-trip page
         # rather than from read_form, so a missing key means "the default",
         # not a KeyError halfway through planning.
-        kwargs = app_module._planner_kwargs({"destination": "Vancouver"}, "", "m")
+        kwargs = web_planning._planner_kwargs({"destination": "Vancouver"}, "", "m")
         self.assertEqual(kwargs["wake_up"], DEFAULTS["wake_up"])
         self.assertEqual(kwargs["dining"], DEFAULTS["dining"])
 
     def test_a_null_field_does_too(self):
         # JSON round-trips an empty value as null, which is not a wake-up time.
-        kwargs = app_module._planner_kwargs({**FORM, "wake_up": None}, "", "m")
+        kwargs = web_planning._planner_kwargs({**FORM, "wake_up": None}, "", "m")
         self.assertEqual(kwargs["wake_up"], DEFAULTS["wake_up"])
 
     def test_the_travel_limit_and_stop_count_are_carried(self):
-        kwargs = app_module._planner_kwargs(
+        kwargs = web_planning._planner_kwargs(
             {**FORM, "walk_budget": "40", "stop_count": "2"}, "", "m")
         self.assertEqual(kwargs["walk_budget"], "40")
         self.assertEqual(kwargs["stop_count"], 2)
@@ -75,15 +76,15 @@ class TheFormIsReadOnceTest(unittest.TestCase):
     def test_the_notes_are_the_caller_s_not_the_form_s(self):
         # /plan merges "Need changes?" feedback in for the AI call only, and
         # must not have it written back into the trip.
-        kwargs = app_module._planner_kwargs(
+        kwargs = web_planning._planner_kwargs(
             {**FORM, "extra_notes": "stored"}, "just for this call", "m")
         self.assertEqual(kwargs["extra_notes"], "just for this call")
 
     def test_plan_and_the_cascade_ask_for_the_same_thing(self):
         # The anti-drift claim itself: one form in, one set of inputs out,
         # whichever route is asking.
-        self.assertEqual(app_module._planner_kwargs(FORM, "n", "m"),
-                         app_module._planner_kwargs(dict(FORM), "n", "m"))
+        self.assertEqual(web_planning._planner_kwargs(FORM, "n", "m"),
+                         web_planning._planner_kwargs(dict(FORM), "n", "m"))
 
 
 class TheEndpointOnlyProposesTest(unittest.TestCase):

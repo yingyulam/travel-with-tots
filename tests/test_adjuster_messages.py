@@ -14,6 +14,7 @@ ours produced it.
 
 import re
 import unittest
+from src.web import planning as web_planning
 from unittest import mock
 
 import app as app_module
@@ -99,7 +100,7 @@ class ThePlanningPageStaysQuietTest(unittest.TestCase):
     def _post(self, adjusted, changed, **extra):
         plan = {"label": "L", "blurb": "b", "stops": [], "source": "rule",
                 "adjusted": adjusted, "changed": changed}
-        with mock.patch.object(app_module, "plan_days", return_value=[plan]):
+        with mock.patch.object(web_planning, "plan_days", return_value=[plan]):
             return self.client.post("/plan", data={**BASE, **extra},
                                     follow_redirects=True).get_data(as_text=True)
 

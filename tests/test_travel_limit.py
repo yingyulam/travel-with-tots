@@ -21,6 +21,7 @@ What the parent controls now, and what these assert:
 """
 
 import unittest
+from src.web import planning as web_planning
 from unittest import mock
 
 import app as app_module
@@ -370,7 +371,7 @@ class TheChoiceIsOfferedNotTakenTest(unittest.TestCase):
     def _page(self, out_of_range, **extra):
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": False, "hours": None, "out_of_range": out_of_range}
-        with mock.patch.object(app_module, "plan_days", return_value=[plan]):
+        with mock.patch.object(web_planning, "plan_days", return_value=[plan]):
             page = self.client.post("/plan", data={
                 "generate": "1", "destination": "Vancouver", "age_years": "3",
                 "age_months": "0", **extra})

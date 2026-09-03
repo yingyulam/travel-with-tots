@@ -8,6 +8,7 @@ app does not offer cannot.
 
 import re
 import unittest
+from src.web import planning as web_planning
 from unittest import mock
 
 import app as app_module
@@ -44,7 +45,7 @@ class PlanUsesTheChosenModelTest(unittest.TestCase):
         # forwards the model to it once for the whole trip.
         plan = {"label": "L", "blurb": "b", "stops": [], "adjusted": True,
                 "changed": True}
-        with mock.patch.object(app_module, "plan_days",
+        with mock.patch.object(web_planning, "plan_days",
                                return_value=[plan]) as planned:
             self.client.post("/plan",
                               data={"destination": "Vancouver",
@@ -229,7 +230,7 @@ class TheDropdownIsTheSourceTest(unittest.TestCase):
         # dropdown cannot leave planning silently refusing it.
         for model in ALLOWED_CHAT_MODELS:
             with self.subTest(model=model):
-                self.assertEqual(app_module._chosen_model(model), model)
+                self.assertEqual(web_planning._chosen_model(model), model)
 
     def _rendered_options(self):
         """(values, selected) from the widget's dropdown as a browser sees it.
@@ -258,7 +259,7 @@ class TheDropdownIsTheSourceTest(unittest.TestCase):
         values, _ = self._rendered_options()
         for value in values:
             with self.subTest(value=value):
-                self.assertEqual(app_module._chosen_model(value), value)
+                self.assertEqual(web_planning._chosen_model(value), value)
 
     def test_the_default_is_the_one_pre_selected(self):
         # This drifted in production: the dropdown still defaulted to a free

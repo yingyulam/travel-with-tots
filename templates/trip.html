@@ -11,7 +11,7 @@
   {% if saved %}
   <a class="home-link" href="{{ url_for('account.dashboard') }}">← Back to dashboard</a>
   {% else %}
-  <a class="home-link" href="{{ url_for('plan') }}">← Back to plans</a>
+  <a class="home-link" href="{{ url_for('planning.plan') }}">← Back to plans</a>
   {% endif %}
   <h1 class="app-name">Your day in {{ trip.destination }}</h1>
   {# Reads correctly with all three labels, which "by ..." did not:
@@ -183,7 +183,7 @@
   <div class="action-panel">
     <p class="panel-title">Keep this day</p>
     {% if current_parent and trip_form %}
-    <form method="post" action="{{ url_for('save_trip') }}" class="save-plan-form" id="save-trip-form">
+    <form method="post" action="{{ url_for('planning.save_trip') }}" class="save-plan-form" id="save-trip-form">
       {# "plans", not "plan": the field carries every day of the visit. #}
       <textarea name="plans" id="save-plan-field" hidden></textarea>
       <textarea name="trip_form" hidden>{{ trip_form | tojson }}</textarea>
@@ -191,7 +191,7 @@
     </form>
     {% elif current_parent %}
     {# No trip form behind this day, so there is nothing to save it from. #}
-    <p class="save-plan-hint">Build this day on the <a href="{{ url_for('plan') }}">planning page</a> to save it.</p>
+    <p class="save-plan-hint">Build this day on the <a href="{{ url_for('planning.plan') }}">planning page</a> to save it.</p>
     {% else %}
     <p class="save-plan-hint"><a href="{{ url_for('auth.login') }}">Log in</a> to save this plan.</p>
     {% endif %}
