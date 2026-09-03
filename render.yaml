@@ -21,7 +21,7 @@ services:
     # startup and got its worker killed.
     buildCommand: |
       pip install -r requirements.txt
-      python -c "from src import rag; rag.build_index(); s = rag.get_status(); print(s); raise SystemExit(0 if s['state'] == 'ready' else 1)"
+      python -c "from src.ai import rag; rag.build_index(); s = rag.get_status(); print(s); raise SystemExit(0 if s['state'] == 'ready' else 1)"
 
     # One worker, because memory is the binding constraint. Threads rather than
     # workers because every slow path here is waiting on somebody else's API,

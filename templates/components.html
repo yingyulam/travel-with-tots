@@ -31,7 +31,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">City of Vancouver Open Data</h3>
       <div class="badges"><span class="badge">API-backed</span><span class="badge badge-deterministic">no review</span></div>
-      <p>src/opendata.py talks to the City, src/importers.py decides what a
+      <p>src/clients/opendata.py talks to the City, src/importers.py decides what a
       venue is. Parks and community centres are imported straight into the
       venues table with no review step: the City is more reliable about its own
       parks than any reviewer we could put in front of them. Public washrooms
@@ -45,7 +45,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">OpenStreetMap (Overpass)</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>src/osm.py, the outside opinion on opening hours. Two callers, and
+      <p>src/clients/osm.py, the outside opinion on opening hours. Two callers, and
       neither acts on what it finds: scripts/verify_hours.py compares our stored
       hours against OSM and flags disagreements for a person, since hours are
       entered once at review and nothing else writes them; and the Venue
@@ -59,7 +59,7 @@
     <div class="plan-option">
       <h3 class="plan-option-title">Nominatim</h3>
       <div class="badges"><span class="badge">API-backed</span></div>
-      <p>src/nominatim.py: a place name to coordinates, keyless and ODbL. Used
+      <p>src/clients/nominatim.py: a place name to coordinates, keyless and ODbL. Used
       by the Venue proposer only, and nothing a parent touches, which is why it
       has no page. It replaced Google Places on that path: Places terms allow
       keeping a place id but restrict retaining returned content, and everything

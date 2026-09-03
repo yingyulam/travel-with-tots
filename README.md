@@ -1,43 +1,52 @@
 # Travel with Tots
 
-Planning a day out with a toddler is not the same problem as planning a day out.
-The museum shuts at four, the nap lands at one whether you like it or not, and
-three kilometres between stops is a very different ask on foot than in a car.
+A day planner for parents travelling in Vancouver with children aged 0 to 5.
 
-**Travel with Tots** builds a realistic single day in Vancouver for parents of
-children aged 0 to 5. You tell it when your child wakes, naps and sleeps, how
-you are getting around and where you are staying. It gives you a timed list of
-real places, checked against real opening hours, and then helps you rearrange it
-while the day is actually happening.
+Given a child's wake, nap and bedtime, how the family is getting around and
+where they are staying, it builds a timed itinerary of real places checked
+against real opening hours, then helps rearrange it while the day is underway.
 
-Built with Flask, SQLite and a handful of AI features that are used where
-judgment is genuinely needed.
+Flask, SQLite or Supabase, and LLM calls routed through OpenRouter.
 
 ---
 
-## What you can do
+## What it does
 
-- **Plan a day.** Fill in the form, or just describe your day to the chat bubble
-  and let it fill the form for you.
-- **Run the day.** A live timeline you can nudge: the nap ran long, it started
-  raining, you want to skip the next stop.
-- **Ask questions.** A chat bubble on every page that knows how the site works.
-- **Find somewhere nearby.** Share your location, say what you need (a nursing
-  room, lunch, somewhere quiet), get real places with map links.
-- **Save things.** Your children's ages, past trips, and places you found. A
-  saved day is yours, not a child's, so logging a child first is optional: tell
-  us an age on the form and save. Naming a child just means we remember whose
-  age to plan around next time.
-- **Help it grow.** Log a place the app is missing, or report what you found
-  when you got there.
+**For parents**
 
-Admins get more: a review queue for new venues, an editable knowledge base, and
-test pages for every AI component.
+- **Plan a day** from a form, or by describing it to the chat assistant
+- **Plan a visit** of up to 7 days, with no venue repeating across days
+- **Run the day** on a live timeline that shifts when a nap runs long or plans change
+- **Find somewhere nearby** by sharing location and saying what is needed
+- **Ask questions** through a chat assistant that knows how the site works
+- **Save** children, trips and places found along the way
+- **Contribute** by logging missing places and reporting amenities
 
-**Data lives in SQLite by default, or in Supabase.** A dropdown on `/settings`
-switches which one serves every page. There is also a one-way clone that copies
-the local rows up, skipping any already there. Local SQLite stays the default,
-and the fallback if Supabase cannot be reached.
+**For admins**
+
+- Review queue for proposed venues, parent submissions and disputed hours
+- Editable chatbot knowledge base
+- Test pages for every AI component and workflow
+- Switch the data source between local SQLite and Supabase
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | Python 3.13 |
+| Web | Flask 3, Jinja templates, blueprints |
+| Database | SQLite (default) or Supabase Postgres |
+| LLM | OpenRouter, via `langchain-openai` and LangGraph |
+| Retrieval | `all-MiniLM-L6-v2` on ONNX Runtime, vectors in a JSON index |
+| Maps | Leaflet with OpenStreetMap tiles |
+| Server | gunicorn |
+| Tests | stdlib `unittest` |
+
+External APIs: OpenRouter (LLM), Tavily (web search), Google Places (place
+lookup), OpenStreetMap Overpass and Nominatim (hours and geocoding), City of
+Vancouver Open Data.
 
 ---
 
@@ -49,394 +58,81 @@ pip install -r requirements.txt
 
 cp .env.example .env
 python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))" >> .env
-# then edit .env and add your API keys
+# then add OPENROUTER_API_KEY to .env
 
-python app.py
+python3 app.py
 ```
 
-Open **http://localhost:8016**. The database, schema and demo data are built on
-first boot, so there is nothing to migrate or import.
+Open <http://localhost:8016>. The schema and demo data are created on first
+boot, so there is nothing to migrate.
 
-Sign in with either seeded account:
+**Demo account:** `demo@travelwithtots.app` / `demo1234`
 
-| Role   | Email                      | Password    |
-| ------ | -------------------------- | ----------- |
-| Parent | `demo@travelwithtots.app`  | `demo1234`  |
-| Admin  | `admin@travelwithtots.app` | `admin1234` |
-
-The first chat message downloads an embedding model (~90MB) and builds the
-search index. That takes a few seconds, once.
-
-### API keys
-
-Keys load from `.env`. None is ever sent to the browser.
-
-| Variable              | Needed?  | Used for                                  |
-| --------------------- | -------- | ----------------------------------------- |
-| `SECRET_KEY`          | Yes      | Signs the session cookie.                 |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Yes, once | The first admin account.       |
-| `OPENROUTER_API_KEY`  | Yes      | Every LLM call.                           |
-| `TAVILY_API_KEY`      | Optional | Web search, and finding new venues.       |
-| `GOOGLE_MAPS_API_KEY` | Optional | Searching for a place by name.            |
-| `SUPABASE_URL`, `SUPABASE_API_KEY` | Optional | Cloning the database to Supabase. |
-| `SUPABASE_DB_URL`     | Optional | Serving pages from Supabase.               |
-| `DB_BACKEND`          | Optional | Pins the data source: `local` or `supabase`. |
-| `SESSION_COOKIE_SECURE` | Optional | Marks the session cookie HTTPS-only.     |
-| `TRUST_PROXY`         | Optional | Believe `X-Forwarded-For`. Only behind a proxy. |
-| `RATE_LIMITS`         | Optional | Set to `off` to disable request limits.     |
-
-Leave the optional ones out and those features say so cleanly. Everything else
-keeps working.
-
-**No credential has a default.** `SECRET_KEY` and `ADMIN_PASSWORD` both refuse
-rather than fall back, because a default that works is one an attacker also has.
-
-To get an admin, sign up through the app like any parent, then promote yourself:
+No admin is seeded. Sign up through the app, then promote yourself:
 
 ```bash
 python3 scripts/set_admin.py promote you@example.com
 ```
 
-Nothing in that path handles a password — you chose it in the signup form.
-`ADMIN_PASSWORD` only seeds an account on a database that has no admin yet.
+The first chat message downloads the embedding model (~80MB) and builds the
+search index. That happens once.
 
-Before deploying, check who can reach `/settings`:
+---
 
-```bash
-python3 scripts/set_admin.py list
-```
+## Configuration
 
-It also reports any admin whose password is guessable, which is worth running
-against a **cloned** database: a clone copies accounts, so a seeded or test
-login follows the data across.
+All settings load from `.env`. No key is ever sent to the browser, and no
+credential has a default.
 
-### Tests
+**Required**
+
+| Variable | Used for |
+| --- | --- |
+| `SECRET_KEY` | Signs the session cookie |
+| `OPENROUTER_API_KEY` | Every LLM call |
+
+**Optional**
+
+| Variable | Used for |
+| --- | --- |
+| `TAVILY_API_KEY` | Web search, and the venue proposal agent |
+| `GOOGLE_MAPS_API_KEY` | Searching for a place by name |
+| `SUPABASE_URL`, `SUPABASE_API_KEY` | Cloning the database to Supabase (REST) |
+| `SUPABASE_DB_URL` | Serving pages from Supabase (SQL) |
+| `DB_BACKEND` | Pins the data source to `local` or `supabase`, overriding `/settings` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Seeds the first admin on a database that has none |
+| `SESSION_COOKIE_SECURE` | Marks the session cookie HTTPS-only |
+| `TRUST_PROXY` | Believe `X-Forwarded-For`. Only set behind a proxy |
+| `RATE_LIMITS` | Set to `off` to disable request limits |
+| `RAG_AUTOBUILD` | Set to `off` to never build the search index at runtime |
+
+Features whose key is missing report that cleanly; the rest keep working.
+
+**Set `DB_BACKEND=local` for development.** With Supabase configured, the
+`/settings` dropdown is otherwise the only thing keeping a local run off the
+live project.
+
+---
+
+## Tests
 
 ```bash
 python3 -m unittest discover -s tests -t .
 ```
 
-1662 tests, all offline and about 9 seconds. Every external service is stubbed,
-and `tests/__init__.py` pins the database to local SQLite, turns rate limiting
-off, and refuses any request to OpenRouter so a stale mock cannot quietly spend
-money. Both ways the app reaches OpenRouter are covered: `requests` for the
-chatbot and the adjusters, and `httpx2` for the LangGraph agent, which is the
-one the openai SDK actually uses.
+1676 tests across 76 files, about 9 seconds, entirely offline.
 
-Every test file starts with `import tests`, which is what applies those
-settings however the suite is invoked. Without it, `discover tests` alone would
-import the files as top-level modules, `tests/__init__.py` would never run, and
-between 26 and 46 planning tests would fail on the rate limiter looking exactly
-like real regressions. `tests/test_safety_net.py` is what keeps a new test file
-from leaving that line out.
+`-t .` matters. It makes `tests/__init__.py` load, which pins the database to
+local SQLite, disables rate limiting, and blocks requests to OpenRouter over
+both `requests` and `httpx2` so a stale mock cannot spend money. Every test file
+imports the package so those settings hold however the suite is invoked, and
+`tests/test_safety_net.py` enforces that.
 
-To let a check really call the model, opt in by name rather than by removing
-the block:
+To let a test really call a model:
 
 ```bash
-ALLOW_LIVE_AI=1 python3 -m unittest discover -s tests -t . -k live
+ALLOW_LIVE_AI=1 python3 -m unittest discover -s tests -t .
 ```
-
----
-
-## Deploying to Render
-
-`render.yaml` is a blueprint: point Render at this repo and create the service
-from it, so the start command lives in git rather than in a form.
-
-```
-gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
-```
-
-One worker because memory is the binding constraint, threads because every slow
-path is waiting on somebody else's API, and `--timeout 120` because gunicorn's
-default of 30 seconds would kill a worker in the middle of generating a plan.
-
-**Use Supabase, not SQLite.** Render's disk is ephemeral: `data/app.db` and the
-`data/data_source.json` that records the dropdown are both wiped on every
-deploy, so the app would come back up reading an empty database. `render.yaml`
-sets `DB_BACKEND=supabase`, which pins the backend regardless of the file.
-
-Set these in the Render dashboard (the blueprint marks them `sync: false` so
-they stay out of git): `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_API_KEY`,
-`SUPABASE_DB_URL`, and optionally `TAVILY_API_KEY` / `GOOGLE_MAPS_API_KEY`.
-`SECRET_KEY` is generated by Render.
-
-**Memory, measured rather than assumed** (on macOS; Linux is usually lighter):
-
-| | resident |
-| --- | --- |
-| Serving pages, index prebuilt | **~190 MB** |
-| After a chatbot question reaches retrieval | **~470 MB** |
-| Rebuilding the index at runtime | **~580 MB** |
-
-Free and Starter are both 512 MB, so normal use fits and a rebuild does not.
-That is why `render.yaml` builds the index during the build step: a cold start
-never rebuilds. Editing the knowledge base on `/settings` does rebuild, so on a
-512 MB instance expect that request to be killed and the worker restarted. Edit
-it locally and redeploy, or run on a 2 GB instance if you need to edit it live.
-
----
-
-## Take it for a spin
-
-A five-minute tour, roughly in the order a parent would meet it.
-
-1. **Go to `/plan`.** Set a wake-up and bedtime, add a nap, pick how you are
-   getting around, and drop a pin on your hotel. Plan the day.
-2. **Read the stops.** Each one says why it was picked and how far it is from
-   the last, so you can see the transport mode doing its job.
-3. **Start the day.** Hit *Start this day* for the live timeline, then press
-   *Nap happened here* and watch the rest of the day shift.
-4. **Open the chat bubble.** Ask how the planner handles naps. Then try
-   "we're in Vancouver next Tuesday with a 2 year old" and watch it fill the
-   form for you.
-5. **Sign in as the admin.** `/components` and `/workflows` are a live inventory
-   of the app's parts, each with a page that runs the real thing.
-
----
-
-## How planning works
-
-A day is built in four steps, and only one of them is AI.
-
-1. **The form** collects the shape of your day: the dates you are here,
-   wake-up, bedtime, naps, transport, how far you will travel, how many stops,
-   lunch, which kinds of place, and where you are staying.
-2. **The planner** (`src/itinerary.py`) lays out the times, anchors the naps,
-   and picks a venue for each slot.
-3. **The hours check** (`src/components/validate_hours.py`) tests every stop
-   against that venue's hours for that date, then swaps or frees any slot that
-   does not work.
-4. **The AI adjuster** smooths the pacing and the wording. If it fails, you get
-   the draft, and it is not something you need to know about.
-
-**A visit can be several days.** Give an arriving and a leaving date and you
-get one plan per day, up to seven at a time. Leave the second date blank and it
-is a day out, exactly as before: a one-day trip is a trip with one day, through
-the same code, not a special case beside it.
-
-Days are planned in order and each is told what the earlier ones took, so no
-venue turns up twice in a visit. That is the same mechanism that stops a single
-day repeating itself, given a longer memory. It is greedy rather than optimal:
-day one gets the best-ranked venues and day five gets what is left, which is
-also the order you read them in.
-
-On the in-trip page a day picker sits above the version tabs. Each day keeps its
-own plan, its own replans and its own accommodation, and the picker is hidden
-entirely when there is only one day.
-
-Underneath, **a day is a `trips` row**. A visit is rows sharing a
-`trip_group_id`, ordered by `day_index`. Every query that reads a row as a day
-still does, which is why the dashboard, the delete button and every trip saved
-before this went on working untouched.
-
-### What makes it toddler-shaped
-
-**Naps come first, gently.** The day is structured around the nap you expect,
-and restful places are preferred during it. The app does not pretend to know
-where your child will actually fall asleep, which is what the live timeline is
-for.
-
-**How far you are willing to travel is a limit, not a preference.** The form
-asks how you get *between* stops and how long you will spend getting to any one
-of them: 20, 30 or 40 minutes, 20 by default. Riding, by car or on transit,
-adds 60 and 90: an hour to somewhere worth the trip is an ordinary family day
-out when the child is sitting down for it, and the same hour on foot is not a
-day at all. Change the transit answer and the longer lengths appear or
-disappear with it. Everyone is assumed to have a stroller once they are there.
-
-The limit applies to **each leg**, not to the day's total, and to **every** leg
-including the journey back to where you are staying. A day of four fifteen
-minute walks is fine; one thirty minute walk inside a twenty minute limit is
-not.
-
-| Getting around          | 20 minutes reaches about |
-| ----------------------- | ------------------------ |
-| On foot                 | 1.6 km                   |
-| Public transit          | 5.3 km                   |
-| Car, taxi or ride-share | 8 km                     |
-
-These are estimates, and labelled as estimates wherever you see one: a straight
-line scaled up by 1.35 for how streets actually run, divided by a typical speed
-for that mode. Not a route. When the Google Routes API is enabled on the
-project, real route times replace them and nothing else has to change.
-
-**Nothing widens the limit for you.** If there is not enough within it, the day
-comes back shorter, the plan says which stops it left out and why, and there is
-a button to include places further away. Pressing it is your decision.
-
-**Your hotel anchors both ends.** Pin it and the first stop is chosen from where
-you wake up, the last from somewhere you can get home from. Skip it and the day
-still plans on the legs between stops, and says the journey there and back could
-not be checked.
-
-**Other preferences nudge, they never exclude.** Kinds of place, shelter and
-nap-friendliness reorder the options rather than narrowing them, so a preference
-can never leave you with an empty day. Travel time is the exception, and it is
-deliberate: staying in Richmond with no car, the old ranking handed back Stanley
-Park, four hours away on foot, as the first stop of the morning.
-
-**The kinds of place start fully ticked.** Untick what you would rather skip and
-the rest come forward; the plan says which kinds it pushed down, and that they
-can still turn up if they fit your day better. Ticking everything and ticking
-nothing plan the same day, which is why "all ticked" is a safe default and why
-clearing the whole list is refused rather than guessed at.
-
-The question used to be "any particular kind of place? (optional)", where blank
-meant a mix. That hid the rule behind the common answer, and made ticking two
-look like a filter when it was a sort.
-
-**A place with unknown hours is never scheduled.** If the app cannot tell
-whether somewhere is open on your date, it stays out. On statutory holidays,
-only places without a door (parks, beaches, the seawall) keep their usual hours.
-
-### While the day is happening
-
-The trip page is a timeline with a marker on the current time. Six buttons
-rearrange what is left:
-
-`Nap happened here` · `Need to stay here longer` · `Skip next stop` ·
-`Finished this stop early` · `It's raining` · `Do something else`
-
-**A re-plan is a proposal.** The revised day appears on a tab marked *Proposed*
-beside the original, under a list of what would actually differ — "Vancouver
-Aquarium replaces Science World at 12:45 PM", "Second Beach is dropped from
-4:15 PM". Accept applies it; Discard puts the day back. Nothing moves in
-between, and saving always writes the version you accepted rather than the one
-you were looking at.
-
-The differences are computed server-side (`src/plan_diff.py`) rather than in the
-page, and stops are matched by identity — a venue by name, a venue-less block by
-its kind — never by position, because dropping one stop shifts every later one
-and would report the whole afternoon as changed. A replacement in the same slot
-is reported as one change, not as a drop plus an add.
-
-That a proposal changes nothing until accepted is what makes it safe to offer
-replanning the *rest* of a multi-day trip afterwards.
-
-**And that offer is four steps, not one.** Accept a change to Tuesday and, if it
-moved *where* that day goes, the app says what it noticed — "Science World now
-appears on this day as well as later in your trip" — and asks. Agree, and it
-builds fresh plans for the remaining days and shows what would change on each,
-marking the untouched ones as unaffected. Only then can you accept them all.
-Stop at any step and the trip is exactly as it was.
-
-Retiming a day offers nothing, because retiming Tuesday cannot affect Thursday.
-The later days are rebuilt with `plan_days` — the same planner that built the
-trip, told through `used_names` what the earlier days hold — rather than with
-the mid-day replanner, because a later day has not started yet.
-
-Not offered on a trip reopened from the dashboard: features, kinds of place and
-the travel limit are planning inputs and are not saved with a trip, so a rebuilt
-day would silently use answers you never gave.
-
-Every stop asks two questions, loudest on the stop you are currently at.
-
-**"Find kid-friendly features here?"** opens a row of chips: tick a washroom, a
-nursing room, a family room, step-free access or a highchair. They arrive
-showing what the app already believes, so unticking one says "that has gone".
-
-**"Was something not as we described?"** covers the other case: we sent you
-somewhere at a particular time and the door was shut. One tap files that, with
-the time, for an admin to check against the hours we hold. It asks about a shut
-door rather than about our opening hours, because the hours are not something
-the page puts in front of you — reporting them wrong would mean auditing data
-you never saw.
-
-Nothing to type, and it works on the day you are running whether or not you
-saved it.
-
-**Lunch is answered in three tiers**, best first:
-
-1. **The stop you are standing at**, if it serves food. No travel at all.
-2. **Curated places within reach** — as far as your transport mode reasonably
-   goes, so a walk is 1.5km and a car is 8km.
-3. **A Google Maps link**, centred on where you are.
-
-The venue directory holds attractions, so it can tell you the aquarium has a
-cafe but not what else is on the street. That last part is Google's job, and
-handing it over beats doing it badly.
-
----
-
-## Where the venues come from
-
-Every stop is a real place, from one of three sources.
-
-**The City of Vancouver** publishes its parks, community centres and public
-washrooms as open data. Those come straight in: the City is authoritative about
-its own parks, so nobody needs to check them by hand. That covers most of the
-database.
-
-**A hand-curated seed** (`data/venues.json`) holds the places the City does not
-own: Science World, the Aquarium, Grouse Mountain, the Granville Island markets.
-These are checked by a person through the review queue.
-
-**Parents** log places the app is missing, and report the amenities they find
-when they visit. Logged places wait for review before they appear in anyone's
-plan; amenity reports do not, because the person who was just there is the best
-source there is.
-
-There is also **an agent that goes looking.** It searches the web for places a
-parent might take a toddler, grounds each one against OpenStreetMap and
-Nominatim, reads the opening hours off the venue's own page where OSM has none,
-and writes it to a candidate file. Hours read that way are checked back against
-the times actually printed on the page, kept as a whole week so a late Friday
-survives, and labelled unconfirmed for a person to check. It never adds a venue itself. A
-human approves them ten or so at a time at `/venues/review`, and anything turned
-down is remembered so it is never suggested again.
-
-That review page is grouped by the decision it is asking for: **Decide** (is
-this a venue at all?), **Finish** (it is in the database but its hours are
-missing or disputed), **Confirm** (the hand-typed seed, in use but unchecked),
-and **Set aside**, an archive of everything turned down.
-
-**No restaurants.** The database holds attractions. Lunch is either a stop that
-happens to serve food, or a free block with a "find somewhere nearby" handoff,
-because Google has live hours and reviews and this app cannot.
-
-Amenities like nursing rooms and step-free access are stored as individual
-reports, each carrying who said it and when, so "nobody has told us" stays
-distinct from "someone looked, and there wasn't one".
-
----
-
-## The AI parts
-
-Every model call goes through **OpenRouter**, so the model is a per-request
-choice you can change from the chat widget's dropdown.
-
-**The chatbot** answers questions about the site. `data/knowledge_base.md` is
-chunked, embedded with `all-MiniLM-L6-v2` and stored in ChromaDB, and the index
-rebuilds itself when the knowledge base changes. Admins edit it at `/settings`.
-
-**The agent** behind the chat bubble is a LangGraph tool-calling loop. It either
-hands the message to a workflow or picks from four tools: answer from the
-knowledge base, build a day, read a described day into the form, or find
-somewhere nearby.
-
-**Components** are the single-purpose pieces, each with an admin page that runs
-it in isolation.
-
-| Component        | Kind          | What it does                              |
-| ---------------- | ------------- | ----------------------------------------- |
-| `plan_trip`      | AI-backed     | A draft day, then smoothing               |
-| `replan_trip`    | AI-backed     | The same, for a mid-trip change           |
-| `extract_form`   | AI-backed     | A sentence into the planning form         |
-| `validate_hours` | Deterministic | Every stop against that venue's hours     |
-| `find_nearby`    | Deterministic | Ranks real places by distance, then need  |
-| `search_web`     | API-backed    | Tavily, when the database has nothing (not for lunch) |
-| `place_search`   | API-backed    | Google Places, "which one did you mean?"  |
-| `geocode`        | API-backed    | An address into coordinates               |
-
-**Workflows** chain those into complete use cases: planning from chat,
-replanning on the go, finding a nearby place, logging a place, and proposing new
-venues. Each has a page at `/workflows` that runs the real thing.
-
-**Memory** (`src/memory.py`) lets the chat reuse what the app already knows, like
-a child's age or the routine from your last saved trip, instead of asking again.
-It is read-only, and the chat shows you what it remembered so you can reject it.
 
 ---
 
@@ -446,128 +142,249 @@ It is read-only, and the chat shows you what it remembered so you can reject it.
 travel-with-tots/
 ├── app.py                     # Flask entry point: creates the app, registers blueprints
 ├── src/
-│   ├── web/                   # one blueprint per subject, every route lives here
-│   │   ├── guards.py          # who is asking, and how often they may ask
+│   ├── web/                   # one blueprint per subject, all routes
+│   │   ├── guards.py          # authentication and rate limiting
 │   │   ├── auth.py            # signup, login, logout
 │   │   ├── account.py         # dashboard, children
 │   │   ├── planning.py        # /plan, saving a trip
-│   │   ├── trip.py            # the in-trip page, replanning, find-nearby
-│   │   ├── places.py          # places a parent logged, amenity reports
-│   │   ├── chat.py            # the chat widget's endpoints
-│   │   ├── venues.py          # the admin review queue
-│   │   ├── settings.py        # data source, knowledge base, prompt
-│   │   ├── devpages.py        # the /components and /workflows test pages
-│   │   └── lookups.py         # map lookups shared by more than one blueprint
-│   ├── store/                 # everything that persists, the only SQL
-│   │   ├── db.py              # every query the app runs
-│   │   ├── schema.py          # the tables, and migrating an existing database
-│   │   ├── postgres.py        # the same SQL, translated for Supabase
-│   │   ├── supabase_sync.py   # clone rows up, pull them back down
+│   │   ├── trip.py            # in-trip page, replanning
+│   │   ├── places.py          # logged places, amenity reports
+│   │   ├── chat.py            # chat widget endpoints
+│   │   ├── venues.py          # admin review queue
+│   │   ├── settings.py        # data source, knowledge base, prompts
+│   │   ├── devpages.py        # /components and /workflows test pages
+│   │   ├── lookups.py         # map lookups shared by blueprints
+│   │   └── ratelimit.py       # per-caller request buckets
+│   ├── store/                 # all persistence, the only SQL
+│   │   ├── db.py              # every query
+│   │   ├── schema.py          # tables and migrations
+│   │   ├── postgres.py        # the same SQL in Supabase's dialect
+│   │   ├── supabase_sync.py   # clone up, pull down
 │   │   ├── candidates.py      # proposed venues awaiting review
 │   │   └── results.py         # thumbs up/down ratings
-│   ├── ai/                    # what asks a model, and what reads its answer
-│   │   ├── agents.py          # the transport, and the plan/replan adjusters
-│   │   ├── tool_agent.py      # the LangGraph tool-calling agent
+│   ├── ai/                    # what asks a model, and what reads the answer
+│   │   ├── agents.py          # OpenRouter transport, plan/replan adjusters
+│   │   ├── tool_agent.py      # LangGraph tool-calling agent
 │   │   ├── rag.py             # chunking, embeddings, retrieval
-│   │   └── intent.py          # cancel words, and the routing log
+│   │   └── intent.py          # cancel words, routing log
 │   ├── clients/               # outbound calls to third parties
-│   │   ├── osm.py             # OpenStreetMap hours, via Overpass
-│   │   ├── nominatim.py       # keyless geocoding
-│   │   ├── opendata.py        # Vancouver Open Data client
+│   │   ├── osm.py             # OpenStreetMap hours via Overpass
+│   │   ├── nominatim.py       # geocoding
+│   │   ├── opendata.py        # City of Vancouver Open Data
 │   │   └── webpage.py         # plain text from one page
-│   ├── data_loader.py         # venues as plain dicts, hours for a date
-│   ├── models.py              # Plan and Trip objects
+│   ├── components/            # single-purpose capabilities
+│   ├── workflows/             # components chained into use cases
+│   ├── prompts/               # system prompts, editable at /settings
 │   ├── itinerary.py           # builds the day
 │   ├── interactions.py        # replanning and find-nearby logic
+│   ├── data_loader.py         # venues as plain dicts, hours for a date
 │   ├── form_helpers.py        # form parsing and validation, no Flask
-│   ├── geo.py                 # distance, and reach per transport mode
-│   ├── dates.py               # date and age helpers
+│   ├── geo.py                 # distance and reach per transport mode
+│   ├── models.py              # Plan and Trip objects
 │   ├── memory.py              # what the app already knows about a parent
 │   ├── importers.py           # open data onto venue rows
-│   ├── components/            # one file per component
-│   ├── workflows/             # one file per workflow
-│   └── prompts/               # system prompts, editable at /settings
-├── render.yaml                # Render blueprint: build, start, environment
+│   ├── plan_diff.py           # what a replan changed
+│   └── dates.py               # date and age helpers
 ├── templates/                 # Jinja, all extending base.html
 ├── static/                    # CSS, JS, and vendored Leaflet
 ├── data/
-│   ├── app.db                 # SQLite, the source of truth at runtime
-│   ├── venues.json            # the curated seed
-│   ├── venue_candidates.csv   # proposals and what a human decided
+│   ├── app.db                 # SQLite database
+│   ├── venues.json            # curated venue seed
+│   ├── venue_candidates.csv   # proposals and review decisions
 │   ├── knowledge_base.md      # what the chatbot knows
-│   └── chroma/                # the vector index (generated)
+│   ├── rag_index.json         # chunks and vectors (generated)
+│   ├── onnx_models/           # embedding model (generated)
+│   └── backups/               # Supabase backups (generated)
 ├── scripts/                   # CLI jobs
-└── tests/                     # stdlib unittest
+├── tests/                     # stdlib unittest
+└── render.yaml                # Render blueprint
 ```
-
-**Routes live in `src/web/`, one blueprint per subject.** `app.py` creates the
-app, configures it, and registers them; it holds no feature routes. A blueprint
-is Flask's way of collecting routes without an app object to decorate them, so
-the split is a file boundary rather than a new layer: nothing is wrapped, no
-URL changed, and the route bodies moved verbatim. Endpoints are namespaced by
-the blueprint, so `url_for` reads `url_for('planning.plan')`. The one import
-between two blueprints runs `trip -> planning`, because replanning mid-trip is
-planning again with the trip's own answers.
-
-**Data lives in SQLite** at `data/app.db`, built by `src/store/schema.py` and
-queried by `src/store/db.py`, the only two modules that write SQL. The split is by
-lifecycle rather than by subject: `schema.py` runs once at startup, driven by
-`init_db`, and holds the `CREATE TABLE`s plus the migrations that bring an
-older database up to them. Migrations are write-once and delete-never, so that
-file only grows while doing nothing on any boot after the first, which is why
-it is not in the module 23 files import to run queries. The dependency runs one
-way, `schema` imports `db` for its connections and never the reverse. Everything else works in plain dicts. The tables
-are `parents`, `children`, `trips`, `venues`, `venue_reports` (one amenity claim
-each), `venue_hours` (one day's opening hours, only for venues that vary by day)
-and `venue_hours_checks` (disagreements with OpenStreetMap awaiting a decision). Ratings, candidates and intent logs are flat files in `data/`.
-
-**Supabase is the same SQL over a different connection.** `src/store/postgres.py`
-translates SQLite's dialect on the way through (`?` to `%s`, `IFNULL` to
-`COALESCE`, `LIKE` to `ILIKE`) and returns rows as dicts, so nothing above
-`db.py` knows which database it is talking to. Setting it up is three steps on
-`/settings`: paste the generated `CREATE TABLE`s into Supabase's SQL editor,
-clone the rows, then paste the second block that adds the id sequences, indexes
-and foreign keys. Once switched, the two databases diverge: rows written in
-Supabase do not come back down.
-
-**Scripts** cover the jobs too slow or too rude for a web request:
-`import_open_data.py` (dry run by default), `propose_venues.py`,
-`verify_hours.py`, `geocode_venues.py`, `replay_candidates.py` and
-`pull_from_supabase.py`.
-
-**Develop against SQLite, deploy against Supabase.** Set `DB_BACKEND=local` in
-`.env`, which overrides the dropdown on `/settings` in both directions. With a
-`SUPABASE_DB_URL` configured, that dropdown is all that stands between a local
-run and the live project, and one click removes it: generating a plan on your
-machine then writes a row production serves. `render.yaml` pins the opposite
-value, because the dropdown lives in `data/data_source.json` and an ephemeral
-disk loses it on every deploy.
-
-**Supabase is the only copy of production data**, because `clone` only goes
-upward. `scripts/pull_from_supabase.py` is the other direction: it reads every
-row out of Supabase and writes a timestamped SQLite file under `data/backups/`,
-built with the same `schema.create_schema` the app uses, so the result is a
-database the app can open rather than a dump only Postgres can read. It needs
-no `pg_dump`, and it never touches `data/app.db` -- the two have diverged in
-both directions, so overwriting the one you develop against would destroy
-local-only rows to fix a backup problem. Copy it over deliberately when that is
-what you want:
-
-```bash
-python3 scripts/pull_from_supabase.py
-cp data/backups/supabase-<stamp>.db data/app.db   # only if you mean it
-```
-
-`data/backups/` is gitignored: it holds real emails, password hashes and trips.
 
 ---
 
-## Conventions worth knowing
+## Architecture
 
-- Anything a parent can pick is a closed list, checked on the way in as well as
-  on the way out, so a stale page cannot introduce a value nothing supports.
-- Failures are loud. There are no silent fallbacks that hide a broken step.
-- API keys stay on the server. Maps are Leaflet with OpenStreetMap tiles, and
-  Google Places is proxied.
-- Third-party JavaScript is vendored into `static/vendor/`, never loaded from a
-  CDN.
+Routes hold no business logic. Each layer only knows the one below it.
+
+```
+web/          HTTP: routes, auth, form binding
+  ↓
+components/   single capabilities, each with its own test page
+  ↓
+workflows/    components chained into multi-turn use cases
+  ↓
+ai/           the tool-calling agent and the adjusters
+  ↓
+itinerary.py  the rule-based day builder
+  ↓
+store/        the only SQL
+```
+
+### How a day is planned
+
+Four steps, one of which is AI.
+
+| Step | Where |
+| --- | --- |
+| 1. Collect the day's shape from the form | `src/web/planning.py` |
+| 2. Lay out times, anchor naps, pick venues | `src/itinerary.py` |
+| 3. Check every stop against that venue's hours | `src/components/validate_hours.py` |
+| 4. Smooth pacing and wording | `src/ai/agents.py` |
+
+The rule-based draft is always valid on its own. If the AI step fails, the
+draft ships unchanged.
+
+A visit is `trips` rows sharing a `trip_group_id`, ordered by `day_index`.
+Days are planned in sequence and each is told what earlier days used, so no
+venue repeats.
+
+### Components
+
+Single-purpose, each with an admin page that runs it in isolation.
+
+| Component | Kind | What it does |
+| --- | --- | --- |
+| `plan_trip` | AI-backed | A rule-based draft, then smoothing |
+| `replan_trip` | AI-backed | The same, for a mid-trip change |
+| `extract_form` | AI-backed | A sentence into the planning form |
+| `validate_hours` | Deterministic | Every stop against that venue's hours |
+| `find_nearby` | Deterministic | Ranks real places by distance, then need |
+| `search_web` | API-backed | Tavily, when the database has nothing |
+| `place_search` | API-backed | Google Places, by name |
+| `geocode` | API-backed | An address into coordinates |
+
+### Workflows
+
+Five use cases chained from components: replan on the go, log a place, fill the
+form from a chat message, find a nearby place, and propose new venues. Each is
+listed at `/workflows`, and those with a test page run the real chain.
+
+### The agent
+
+A LangGraph tool-calling loop behind the chat bubble, with 5 tools: answering
+from the knowledge base, plus one per message-triggered workflow, generated from
+the same registry `/workflows` renders. There is no separate intent classifier;
+tool selection is that decision.
+
+Models are a per-request choice from the chat widget. The allowed set is
+deliberately short, since `/chatbot` is public:
+
+| Model | |
+| --- | --- |
+| `nvidia/nemotron-3-super-120b-a12b:free` | default |
+| `openai/gpt-4o-mini` | paid |
+
+### Retrieval
+
+`data/knowledge_base.md` is chunked, embedded with `all-MiniLM-L6-v2` on ONNX
+Runtime, and stored as vectors in `data/rag_index.json`. The index rebuilds when
+the knowledge base changes. `chromadb` is a dependency only because it ships the
+ONNX embedder.
+
+### Data storage
+
+SQLite at `data/app.db` by default, or Supabase Postgres. `src/store/postgres.py`
+translates SQLite's dialect on the way through, so nothing above `store/` knows
+which database it is talking to.
+
+Tables: `parents`, `children`, `trips`, `venues`, `venue_reports`,
+`venue_hours`, `venue_hours_checks`. Ratings, candidates and routing logs are
+flat files in `data/`.
+
+Switching to Supabase takes three steps on `/settings`: run the generated
+`CREATE TABLE` statements in Supabase's SQL editor, clone the rows, then run a
+second block adding sequences, indexes and foreign keys. The clone is one way
+and skips rows already present. `scripts/pull_from_supabase.py` is the reverse,
+writing a timestamped SQLite copy into `data/backups/`.
+
+---
+
+## Where venues come from
+
+| Source | Review needed |
+| --- | --- |
+| City of Vancouver Open Data (parks, community centres, washrooms) | No, authoritative |
+| Curated seed in `data/venues.json` | Yes |
+| Places logged by parents | Yes, before appearing in plans |
+| Amenity reports from parents | No, applied directly |
+| Proposal agent (web search, grounded against OSM and Nominatim) | Yes, always |
+
+The proposal agent never adds a venue itself. Approvals happen at
+`/venues/review`, grouped by the decision being asked: **Decide** (is this a
+venue?), **Finish** (in the database, hours missing or disputed), **Confirm**
+(in use, unchecked) and **Set aside** (an archive of rejections, which are
+remembered so nothing is re-proposed).
+
+The database holds attractions, not restaurants. Lunch is either a stop that
+serves food or a free block with a find-nearby handoff.
+
+Amenities such as nursing rooms and step-free access are stored as individual
+reports carrying who said it and when, so "nobody has told us" stays distinct
+from "someone looked, and there wasn't one".
+
+---
+
+## Scripts
+
+Jobs too slow or too rude for a web request.
+
+| Script | Purpose |
+| --- | --- |
+| `set_admin.py` | List, promote, revoke and audit admin accounts |
+| `import_open_data.py` | Import City of Vancouver open data. Dry run by default |
+| `propose_venues.py` | Run a batch of venue proposals |
+| `verify_hours.py` | Compare stored hours against OpenStreetMap |
+| `geocode_venues.py` | Fill in coordinates on the curated seed |
+| `replay_candidates.py` | Put approved venues back after a rebuild |
+| `pull_from_supabase.py` | Back up Supabase into a local SQLite file |
+
+`set_admin.py list` also reports any admin whose password is guessable, worth
+running against a cloned database since a clone copies accounts.
+
+---
+
+## Deployment
+
+`render.yaml` is a Render blueprint: point Render at the repo and create the
+service from it.
+
+```
+gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
+```
+
+- **One worker**, because memory is the binding constraint
+- **Threads**, because every slow path waits on a third-party API
+- **`--timeout 120`**, because generating a plan outlasts gunicorn's 30s default
+
+**Supabase is required, not optional.** Render's disk is ephemeral, so
+`data/app.db` and `data/data_source.json` are wiped on every deploy.
+`render.yaml` sets `DB_BACKEND=supabase` to pin the backend regardless.
+
+Set in the Render dashboard (marked `sync: false` so they stay out of git):
+`OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_API_KEY`, `SUPABASE_DB_URL`,
+and optionally `TAVILY_API_KEY` and `GOOGLE_MAPS_API_KEY`. Render generates
+`SECRET_KEY`.
+
+**Memory** (measured on macOS; Linux is usually lighter):
+
+| | Resident |
+| --- | --- |
+| Serving pages, index prebuilt | ~190 MB |
+| After a chatbot question reaches retrieval | ~470 MB |
+| Rebuilding the index at runtime | ~580 MB |
+
+Render's Free and Starter tiers are both 512 MB, so normal use fits and a
+rebuild does not. `render.yaml` builds the index during the build step so a cold
+start never rebuilds. Editing the knowledge base on `/settings` does rebuild, so
+on 512 MB expect that request to be killed. Edit locally and redeploy, or use a
+2 GB instance.
+
+---
+
+## Conventions
+
+- Anything a parent can pick is a closed list, checked on the way in as well as on the way out
+- Failures are loud. No silent fallbacks that hide a broken step
+- API keys stay on the server. Google Places is proxied
+- Third-party JavaScript is vendored into `static/vendor/`, never loaded from a CDN
+- SQL exists only in `src/store/`
