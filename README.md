@@ -63,8 +63,17 @@ python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_hex(32))" >> .en
 python3 app.py
 ```
 
-Open <http://localhost:8016>. The schema and demo data are created on first
-boot, so there is nothing to migrate.
+Open <http://localhost:8016>. The schema and the demo account are created on
+first boot. **Venues are not**: startup never writes to the venues table, so a
+new database needs one bootstrap pass, in this order:
+
+```bash
+python3 scripts/seed_venues.py --write        # 28 curated attractions
+python3 scripts/import_open_data.py --write   # ~238 parks and community centres
+```
+
+Seed first. The open-data importer upgrades a curated row in place rather than
+duplicating it, which it can only do if that row already exists.
 
 **Demo account:** `demo@travelwithtots.app` / `demo1234`
 
@@ -189,7 +198,7 @@ travel-with-tots/
 ├── static/                    # CSS, JS, and vendored Leaflet
 ├── data/
 │   ├── app.db                 # SQLite database
-│   ├── venues.json            # curated venue seed
+│   ├── venues.json            # curated venues, for bootstrap only
 │   ├── venue_candidates.csv   # proposals and review decisions
 │   ├── knowledge_base.md      # what the chatbot knows
 │   ├── rag_index.json         # chunks and vectors (generated)
@@ -304,7 +313,7 @@ writing a timestamped SQLite copy into `data/backups/`.
 | Source | Review needed |
 | --- | --- |
 | City of Vancouver Open Data (parks, community centres, washrooms) | No, authoritative |
-| Curated seed in `data/venues.json` | Yes |
+| Curated bootstrap set in `data/venues.json` | Yes |
 | Places logged by parents | Yes, before appearing in plans |
 | Amenity reports from parents | No, applied directly |
 | Proposal agent (web search, grounded against OSM and Nominatim) | Yes, always |
@@ -330,6 +339,7 @@ Jobs too slow or too rude for a web request.
 
 | Script | Purpose |
 | --- | --- |
+| `seed_venues.py` | Bootstrap a new database with the curated venues. Insert-only |
 | `set_admin.py` | List, promote, revoke and audit admin accounts |
 | `import_open_data.py` | Import City of Vancouver open data. Dry run by default |
 | `propose_venues.py` | Run a batch of venue proposals |

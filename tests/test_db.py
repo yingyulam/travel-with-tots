@@ -241,105 +241,29 @@ class EnsureColumnsMigrationTest(unittest.TestCase):
                        "verified_by", "seed_rank"):
             self.assertIn(column, columns)
 
-    def test_seeding_fills_coordinates_an_older_row_is_missing(self):
-        # What _backfill_venue_coordinates used to do, now a side effect of
-        # seeding: a row already in the table gets updated, not skipped.
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-        with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Science World")  # a real seed-file venue
-        with closing(db.connect()) as conn:
-            schema._seed_venues(conn)
-            row = conn.execute(
-                "SELECT lat, lng FROM venues WHERE name = 'Science World'").fetchone()
-        self.assertIsNotNone(row["lat"])
-        self.assertIsNotNone(row["lng"])
 
-    def test_seeding_leaves_venues_not_in_the_seed_file_alone(self):
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-        with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Not In The Seed File")
-        with closing(db.connect()) as conn:
-            schema._seed_venues(conn)
-            row = conn.execute("SELECT lat, seed_rank FROM venues "
-                               "WHERE name = 'Not In The Seed File'").fetchone()
-        self.assertIsNone(row["lat"])
-        self.assertIsNone(row["seed_rank"])
+class VenueIdentityTest(unittest.TestCase):
+    """The venue uniqueness rules, against a current schema where the indexes
+    exist.
 
-    def test_seeding_updates_a_field_edited_in_the_seed_file(self):
-        # The case the old insert-only seed could not express at all: an edit to
-        # an existing venue in venues.json never reached a populated database.
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-        with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Science World", neighbourhood="Wrong Place")
-        with closing(db.connect()) as conn:
-            schema._seed_venues(conn)
-            row = conn.execute("SELECT neighbourhood FROM venues "
-                               "WHERE name = 'Science World'").fetchone()
-        self.assertNotEqual(row["neighbourhood"], "Wrong Place")
-
-    def test_a_user_submission_does_not_block_a_curated_seed_entry(self):
-        # The live database has three user-submitted "Science World" rows. The
-        # old seed matched names against every row, so they suppressed the
-        # curated entry entirely.
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-        with closing(db.connect()) as conn, conn:
-            conn.execute("INSERT INTO venues (name, city, source) "
-                         "VALUES ('Science World', 'Vancouver', 'user_submitted')")
-        with closing(db.connect()) as conn:
-            schema._seed_venues(conn)
-            sources = [r["source"] for r in conn.execute(
-                "SELECT source FROM venues WHERE name = 'Science World'")]
-        self.assertIn("curated", sources)
-        self.assertIn("user_submitted", sources)
-
-
-class SeedVenuesTest(unittest.TestCase):
-    """Seeding against a current schema, where the indexes exist."""
+    Was SeedVenuesTest. Startup seeding is retired, and what these guard is the
+    identity constraints rather than the seeder -- see tests/test_seed_venues.py
+    for the bootstrap script itself.
+    """
 
     def setUp(self):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
-        self.patcher.start()
+        # addCleanup rather than tearDown: a setUp that raises never reaches
+        # tearDown, so a DB_PATH patch started here would leak into every later
+        # test in the process.
+        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(os.unlink, self.db_path)
         with closing(db.connect()) as conn:
             schema.create_schema(conn)
-
-    def tearDown(self):
-        self.patcher.stop()
-        os.unlink(self.db_path)
-
-    def _seed(self):
-        with closing(db.connect()) as conn:
-            schema._seed_venues(conn)
-
-    def test_is_idempotent(self):
-        self._seed()
-        with closing(db.connect()) as conn:
-            first = conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]
-        self._seed()
-        with closing(db.connect()) as conn:
-            second = conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]
-        self.assertEqual(first, second)
-        self.assertGreater(first, 0)
-
-    def test_seed_rank_follows_the_order_of_the_seed_file(self):
-        # The planner takes the first venue that fits a slot, so this order is
-        # a ranking. Without it the database's ORDER BY name would quietly
-        # demote the venues the curator put first.
-        import json
-        self._seed()
-        names = [v["name"] for v in json.loads(
-            schema.VENUES_SEED.read_text(encoding="utf-8"))]
-        with closing(db.connect()) as conn:
-            seeded = [r["name"] for r in conn.execute(
-                "SELECT name FROM venues WHERE source = 'curated' "
-                "ORDER BY seed_rank")]
-        self.assertEqual(seeded, names)
 
     def test_a_duplicate_external_id_is_refused(self):
         with closing(db.connect()) as conn, conn:

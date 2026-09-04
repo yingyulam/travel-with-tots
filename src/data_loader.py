@@ -1,8 +1,8 @@
 """Read venues out of the database, shaped for the planners.
 
-The venues table is the source of truth; data/venues.json is only its seed
-(see schema._seed_venues). This module is the boundary between the two: it turns
-database rows into the plain dicts the rest of the app expects, so nothing
+The venues table is the source of truth, and the only one: rows arrive through
+review and nothing rewrites them at startup. This module is the boundary: it
+turns database rows into the plain dicts the rest of the app expects, so nothing
 above it knows which database is underneath.
 """
 
@@ -290,9 +290,10 @@ def get_venues(city="", on_date=None):
     the next plan without a restart. `city` is a substring match, and "" means
     every city that has venues.
 
-    Seeded venues come back in the curator's order, not alphabetically: the
-    planner picks the first venue that fits a slot, so the order of
-    data/venues.json is a ranking of what to offer first.
+    Ranked venues come back in the curator's order, not alphabetically: the
+    planner picks the first venue that fits a slot, so `seed_rank` is a ranking
+    of what to offer first. Rows that arrived through review carry no rank and
+    sort after the ranked ones (see the sort below).
 
     `on_date` is the day being planned, defaulting to today. A venue's `open`
     and `close` are resolved for that date, so a museum that shuts at four in

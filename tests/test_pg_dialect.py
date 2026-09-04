@@ -218,7 +218,12 @@ class WhichDatabaseServesTest(unittest.TestCase):
         self._source = pathlib.Path(self._tmp.name) / "data_source.json"
         for patcher in (mock.patch.object(sync, "SOURCE_PATH", self._source),
                         # tests/__init__.py pins the whole suite to local, which
-                        # is what this class exists to switch off.
+                        # is what this class exists to switch off. It also points
+                        # DB_PATH at the suite's own database, and _supabase_dsn
+                        # reads a non-default DB_PATH as "a test redirected this,
+                        # stay local" -- a second guard, and one this class has
+                        # to lift too or every case below falls back.
+                        mock.patch.object(db, "DB_PATH", db._DEFAULT_DB_PATH),
                         mock.patch.dict(os.environ, {"DB_BACKEND": ""})):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -305,9 +310,9 @@ class WhichDatabaseServesTest(unittest.TestCase):
             self.assertEqual(db.connect(), "sqlite")
         self.assertIn("no psycopg", db.LAST_BACKEND_ERROR)
 
-    def test_setup_and_seeding_are_skipped_on_supabase(self):
+    def test_the_sqlite_setup_is_skipped_on_supabase(self):
         # init_db is PRAGMA table_info and ALTER TABLE the whole way down, and
-        # the tables are already there.
+        # the tables are already there. It seeds no venues on either backend.
         with self._choose(sync.SUPABASE, "postgresql://somewhere"), \
              mock.patch.object(db, "connect_sqlite") as opened:
             schema.init_db()
@@ -441,7 +446,6 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
              mock.patch.object(schema, "create_schema"), \
              mock.patch.object(schema, "_drop_dead_columns"), \
              mock.patch.object(schema, "_migrate_trips_ownership"), \
-             mock.patch.object(schema, "_seed_venues"), \
              mock.patch.object(schema, "_migrate_seed_claims"), \
              mock.patch.object(schema, "_seed_sample_data"), \
              mock.patch.object(schema, "_seed_admin"):

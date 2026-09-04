@@ -31,31 +31,60 @@ def _sample_plan():
     }
 
 
-class _SeededDBTest(unittest.TestCase):
-    """A temp database seeded from data/venues.json.
+# A pool wide enough that a six-stop day would be satisfiable if the age cap
+# did not apply, which is what test_realistic_stop_count_applies_for_young_child
+# needs to mean anything. Hours on every row, because a venue without them is
+# not schedulable; coordinates because the travel limit filters on them; one
+# can_eat for the lunch block; a mix of settings and nap-friendly types
+# (data_loader.NAP_FRIENDLY_TYPES) so the draft has real choices to make.
+_POOL = (
+    ("Harbour Museum",   "museum",  "indoor",  0, 49.2860, -123.1120),
+    ("Science Centre",   "museum",  "indoor",  1, 49.2735, -123.1035),
+    ("Cedar Park",       "park",    "outdoor", 0, 49.2790, -123.1170),
+    ("Fountain Garden",  "garden",  "outdoor", 0, 49.2700, -123.1250),
+    ("English Beach",    "beach",   "outdoor", 0, 49.2865, -123.1430),
+    ("Seaside Walk",     "seawall", "outdoor", 0, 49.2800, -123.1300),
+    ("Central Mall",     "mall",    "indoor",  1, 49.2820, -123.1180),
+    ("Riverside Market", "market",  "both",    1, 49.2715, -123.1085),
+)
 
-    Needed because the planner now reads venues from SQLite. Without this these
-    tests would read the developer's own data/app.db, which they never create,
-    so they passed only where one already existed and failed on a fresh clone.
-    Seeding from the real seed file keeps the venue set the same as production's.
+
+class _VenueDBTest(unittest.TestCase):
+    """A temp database with a venue pool, built row by row.
+
+    The planner reads venues from SQLite, so these tests need a real database
+    rather than a patched get_venues -- exercising that read path is the point.
+    They used to call schema._seed_venues to fill it, which stopped existing
+    when startup seeding was retired; the pool below is explicit instead, and
+    does not drift when data/venues.json is edited.
+
+    addCleanup rather than tearDown: a setUp that raises never reaches tearDown,
+    so a DB_PATH patch started here would leak into every later test in the
+    process. That is exactly how retiring the seeder turned two broken fixtures
+    into 45 unrelated failures.
     """
 
     def setUp(self):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
-        self.patcher.start()
+        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(os.unlink, self.db_path)
         with closing(db.connect()) as conn:
             schema.create_schema(conn)
-            schema._seed_venues(conn)
+            with conn:
+                for rank, (name, kind, setting, can_eat, lat, lng) in enumerate(_POOL):
+                    conn.execute(
+                        "INSERT INTO venues (name, source, city, neighbourhood, "
+                        "type, setting, can_eat, open_time, close_time, lat, lng, "
+                        "seed_rank) VALUES (?, 'curated', 'Vancouver', 'Downtown', "
+                        "?, ?, ?, '09:00', '18:00', ?, ?, ?)",
+                        (name, kind, setting, can_eat, lat, lng, rank))
 
-    def tearDown(self):
-        self.patcher.stop()
-        os.unlink(self.db_path)
 
-
-class ReplanTripTest(_SeededDBTest):
+class ReplanTripTest(_VenueDBTest):
     def test_adjusted_true_on_success(self):
         plan = _sample_plan()
         adjustment = {

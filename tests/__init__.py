@@ -113,3 +113,56 @@ if ALLOW_LIVE_AI:
     requests.post = _real_post
 else:
     BLOCKED_TRANSPORTS = tuple(m for m in ("httpx", "httpx2") if _block(m))
+
+
+# The suite gets its own database, with venues in it.
+#
+# Startup used to seed data/venues.json into data/app.db, and ~39 tests quietly
+# leaned on that: they post to /plan or /trip with no DB_PATH redirect, so they
+# read whichever database the developer happened to have. They passed because a
+# boot had guaranteed 28 venues were in it. Retiring the startup seeder made
+# them fail on a fresh clone while still passing here, which is the same
+# machine-dependent trap as discovering the suite the wrong way.
+#
+# So the fixture moves here. Nothing in the suite reads data/app.db any more,
+# the pool is explicit rather than whatever the seed file happens to say today,
+# and a test that wants its own database still redirects DB_PATH as before.
+#
+# Note _DEFAULT_DB_PATH is deliberately *not* touched: db._supabase_dsn reads a
+# non-default DB_PATH as "a test redirected this, stay local", which is a second
+# guard behind the DB_BACKEND pin above. test_pg_dialect's backend-selection
+# tests lift both by hand, because switching backends is what they are for.
+import sqlite3
+import tempfile
+
+from src.store import db as _db
+from src.store import schema as _schema
+
+_db.DB_PATH = tempfile.mkdtemp(prefix="twt-tests-") + "/suite.db"
+
+# Wide enough for a real day: hours on every row because a venue without them
+# is not schedulable, coordinates because the travel limit filters on them, a
+# can_eat for the lunch block, and a mix of settings and nap-friendly types
+# (see data_loader.NAP_FRIENDLY_TYPES).
+SUITE_VENUES = (
+    ("Suite Museum",  "museum",  "indoor",  0, 49.2860, -123.1120),
+    ("Suite Science", "museum",  "indoor",  1, 49.2735, -123.1035),
+    ("Suite Park",    "park",    "outdoor", 0, 49.2790, -123.1170),
+    ("Suite Garden",  "garden",  "outdoor", 0, 49.2700, -123.1250),
+    ("Suite Beach",   "beach",   "outdoor", 0, 49.2865, -123.1430),
+    ("Suite Seawall", "seawall", "outdoor", 0, 49.2800, -123.1300),
+    ("Suite Mall",    "mall",    "indoor",  1, 49.2820, -123.1180),
+    ("Suite Market",  "market",  "both",    1, 49.2715, -123.1085),
+)
+
+_conn = sqlite3.connect(_db.DB_PATH)
+_conn.row_factory = sqlite3.Row
+_schema.create_schema(_conn)
+with _conn:
+    for _rank, _v in enumerate(SUITE_VENUES):
+        _conn.execute(
+            "INSERT INTO venues (name, source, city, neighbourhood, type, "
+            "setting, can_eat, open_time, close_time, lat, lng, seed_rank) "
+            "VALUES (?, 'curated', 'Vancouver', 'Downtown', ?, ?, ?, "
+            "'09:00', '18:00', ?, ?, ?)", (*_v, _rank))
+_conn.close()

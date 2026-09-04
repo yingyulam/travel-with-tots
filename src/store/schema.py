@@ -4,6 +4,15 @@ Everything here runs once, at startup, driven by `init_db`. Nothing in it
 answers a request, which is why it is not in db.py: that module is imported by
 23 files to run queries, and none of them need the 500 lines below.
 
+**Startup creates tables and never venues.** Curated venues used to be upserted
+from data/venues.json on every boot, which meant a restart silently reverted an
+admin's correction: confirm a venue on /venues/review, edit its neighbourhood,
+and the next boot wrote the file's value back. Hours and coordinates had already
+been made fill-only for exactly that reason after it happened to the Aquarium's
+opening time; the descriptive fields never were. The venues table is the source
+of truth, so nothing here writes to it, and the seed file is bootstrap material
+run by hand from scripts/seed_venues.py.
+
 Migrations are the bulk of it, and they are write-once, delete-never. A column
 added to SCHEMA is free for a database created afterwards and needs a patch for
 every database created before, so each `_ensure_*` and `_migrate_*` check stays
@@ -26,9 +35,7 @@ from . import db, postgres
 
 # db's own names are reached through the module rather than imported, so
 # whichever module owns a name is the one place to patch it: db.connect_sqlite
-# is db's, _seed_venues below is this module's.
-
-VENUES_SEED = db._DATA_DIR / "venues.json"
+# is db's, create_schema below is this module's.
 
 
 # Age is never stored -- children keep a date of birth and age is derived.
@@ -113,7 +120,9 @@ CREATE TABLE IF NOT EXISTS venues (
     verified_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
     rejected_at         TEXT,                   -- set instead of deleting: see reject_submission
     rejected_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
-    seed_rank           INTEGER                 -- position in venues.json: see _seed_venues
+    seed_rank           INTEGER                 -- the curator's ordering, set only by
+                                                -- scripts/seed_venues.py. NULL for rows
+                                                -- that arrived through review
 );
 
 -- A comparison between our stored hours and an outside source, and what a
@@ -183,7 +192,7 @@ CREATE TABLE IF NOT EXISTS venue_reports (
 # Indexes, kept apart from SCHEMA because they must be created after
 # _ensure_columns: on a database that predates a column, an index naming it
 # cannot be created until the ALTER TABLE has run. See create_schema.
-INDEXES = """-- Two curated copies of one place is the duplicate _seed_venues matches on.
+INDEXES = """-- Two curated copies of one place is the duplicate the seed script skips on.
 -- Scoped to 'curated' because a curated venue and an imported one are allowed
 -- to coexist, and because user submissions may legitimately repeat a name.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_venues_curated_identity
@@ -212,13 +221,6 @@ CREATE INDEX IF NOT EXISTS idx_venue_reports_venue ON venue_reports(venue_id, fi
 CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_check_open
     ON venue_hours_checks(venue_id, source) WHERE status = 'pending';
 """
-
-
-# The venue columns data/venues.json owns, in the order _seed_venues supplies
-# them. Deliberately excludes source, parent_id and the provenance columns: a
-# re-seed must never demote a row or discard a citation a human added.
-SEED_FIELDS = ("type", "setting", "neighbourhood", "can_eat",
-               "open_time", "close_time", "seed_rank")
 
 
 def create_schema(conn):
@@ -293,7 +295,13 @@ def _ensure_postgres_columns():
 
 
 def init_db():
-    """Create the tables if they don't exist and seed initial data once.
+    """Create the tables if they don't exist, and seed the demo account once.
+
+    **No venues.** Venues arrive through review (municipal import, an agent's
+    proposal, or a parent's submission) and the table is the source of truth, so
+    a boot that wrote to it could only overwrite somebody's decision. Bootstrap
+    a fresh database with scripts/seed_venues.py, which inserts and never
+    updates.
 
     On Supabase the tables were created by the SQL on /settings, and the
     SQLite migration machinery below cannot run there: it is PRAGMA table_info
@@ -308,7 +316,6 @@ def init_db():
         create_schema(conn)
         _drop_dead_columns(conn)
         _migrate_trips_ownership(conn)
-        _seed_venues(conn)
         _migrate_seed_claims(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
@@ -557,63 +564,6 @@ def _migrate_trips_ownership(conn):
         """)
         conn.execute("DROP TABLE trips_old")
 
-
-def _seed_venues(conn):
-    """Copy data/venues.json into the venues table as 'curated' rows.
-
-    Runs on every startup: new entries are inserted, entries already there
-    (matched by name) are updated. So a hand edit to the seed file reaches an
-    existing database instead of only ever landing on a fresh one, which is
-    what makes venues.json the seed of record for curated venues.
-
-    A null coordinate in the seed never overwrites one already in the table, so
-    a geocoding pass (scripts/geocode_venues.py) is not undone by the next boot.
-
-    **Hours are filled, never overwritten,** for the same reason and a sharper
-    one. They have a second writer now: set_venue_default_hours, driven by
-    scripts/verify_hours.py comparing us against OpenStreetMap and a person
-    deciding. This function used to write them unconditionally on every startup,
-    so it silently reverted those decisions -- and it really happened. The
-    Vancouver Aquarium was corrected from 09:30 to 10:00 through the review
-    page, after OSM showed the app was sending families half an hour before it
-    opens, and the next boot put 09:30 back. Nobody was told.
-
-    Between a static file and a decision somebody made against outside
-    evidence, the decision wins. A curator who wants to change hours has the
-    review page, which is the path that exists and carries a citation.
-
-    Matching is scoped to curated rows. Comparing against every row instead let
-    a parent's submission of an existing name block the seed entry entirely.
-    """
-    venues = json.loads(VENUES_SEED.read_text(encoding="utf-8"))
-    # Hours join lat/lng in the fill-only group, so they are dropped from the
-    # unconditional assignments and handled with COALESCE below.
-    overwritten = tuple(f for f in SEED_FIELDS
-                        if f not in ("open_time", "close_time"))
-    assignments = ", ".join(f"{field} = ?" for field in overwritten)
-    columns = ", ".join(("name", "source", "city") + SEED_FIELDS + ("lat", "lng"))
-    placeholders = ", ".join("?" for _ in range(len(SEED_FIELDS) + 5))
-    with conn:  # single transaction for the whole batch
-        for rank, v in enumerate(venues):
-            values = (v["type"], v["setting"], v["neighbourhood"],
-                      int(v["can_eat"]), v["open"], v["close"], rank)
-            coords = (v.get("lat"), v.get("lng"))
-            existing = conn.execute(
-                "SELECT id FROM venues WHERE name = ? AND source = 'curated'",
-                (v["name"],)).fetchone()
-            if existing:
-                keep = tuple(values[i] for i, f in enumerate(SEED_FIELDS)
-                             if f not in ("open_time", "close_time"))
-                conn.execute(
-                    f"UPDATE venues SET {assignments}, "
-                    "open_time = COALESCE(open_time, ?), "
-                    "close_time = COALESCE(close_time, ?), "
-                    "lat = COALESCE(?, lat), lng = COALESCE(?, lng) WHERE id = ?",
-                    keep + (v["open"], v["close"]) + coords + (existing["id"],))
-            else:
-                conn.execute(
-                    f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
-                    (v["name"], "curated", "Vancouver") + values + coords)
 
 
 def _migrate_seed_claims(conn):

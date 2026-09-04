@@ -10,7 +10,7 @@ exist as decisions but not as rows. Replaying them is what makes the CSV a real
 record rather than a comforting one.
 
 Idempotent: a venue already in the table by name and city is left alone, the same
-rule schema._seed_venues matches on.
+rule scripts/seed_venues.py skips on.
 """
 
 import sys
