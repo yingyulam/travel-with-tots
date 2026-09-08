@@ -446,7 +446,6 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
              mock.patch.object(schema, "create_schema"), \
              mock.patch.object(schema, "_drop_dead_columns"), \
              mock.patch.object(schema, "_migrate_trips_ownership"), \
-             mock.patch.object(schema, "_migrate_seed_claims"), \
              mock.patch.object(schema, "_seed_sample_data"), \
              mock.patch.object(schema, "_seed_admin"):
             schema.init_db()

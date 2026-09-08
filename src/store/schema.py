@@ -316,7 +316,6 @@ def init_db():
         create_schema(conn)
         _drop_dead_columns(conn)
         _migrate_trips_ownership(conn)
-        _migrate_seed_claims(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
 
@@ -439,15 +438,6 @@ def _ensure_columns(conn):
             # venue nobody has assessed must read as unknown rather than as
             # either answer.
             conn.execute("ALTER TABLE venues ADD COLUMN setting TEXT")
-    if "has_washroom" not in existing:
-        with conn:
-            # For a potty-training toddler a washroom decides whether a park
-            # works at all, and a highchair decides whether eating at a stop
-            # does. Both are reported, never guessed.
-            conn.execute("ALTER TABLE venues ADD COLUMN has_washroom "
-                         "INTEGER NOT NULL DEFAULT 0")
-            conn.execute("ALTER TABLE venues ADD COLUMN has_highchair "
-                         "INTEGER NOT NULL DEFAULT 0")
     if "rejected_at" not in existing:
         with conn:
             # Rejecting a submission used to delete it. A reviewer can be wrong,
@@ -565,35 +555,6 @@ def _migrate_trips_ownership(conn):
         conn.execute("DROP TABLE trips_old")
 
 
-
-def _migrate_seed_claims(conn):
-    """Move the hand-typed amenity flags into venue_reports as claims by nobody.
-
-    Those values were typed in for a demo and never verified, yet the app has
-    been asserting them: 11 venues claimed a nursing room and 14 a family room,
-    on nobody's authority and with no way for a parent to correct them.
-
-    Recording them as reports with `reported_by = NULL` keeps today's plans
-    working while making the claim's weight visible, and a single real report
-    now supersedes one. Idempotent: skipped once any report exists.
-    """
-    if conn.execute("SELECT COUNT(*) FROM venue_reports").fetchone()[0]:
-        return
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
-    fields = [f for f in db.REPORTABLE_FIELDS if f in columns]
-    if not fields:
-        return
-    rows = conn.execute(
-        f"SELECT id, {', '.join(fields)} FROM venues").fetchall()
-    with conn:
-        for row in rows:
-            for field in fields:
-                if row[field]:
-                    conn.execute(
-                        "INSERT INTO venue_reports (venue_id, field, value, "
-                        "reported_by, note) VALUES (?, ?, 1, NULL, ?)",
-                        (row["id"], field,
-                         "Hand-typed into the seed file; never verified."))
 
 
 def _seed_sample_data(conn):
