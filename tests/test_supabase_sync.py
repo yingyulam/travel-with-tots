@@ -24,7 +24,7 @@ from contextlib import closing
 from unittest import mock
 
 import src.store.db as db
-from src.store import schema
+from src.store import backend, schema
 from src.store import supabase_sync as sync
 
 
@@ -198,7 +198,7 @@ class WhenSupabaseIsNotReadyTest(_SyncTest):
                     "{'message': \"Could not find the table 'public.%s' in the "
                     "schema cache\", 'code': 'PGRST205'}" % name)
 
-        with self.assertRaises(sync.SyncError) as caught:
+        with self.assertRaises(backend.SyncError) as caught:
             sync.clone(NoTables())
         self.assertIn("parents", str(caught.exception))
         self.assertIn("SQL editor", str(caught.exception))
@@ -221,7 +221,7 @@ class WhenSupabaseIsNotReadyTest(_SyncTest):
                 table.execute = execute
                 return table
 
-        with self.assertRaises(sync.SyncError) as caught:
+        with self.assertRaises(backend.SyncError) as caught:
             sync.clone(Locked())
         message = str(caught.exception)
         self.assertIn("parents", message)
@@ -233,11 +233,11 @@ class WhenSupabaseIsNotReadyTest(_SyncTest):
         # environment being emptied: credentials() re-reads that file on every
         # call, so the developer's own keys would otherwise satisfy this.
         missing = pathlib.Path(self._tmp.name) / "no.env"
-        with mock.patch.object(sync, "_ENV_PATH", missing), \
+        with mock.patch.object(backend, "_ENV_PATH", missing), \
              mock.patch.dict(os.environ, {"SUPABASE_URL": "",
                                           "SUPABASE_API_KEY": ""}):
-            with self.assertRaises(sync.SyncError) as caught:
-                sync.credentials()
+            with self.assertRaises(backend.SyncError) as caught:
+                backend.credentials()
         self.assertIn(".env", str(caught.exception))
 
     def test_a_key_swapped_while_running_is_picked_up(self):
@@ -247,11 +247,11 @@ class WhenSupabaseIsNotReadyTest(_SyncTest):
         env = pathlib.Path(self._tmp.name) / ".env"
         env.write_text("SUPABASE_URL=https://one.example\n"
                        "SUPABASE_API_KEY=sb_publishable_first\n")
-        with mock.patch.object(sync, "_ENV_PATH", env):
-            self.assertEqual(sync.credentials()[1], "sb_publishable_first")
+        with mock.patch.object(backend, "_ENV_PATH", env):
+            self.assertEqual(backend.credentials()[1], "sb_publishable_first")
             env.write_text("SUPABASE_URL=https://one.example\n"
                            "SUPABASE_API_KEY=sb_secret_second\n")
-            self.assertEqual(sync.credentials()[1], "sb_secret_second")
+            self.assertEqual(backend.credentials()[1], "sb_secret_second")
 
     def test_an_unrelated_failure_is_not_disguised_as_a_missing_table(self):
         class Broken(FakeSupabase):
@@ -268,26 +268,26 @@ class TheSelectedSourceTest(_SyncTest):
         # DB_PATH is patched to a temp string above, so the setting file is
         # pointed at the same directory rather than the real data/.
         self._source = pathlib.Path(self._tmp.name) / "data_source.json"
-        patcher = mock.patch.object(sync, "SOURCE_PATH", self._source)
+        patcher = mock.patch.object(backend, "SOURCE_PATH", self._source)
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_it_defaults_to_local(self):
-        self.assertEqual(sync.active_source(), sync.LOCAL)
+        self.assertEqual(backend.active_source(), backend.LOCAL)
 
     def test_a_choice_survives(self):
-        sync.set_active_source(sync.SUPABASE)
-        self.assertEqual(sync.active_source(), sync.SUPABASE)
+        backend.set_active_source(backend.SUPABASE)
+        self.assertEqual(backend.active_source(), backend.SUPABASE)
 
     def test_an_unknown_value_falls_back_to_local(self):
         # The switch decides which database serves pages. Anything unrecognised
         # has to mean the one that is known to work.
-        sync.set_active_source("mysql")
-        self.assertEqual(sync.active_source(), sync.LOCAL)
+        backend.set_active_source("mysql")
+        self.assertEqual(backend.active_source(), backend.LOCAL)
 
     def test_an_unreadable_file_falls_back_to_local(self):
         self._source.write_text("not json")
-        self.assertEqual(sync.active_source(), sync.LOCAL)
+        self.assertEqual(backend.active_source(), backend.LOCAL)
 
 
 if __name__ == "__main__":
@@ -377,7 +377,7 @@ class PullBringsProductionBackTest(_SyncTest):
 
     def test_it_refuses_to_overwrite_an_existing_backup(self):
         dest, _ = self._pull()
-        with self.assertRaises(sync.SyncError):
+        with self.assertRaises(backend.SyncError):
             sync.pull(dest=dest, client=self._client())
 
     def test_the_default_name_is_timestamped(self):

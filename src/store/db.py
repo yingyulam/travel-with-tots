@@ -17,7 +17,7 @@ from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import postgres
+from . import backend, postgres
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
@@ -113,26 +113,23 @@ def _supabase_dsn():
     test suite off the live project, "supabase" pins a deployment whose disk
     does not survive a restart.
     """
-    from . import supabase_sync          # imports db, so it cannot be top-level
-    backend = os.environ.get("DB_BACKEND", "").strip().lower()
-    if backend == supabase_sync.LOCAL:
+    pinned = os.environ.get("DB_BACKEND", "").strip().lower()
+    if pinned == backend.LOCAL:
         return None
     if Path(DB_PATH) != _DEFAULT_DB_PATH:
         return None
-    if supabase_sync.SUPABASE not in (backend, supabase_sync.active_source()):
+    if backend.SUPABASE not in (pinned, backend.active_source()):
         return None
-    return supabase_sync.db_url() or None
+    return backend.db_url() or None
 
 
 def effective_backend():
     """Which database is actually serving: "supabase" or "local".
 
-    Differs from supabase_sync.active_source(), which reads the dropdown's
-    file, whenever DB_BACKEND is set.
+    Differs from backend.active_source(), which reads the dropdown's file,
+    whenever DB_BACKEND is set.
     """
-    from . import supabase_sync
-    return (supabase_sync.SUPABASE if _supabase_dsn() is not None
-            else supabase_sync.LOCAL)
+    return backend.SUPABASE if _supabase_dsn() is not None else backend.LOCAL
 
 
 def backend_pinned_by_env():
@@ -141,9 +138,8 @@ def backend_pinned_by_env():
     What lets /settings say the dropdown has no effect, rather than showing a
     control that silently does nothing.
     """
-    from . import supabase_sync
-    backend = os.environ.get("DB_BACKEND", "").strip().lower()
-    return backend if backend in supabase_sync.SOURCES else None
+    pinned = os.environ.get("DB_BACKEND", "").strip().lower()
+    return pinned if pinned in backend.SOURCES else None
 
 
 def connect():

@@ -22,13 +22,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.store import supabase_sync
+from src.store import backend, supabase_sync
 
 
 def main():
     try:
         dest, summary = supabase_sync.pull()
-    except supabase_sync.SyncError as e:
+    except backend.SyncError as e:
         print(f"Could not back up Supabase: {e}")
         return 1
     for table, count in summary.items():

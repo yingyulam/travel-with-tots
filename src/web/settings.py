@@ -10,7 +10,7 @@ from contextlib import closing
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src.store import db, postgres, supabase_sync
+from src.store import backend, db, postgres, supabase_sync
 from src.ai import rag
 from src.ai.agents import WEBSITE_CHATBOT_PROMPT_PATH, reload_website_chatbot_prompt
 from src.form_helpers import clamp_int
@@ -28,15 +28,15 @@ def settings():
         prompt = f.read()
     return render_template(
         "settings.html", knowledge_base=knowledge_base, prompt=prompt,
-        data_source=supabase_sync.active_source(),
-        data_sources=supabase_sync.SOURCES,
+        data_source=backend.active_source(),
+        data_sources=backend.SOURCES,
         # What is actually serving, which is not always what the dropdown says:
         # the dropdown lives in a file, and a host with an ephemeral disk loses
         # it on every deploy while DB_BACKEND keeps pinning the real backend.
         effective_source=db.effective_backend(),
         pinned_backend=db.backend_pinned_by_env(),
         supabase_configured=_supabase_configured(),
-        supabase_db_url_set=bool(supabase_sync.db_url()),
+        supabase_db_url_set=bool(backend.db_url()),
         backend_error=db.LAST_BACKEND_ERROR,
         supabase_ddl=supabase_sync.postgres_ddl(),
         supabase_runtime_ddl=supabase_sync.postgres_runtime_ddl())
@@ -45,8 +45,8 @@ def settings():
 def _supabase_configured():
     """Whether both Supabase credentials are set, without revealing either."""
     try:
-        supabase_sync.credentials()
-    except supabase_sync.SyncError:
+        backend.credentials()
+    except backend.SyncError:
         return False
     return True
 
@@ -58,7 +58,7 @@ def _supabase_unreachable():
     string is a sentence on this page rather than a warning banner on every
     other one.
     """
-    url = supabase_sync.db_url()
+    url = backend.db_url()
     if not url:
         return "SUPABASE_DB_URL is not set in .env."
     try:
@@ -90,14 +90,14 @@ def save_knowledge_base():
 def save_data_source():
     """Record which backend the app should use."""
     chosen = request.form.get("source", "")
-    if chosen == supabase_sync.SUPABASE:
+    if chosen == backend.SUPABASE:
         problem = _supabase_unreachable()
         if problem:
             flash(f"Staying on the local database: Supabase could not be "
                   f"reached. {problem}")
             return redirect(url_for("settings.settings"))
-    supabase_sync.set_active_source(chosen)
-    if supabase_sync.active_source() == supabase_sync.SUPABASE:
+    backend.set_active_source(chosen)
+    if backend.active_source() == backend.SUPABASE:
         flash("Data source set to Supabase. Every page now reads and writes "
               "there. Rows written here will not appear in the local database.")
     else:
@@ -112,7 +112,7 @@ def clone_to_supabase():
     """Copy every local row into Supabase, skipping what is already there."""
     try:
         summary = supabase_sync.clone()
-    except supabase_sync.SyncError as e:
+    except backend.SyncError as e:
         flash(str(e))
         return redirect(url_for("settings.settings"))
     except Exception as e:                                      # noqa: BLE001
