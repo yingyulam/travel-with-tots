@@ -320,9 +320,8 @@ def delete_trip(trip_id, parent_id):
 # so an unknown keyword fails loudly rather than being dropped, the same
 # discipline update_venue uses.
 ADD_VENUE_FIELDS = ("type", "setting", "neighbourhood", "city", "notes",
-                    "hours_note",
-                    "address", "open_time", "close_time", "min_age_months",
-                    "max_age_months", "lat", "lng", "parent_id", "source_url",
+                    "hours_note", "address", "open_time", "close_time",
+                    "lat", "lng", "parent_id", "source_url",
                     "external_id", "verified_at", "verified_by")
 
 

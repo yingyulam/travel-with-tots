@@ -542,29 +542,6 @@ class TheColumnsAreRegisteredEverywhereTest(unittest.TestCase):
         self.assertIn(("trips", "trip_group_id"), registered)
         self.assertIn(("trips", "day_index"), registered)
 
-    def test_an_existing_sqlite_database_is_migrated(self):
-        # A database exactly like the live one before this change: everything
-        # else in place, these two columns absent.
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "old.db")
-            with mock.patch.object(db, "DB_PATH", path):
-                with closing(db.connect_sqlite()) as conn:
-                    schema.create_schema(conn)
-                    with conn:
-                        conn.execute("ALTER TABLE trips DROP COLUMN trip_group_id")
-                        conn.execute("ALTER TABLE trips DROP COLUMN day_index")
-                    before = {r["name"] for r in
-                              conn.execute("PRAGMA table_info(trips)")}
-                    schema._ensure_columns(conn)
-                    after = {r["name"] for r in
-                             conn.execute("PRAGMA table_info(trips)")}
-        # Both halves: the fixture really was missing them, and the migration
-        # really put them back. Without the first, this passes on a database
-        # that never lost them.
-        self.assertNotIn("trip_group_id", before)
-        self.assertIn("trip_group_id", after)
-        self.assertIn("day_index", after)
-
 
 if __name__ == "__main__":
     unittest.main()

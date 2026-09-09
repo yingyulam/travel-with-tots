@@ -111,9 +111,11 @@ CREATE TABLE IF NOT EXISTS venues (
     verified_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
     rejected_at         TEXT,                   -- set instead of deleting: see reject_submission
     rejected_by         INTEGER REFERENCES parents(id) ON DELETE SET NULL,
-    seed_rank           INTEGER                 -- the curator's ordering, set only by
+    seed_rank           INTEGER,                -- the curator's ordering, set only by
                                                 -- scripts/seed_venues.py. NULL for rows
                                                 -- that arrived through review
+    hours_note          TEXT                    -- what a single open/close pair cannot
+                                                -- hold: "Closed Mondays September to May"
 );
 
 -- A comparison between our stored hours and an outside source, and what a
@@ -180,9 +182,7 @@ CREATE TABLE IF NOT EXISTS venue_reports (
 """
 
 
-# Indexes, kept apart from SCHEMA because they must be created after
-# _ensure_columns: on a database that predates a column, an index naming it
-# cannot be created until the ALTER TABLE has run. See create_schema.
+# Indexes, kept apart from SCHEMA so they are always created after the tables.
 INDEXES = """-- Two curated copies of one place is the duplicate the seed script skips on.
 -- Scoped to 'curated' because a curated venue and an imported one are allowed
 -- to coexist, and because user submissions may legitimately repeat a name.
@@ -215,19 +215,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_check_open
 
 
 def create_schema(conn):
-    """Bring `conn` up to the current schema.
-
-    Tables, then columns added after a table was first created, then indexes.
-    The order matters: an index naming a column can only be created once that
-    column exists. Callers use this rather than executescript(SCHEMA) so they
-    cannot get the order wrong.
-    """
-    # Before the schema runs: CREATE TABLE IF NOT EXISTS would skip the new
-    # venue_hours while the old one still holds the name, and dropping after
-    # would then leave no table at all.
-    _drop_stale_venue_hours(conn)
+    """Create the tables and then the indexes, in that order."""
     conn.executescript(SCHEMA)
-    _ensure_columns(conn)
     conn.executescript(INDEXES)
 
 
@@ -291,213 +280,12 @@ def init_db():
         return
     with closing(db.connect_sqlite()) as conn:
         create_schema(conn)
-        _drop_dead_columns(conn)
-        _migrate_trips_ownership(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
 
 
-def _drop_stale_venue_hours(conn):
-    """Remove the old (season, day_type) hours table so the per-weekday one can
-    take its name.
-
-    Matched on the table's shape rather than its name, so this cannot drop the
-    current one.
-    """
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(venue_hours)")}
-    if "season" in columns:
-        with conn:
-            conn.execute("DROP TABLE venue_hours")
 
 
-def _ensure_columns(conn):
-    """Add columns introduced after a table was first created -- SQLite has no
-    'ADD COLUMN IF NOT EXISTS', so existing databases need a manual patch."""
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trips)")}
-    if "plan_json" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN plan_json TEXT")
-    if "feeding_1" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN feeding_1 TEXT")
-            conn.execute("ALTER TABLE trips ADD COLUMN feeding_2 TEXT")
-    if "transit_nap" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN transit_nap TEXT")
-    if "preferred_lunch_time" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN preferred_lunch_time TEXT")
-    if "naps" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN naps TEXT")
-    if "accommodation_lat" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN accommodation_lat REAL")
-            conn.execute("ALTER TABLE trips ADD COLUMN accommodation_lng REAL")
-    if "trip_group_id" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips ADD COLUMN trip_group_id TEXT")
-            conn.execute("ALTER TABLE trips ADD COLUMN day_index INTEGER")
-    if "pace" in existing and "stop_count" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE trips RENAME COLUMN pace TO stop_count")
-
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(parents)")}
-    if "is_admin" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE parents ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
-
-    # `existing` is empty on a database old enough to predate the table itself,
-    # where CREATE TABLE has not run yet and there is nothing to alter.
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(venue_reports)")}
-    if existing and "status" not in existing:
-        with conn:
-            # Existing rows are live today and stay live: this gates what
-            # happens from here, rather than retroactively withdrawing what
-            # parents have already contributed.
-            conn.execute("ALTER TABLE venue_reports ADD COLUMN status TEXT "
-                         "NOT NULL DEFAULT 'approved'")
-            conn.execute("ALTER TABLE venue_reports ADD COLUMN decided_at TEXT")
-            conn.execute("ALTER TABLE venue_reports ADD COLUMN decided_by INTEGER "
-                         "REFERENCES parents(id) ON DELETE SET NULL")
-
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
-    if "city" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE venues ADD COLUMN city TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN can_eat INTEGER NOT NULL DEFAULT 0")
-            conn.execute("ALTER TABLE venues ADD COLUMN open_time TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN close_time TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN min_age_months INTEGER NOT NULL DEFAULT 0")
-            conn.execute("ALTER TABLE venues ADD COLUMN max_age_months INTEGER NOT NULL DEFAULT 60")
-    if "lat" not in existing:
-        with conn:
-            conn.execute("ALTER TABLE venues ADD COLUMN lat REAL")
-            conn.execute("ALTER TABLE venues ADD COLUMN lng REAL")
-    if "notes" not in existing:
-        with conn:
-            # What a parent says in their own words, and the address the
-            # geocoder resolved. Both are for the admin deciding whether the
-            # submission is real.
-            conn.execute("ALTER TABLE venues ADD COLUMN notes TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN address TEXT")
-    if "source_url" not in existing:
-        with conn:
-            # Provenance: where a venue came from and who checked it. All
-            # nullable, and verified_by has to be, since SQLite only allows
-            # ADD COLUMN with a REFERENCES clause when the default is NULL.
-            conn.execute("ALTER TABLE venues ADD COLUMN source_url TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN external_id TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN verified_at TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN verified_by INTEGER "
-                         "REFERENCES parents(id) ON DELETE SET NULL")
-            conn.execute("ALTER TABLE venues ADD COLUMN seed_rank INTEGER")
-    if "hours_note" not in existing:
-        with conn:
-            # What a single open/close pair cannot hold, in words a parent
-            # reads: "Closed Mondays September to May".
-            conn.execute("ALTER TABLE venues ADD COLUMN hours_note TEXT")
-    if "setting" not in existing:
-        with conn:
-            # Where a visit is spent, which `type` cannot carry. Nullable, so
-            # a venue nobody has assessed reads as unknown rather than as
-            # either answer.
-            conn.execute("ALTER TABLE venues ADD COLUMN setting TEXT")
-    if "rejected_at" not in existing:
-        with conn:
-            # Rejecting a submission used to delete it. A reviewer can be wrong,
-            # and a deleted row takes its parent's own words and every report
-            # about it with it, so a rejection is recorded instead.
-            conn.execute("ALTER TABLE venues ADD COLUMN rejected_at TEXT")
-            conn.execute("ALTER TABLE venues ADD COLUMN rejected_by INTEGER "
-                         "REFERENCES parents(id) ON DELETE SET NULL")
-
-
-def _drop_dead_columns(conn):
-    """Remove columns nothing reads, listed below.
-
-    Guarded per column and idempotent, like the additions in _ensure_columns.
-    Needs SQLite 3.35+ for DROP COLUMN.
-    """
-    for table, column in (
-            ("venues", "category"),
-            ("venues", "kid_friendly"),
-            ("venues", "nap_friendly"),
-            ("venues", "min_age_months"),
-            ("venues", "max_age_months"),
-            # Amenities live in venue_reports, the only place a claim can carry
-            # an author and a date. As INTEGER NOT NULL DEFAULT 0 these columns
-            # could not express "nobody has said".
-            ("venues", "has_washroom"),
-            ("venues", "has_family_room"),
-            ("venues", "has_nursing_room"),
-            ("venues", "stroller_accessible"),
-            ("venues", "has_highchair"),
-            ("children", "gender"),
-            ("trips", "nap_1"), ("trips", "nap_2"),
-            ("trips", "feeding_1"), ("trips", "feeding_2"),
-            ("trips", "features")):
-        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-        if column in existing:
-            with conn:
-                conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
-
-
-def _migrate_trips_ownership(conn):
-    """Rebuild `trips` so a saved plan belongs to the account, not the child.
-
-    child_id becomes an optional SET NULL reference and parent_id the real
-    owner, backfilled from each trip's current child. SQLite cannot ALTER a
-    column's constraints in place, hence the rebuild. Idempotent: skipped once
-    the table has parent_id.
-    """
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trips)")}
-    if "parent_id" in existing:
-        return
-    with conn:
-        conn.execute("ALTER TABLE trips RENAME TO trips_old")
-        conn.execute("""
-            CREATE TABLE trips (
-                id            INTEGER PRIMARY KEY,
-                parent_id     INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
-                child_id      INTEGER REFERENCES children(id) ON DELETE SET NULL,
-                trip_date     TEXT,
-                wake_up       TEXT,
-                bedtime       TEXT,
-                nap_1         TEXT,
-                nap_2         TEXT,
-                naps          TEXT,
-                transit_nap   TEXT,
-                feeding_1     TEXT,
-                feeding_2     TEXT,
-                destination   TEXT,
-                accommodation TEXT,
-                transit       TEXT,
-                stop_count    TEXT,
-                dining        TEXT,
-                preferred_lunch_time TEXT,
-                nap_notes     TEXT,
-                extra_notes   TEXT,
-                plan_label    TEXT,
-                plan_json     TEXT,
-                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-        conn.execute("""
-            INSERT INTO trips (id, parent_id, child_id, trip_date, wake_up,
-                bedtime, nap_1, nap_2, naps, transit_nap, feeding_1, feeding_2,
-                destination, accommodation, transit, stop_count, dining,
-                preferred_lunch_time, nap_notes, extra_notes,
-                plan_label, plan_json, created_at)
-            SELECT t.id, c.parent_id, t.child_id, t.trip_date, t.wake_up,
-                t.bedtime, t.nap_1, t.nap_2, t.naps, t.transit_nap, t.feeding_1,
-                t.feeding_2, t.destination, t.accommodation, t.transit,
-                t.stop_count, t.dining, t.preferred_lunch_time,
-                t.nap_notes, t.extra_notes, t.plan_label, t.plan_json,
-                t.created_at
-            FROM trips_old t JOIN children c ON c.id = t.child_id
-        """)
-        conn.execute("DROP TABLE trips_old")
 
 
 def _seed_sample_data(conn):

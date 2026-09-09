@@ -159,88 +159,6 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertEqual([v["name"] for v in rows], ["Reviewed"])
 
 
-class EnsureColumnsMigrationTest(unittest.TestCase):
-    """The migration path had no coverage: every other test builds its schema
-    with create_schema, which already has every column, so
-    _ensure_columns never ran. This starts from a pre-lat/lng venues table."""
-
-    OLD_VENUES_SCHEMA = """
-    CREATE TABLE venues (
-        id                  INTEGER PRIMARY KEY,
-        name                TEXT NOT NULL,
-        type                TEXT,
-        neighbourhood       TEXT,
-        kid_friendly        INTEGER NOT NULL DEFAULT 0,
-        has_family_room     INTEGER NOT NULL DEFAULT 0,
-        has_nursing_room    INTEGER NOT NULL DEFAULT 0,
-        stroller_accessible INTEGER NOT NULL DEFAULT 0,
-        source              TEXT NOT NULL,
-        parent_id           INTEGER,
-        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-        city                TEXT,
-        category            TEXT,
-        nap_friendly        INTEGER NOT NULL DEFAULT 0,
-        can_eat             INTEGER NOT NULL DEFAULT 0,
-        open_time           TEXT,
-        close_time          TEXT,
-        min_age_months      INTEGER NOT NULL DEFAULT 0,
-        max_age_months      INTEGER NOT NULL DEFAULT 60
-    );
-    CREATE TABLE parents (id INTEGER PRIMARY KEY, email TEXT, password_hash TEXT,
-                          name TEXT, is_admin INTEGER NOT NULL DEFAULT 0,
-                          created_at TEXT);
-    CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER, name TEXT,
-                           gender TEXT, date_of_birth TEXT, created_at TEXT);
-    CREATE TABLE trips (id INTEGER PRIMARY KEY, parent_id INTEGER, child_id INTEGER,
-                        plan_json TEXT, feeding_1 TEXT, feeding_2 TEXT,
-                        transit_nap TEXT, preferred_lunch_time TEXT, naps TEXT,
-                        stop_count TEXT, created_at TEXT);
-    """
-
-    def setUp(self):
-        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        tmp.close()
-        self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
-        self.patcher.start()
-        with closing(db.connect()) as conn:
-            conn.executescript(self.OLD_VENUES_SCHEMA)
-
-    def tearDown(self):
-        self.patcher.stop()
-        os.unlink(self.db_path)
-
-    def _venue_columns(self):
-        with closing(db.connect()) as conn:
-            return {row["name"] for row in conn.execute("PRAGMA table_info(venues)")}
-
-    def test_adds_lat_lng_to_an_older_database(self):
-        self.assertNotIn("lat", self._venue_columns())
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-        columns = self._venue_columns()
-        self.assertIn("lat", columns)
-        self.assertIn("lng", columns)
-
-    def test_is_idempotent_and_preserves_existing_rows(self):
-        with closing(db.connect()) as conn, conn:
-            _insert_venue(conn, "Already Here")
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-            schema._ensure_columns(conn)  # second run must be a no-op, not an error
-        with closing(db.connect()) as conn:
-            rows = conn.execute("SELECT name, lat FROM venues").fetchall()
-        self.assertEqual([r["name"] for r in rows], ["Already Here"])
-        self.assertIsNone(rows[0]["lat"])
-
-    def test_adds_the_provenance_columns_to_an_older_database(self):
-        with closing(db.connect()) as conn:
-            schema._ensure_columns(conn)
-        columns = self._venue_columns()
-        for column in ("source_url", "external_id", "verified_at",
-                       "verified_by", "seed_rank"):
-            self.assertIn(column, columns)
-
 
 class VenueIdentityTest(unittest.TestCase):
     """The venue uniqueness rules, against a current schema where the indexes
@@ -305,6 +223,45 @@ class VenueIdentityTest(unittest.TestCase):
         self.assertEqual(row["external_id"], "vanopendata:parks/1")
         self.assertEqual(row["verified_at"], "2026-08-27")
         self.assertIsNone(row["verified_by"])
+
+
+class SchemaCoversEveryWrittenColumnTest(unittest.TestCase):
+    """A fresh database must have every column the write helpers name.
+
+    SCHEMA is now the only definition, so a column named in one of these lists
+    but missing from it fails at runtime with a bare "no such column". This is
+    the check that catches it at build time instead.
+    """
+
+    def setUp(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        self.db_path = tmp.name
+        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(os.unlink, self.db_path)
+        with closing(db.connect()) as conn:
+            schema.create_schema(conn)
+
+    def _columns(self, table):
+        with closing(db.connect()) as conn:
+            return {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+    def test_venues_has_every_column_add_venue_writes(self):
+        missing = set(db.ADD_VENUE_FIELDS) - self._columns("venues")
+        self.assertEqual(missing, set())
+
+    def test_venues_has_every_column_a_reviewer_or_importer_writes(self):
+        columns = self._columns("venues")
+        for name in ("REVIEWABLE_VENUE_FIELDS", "EDITABLE_VENUE_FIELDS",
+                     "SUBMISSION_FIELDS", "IMPORT_FIELDS"):
+            with self.subTest(fields=name):
+                self.assertEqual(set(getattr(db, name)) - columns, set())
+
+    def test_trips_has_every_column_add_trip_writes(self):
+        missing = set(db.TRIP_FIELDS) - self._columns("trips")
+        self.assertEqual(missing, set())
 
 
 if __name__ == "__main__":

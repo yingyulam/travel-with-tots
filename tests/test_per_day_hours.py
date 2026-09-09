@@ -268,23 +268,6 @@ class ThePlannerSeesTheWeekTest(_HoursTest):
         self.assertFalse(venue_open_for(monday, 12 * 60, 60))
 
 
-class TheOldSlotTableIsGoneTest(unittest.TestCase):
-    def test_a_database_holding_the_season_table_is_migrated(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "app.db")
-            with mock.patch.object(db, "DB_PATH", path):
-                with closing(db.connect()) as conn:
-                    conn.execute("""CREATE TABLE venue_hours (
-                        id INTEGER PRIMARY KEY, venue_id INTEGER,
-                        season TEXT, day_type TEXT,
-                        open_time TEXT, close_time TEXT)""")
-                    conn.commit()
-                    schema.create_schema(conn)
-                    columns = {r["name"] for r in
-                               conn.execute("PRAGMA table_info(venue_hours)")}
-        self.assertIn("weekday", columns)
-        self.assertNotIn("season", columns)
-
 
 if __name__ == "__main__":
     unittest.main()
