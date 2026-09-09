@@ -1,28 +1,19 @@
 """The shape of the database, and getting an existing one into that shape.
 
-Everything here runs once, at startup, driven by `init_db`. Nothing in it
-answers a request, which is why it is not in db.py: that module is imported by
-23 files to run queries, and none of them need the 500 lines below.
+Everything here runs once at startup, driven by `init_db`. Nothing answers a
+request, which is why it is separate from db.py.
 
-**Startup creates tables and never venues.** Curated venues used to be upserted
-from data/venues.json on every boot, which meant a restart silently reverted an
-admin's correction: confirm a venue on /venues/review, edit its neighbourhood,
-and the next boot wrote the file's value back. Hours and coordinates had already
-been made fill-only for exactly that reason after it happened to the Aquarium's
-opening time; the descriptive fields never were. The venues table is the source
-of truth, so nothing here writes to it, and the seed file is bootstrap material
-run by hand from scripts/seed_venues.py.
+**Startup creates tables and never venues.** The venues table is the source of
+truth and rows arrive through review, so nothing here writes to it. Bootstrap a
+fresh database with scripts/seed_venues.py.
 
-Migrations are the bulk of it, and they are write-once, delete-never. A column
-added to SCHEMA is free for a database created afterwards and needs a patch for
-every database created before, so each `_ensure_*` and `_migrate_*` check stays
-here permanently while doing nothing on any boot after the first. See
-`_migrate_trips_ownership` for the shape of a real one: deleting a child used
-to destroy their saved trips, and the fix had to repair existing databases as
-well as define the new ones correctly.
+Migrations are write-once and delete-never: a column added to SCHEMA is free
+for a database created afterwards and needs a patch for every database created
+before. So each `_ensure_*` and `_migrate_*` check stays permanently and does
+nothing on any boot after the first.
 
-SQL still lives in exactly two modules, this one and db.py, and the dependency
-runs one way: schema imports db for its connections, never the reverse.
+The dependency runs one way: schema imports db for its connections, never the
+reverse.
 """
 
 import json
@@ -224,13 +215,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_hours_check_open
 
 
 def create_schema(conn):
-    """Bring `conn` up to the current schema: tables, then columns added after
-    a table was first created, then indexes.
+    """Bring `conn` up to the current schema.
 
-    The order is the point. An index that names a column can only be created
-    once that column exists, and on a database predating the column that is
-    _ensure_columns' job. Callers use this rather than executescript(SCHEMA)
-    so they cannot get the order wrong.
+    Tables, then columns added after a table was first created, then indexes.
+    The order matters: an index naming a column can only be created once that
+    column exists. Callers use this rather than executescript(SCHEMA) so they
+    cannot get the order wrong.
     """
     # Before the schema runs: CREATE TABLE IF NOT EXISTS would skip the new
     # venue_hours while the old one still holds the name, and dropping after
@@ -241,18 +231,12 @@ def create_schema(conn):
     conn.executescript(INDEXES)
 
 
-# Columns added to a table after Supabase's copy of it was already created.
+# Columns added to a table after Supabase's copy of it was created.
 #
-# postgres_ddl only emits CREATE TABLE IF NOT EXISTS, which does nothing to a
-# table that exists, so a column added to SCHEMA reached SQLite and never
-# reached Supabase. That is not a theoretical gap: adding venue_reports.status
-# took the deployed planner, the nearby search, the trip page and the review
-# page down at once, because reported_flags selects on it and get_venues calls
-# reported_flags for every plan.
-#
-# Postgres has ADD COLUMN IF NOT EXISTS, so this is idempotent and costs
-# nothing to run at every boot. Add a line here with the column, and a deploy
-# applies it.
+# postgres_ddl only emits CREATE TABLE IF NOT EXISTS, which does nothing to an
+# existing table, so a column added to SCHEMA reaches SQLite and not Supabase.
+# Add a line here and a deploy applies it. Idempotent, so it costs nothing to
+# run at every boot.
 POSTGRES_ADDED_COLUMNS = (
     ("trips", "trip_group_id", "TEXT"),
     ("trips", "day_index", "INTEGER"),
@@ -267,12 +251,10 @@ def _ensure_postgres_columns():
 
     Connects to Postgres directly rather than through connect(), which falls
     back to SQLite when Supabase is unreachable: ADD COLUMN IF NOT EXISTS is
-    Postgres syntax that SQLite does not have, so the fallback would run the
-    wrong dialect against the local file. Unreachable means there is nothing to
-    migrate here anyway.
+    Postgres syntax, so the fallback would run the wrong dialect against the
+    local file.
 
-    Never raises. A boot that cannot reach the database has bigger problems than
-    this, and failing here would take every page down rather than the one
+    Never raises. Failing here would take every page down rather than the one
     feature the column serves.
     """
     dsn = db._supabase_dsn()
@@ -297,17 +279,12 @@ def _ensure_postgres_columns():
 def init_db():
     """Create the tables if they don't exist, and seed the demo account once.
 
-    **No venues.** Venues arrive through review (municipal import, an agent's
-    proposal, or a parent's submission) and the table is the source of truth, so
-    a boot that wrote to it could only overwrite somebody's decision. Bootstrap
-    a fresh database with scripts/seed_venues.py, which inserts and never
-    updates.
+    Creates no venues: those arrive through review, and the table is the source
+    of truth. Bootstrap a fresh database with scripts/seed_venues.py.
 
-    On Supabase the tables were created by the SQL on /settings, and the
-    SQLite migration machinery below cannot run there: it is PRAGMA table_info
-    and ALTER TABLE the whole way down. What does run there is
-    _ensure_postgres_columns, which adds any column added to SCHEMA since that
-    copy was made.
+    On Supabase the tables were created by the SQL on /settings and the SQLite
+    migration machinery cannot run there, so only _ensure_postgres_columns
+    does.
     """
     if db._supabase_dsn() is not None:
         _ensure_postgres_columns()
@@ -321,12 +298,11 @@ def init_db():
 
 
 def _drop_stale_venue_hours(conn):
-    """Remove the (season, day_type) hours table so the per-weekday one can
+    """Remove the old (season, day_type) hours table so the per-weekday one can
     take its name.
 
-    That table was created, never written to by anything, and left behind when
-    the slot model was dropped. It carries no rows to lose, and the check is on
-    its shape rather than its name so this cannot eat the new one.
+    Matched on the table's shape rather than its name, so this cannot drop the
+    current one.
     """
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(venue_hours)")}
     if "season" in columns:
@@ -400,19 +376,15 @@ def _ensure_columns(conn):
             conn.execute("ALTER TABLE venues ADD COLUMN lng REAL")
     if "notes" not in existing:
         with conn:
-            # What a parent says about a place in their own words, and the
-            # address the geocoder resolved. Both are for the admin who has to
-            # decide whether the submission is real: the address was previously
-            # computed and then dropped for want of anywhere to put it.
+            # What a parent says in their own words, and the address the
+            # geocoder resolved. Both are for the admin deciding whether the
+            # submission is real.
             conn.execute("ALTER TABLE venues ADD COLUMN notes TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN address TEXT")
     if "source_url" not in existing:
         with conn:
-            # Provenance, so a venue can cite where it came from and who checked
-            # it. Nothing writes these yet: the admin review page and the
-            # importers that will are still to come. Every one is nullable
-            # because the seeded rows have no answer for any of them, and
-            # verified_by additionally has to be, since SQLite only allows
+            # Provenance: where a venue came from and who checked it. All
+            # nullable, and verified_by has to be, since SQLite only allows
             # ADD COLUMN with a REFERENCES clause when the default is NULL.
             conn.execute("ALTER TABLE venues ADD COLUMN source_url TEXT")
             conn.execute("ALTER TABLE venues ADD COLUMN external_id TEXT")
@@ -423,19 +395,12 @@ def _ensure_columns(conn):
     if "hours_note" not in existing:
         with conn:
             # What a single open/close pair cannot hold, in words a parent
-            # reads: "Closed Mondays September to May". This replaced a
-            # venue_hours table keyed on (season, day_type) that never held a
-            # row and could not express a closed weekday anyway. The candidate
-            # store has carried the same field for a while, filled with the raw
-            # OpenStreetMap string and the entry it matched; approval used to
-            # throw it away for want of anywhere to put it.
+            # reads: "Closed Mondays September to May".
             conn.execute("ALTER TABLE venues ADD COLUMN hours_note TEXT")
     if "setting" not in existing:
         with conn:
-            # Where a visit is spent. The one fact `type` provably cannot
-            # carry: `attraction` is a legitimate residual and its eight
-            # venues split four indoor, four outdoor. Nullable, because a
-            # venue nobody has assessed must read as unknown rather than as
+            # Where a visit is spent, which `type` cannot carry. Nullable, so
+            # a venue nobody has assessed reads as unknown rather than as
             # either answer.
             conn.execute("ALTER TABLE venues ADD COLUMN setting TEXT")
     if "rejected_at" not in existing:
@@ -449,27 +414,10 @@ def _ensure_columns(conn):
 
 
 def _drop_dead_columns(conn):
-    """Remove columns that ask a question the data cannot answer.
+    """Remove columns nothing reads, listed below.
 
-    - `venues.category` was 'food' or 'activity'. The table holds attractions
-      only, so it is a tautology; `can_eat` marks the ones with food, which is
-      all the planner ever read it for.
-    - `venues.kid_friendly` was true on 37 of 38 rows. It is the criterion for
-      being in this table at all, not an attribute of a venue, so it is enforced
-      where venues enter instead.
-    - `venues.nap_friendly` is derived from `type` now
-      (data_loader.is_nap_friendly), because all but one of the rows that had it
-      were a park or a mall.
-    - `venues.min_age_months`/`max_age_months` were 0 and 60 on every row ever
-      written, so the age clause never excluded anything. Age paces the day.
-    - `children.gender` was collected, stored, and read back only by the form
-      that collected it. Personal data about a child that changes no output.
-    - `trips.nap_1`/`nap_2`/`feeding_1`/`feeding_2` were kept "for old saved
-      trips"; no trip ever carried a value in one. `trips.features` has nothing
-      left to filter.
-
-    Guarded per column and idempotent, like the additions above. Needs SQLite
-    3.35+ for DROP COLUMN.
+    Guarded per column and idempotent, like the additions in _ensure_columns.
+    Needs SQLite 3.35+ for DROP COLUMN.
     """
     for table, column in (
             ("venues", "category"),
@@ -477,12 +425,9 @@ def _drop_dead_columns(conn):
             ("venues", "nap_friendly"),
             ("venues", "min_age_months"),
             ("venues", "max_age_months"),
-            # Amenities live in venue_reports, which is the only place a claim
-            # can carry an author and a date. These columns were the base layer
-            # underneath the reports, and being INTEGER NOT NULL DEFAULT 0 they
-            # could not express "nobody has said" -- so every venue asserted the
-            # absence of every amenity nobody had looked at. Every value they
-            # held was already duplicated as a report before this ran.
+            # Amenities live in venue_reports, the only place a claim can carry
+            # an author and a date. As INTEGER NOT NULL DEFAULT 0 these columns
+            # could not express "nobody has said".
             ("venues", "has_washroom"),
             ("venues", "has_family_room"),
             ("venues", "has_nursing_room"),
@@ -499,13 +444,13 @@ def _drop_dead_columns(conn):
 
 
 def _migrate_trips_ownership(conn):
-    """Older databases have trips.child_id as NOT NULL with ON DELETE CASCADE,
-    so a saved plan is really owned by the child, not the account -- deleting
-    a child silently destroys their trips too. SQLite can't ALTER a column's
-    constraints in place, so this rebuilds the table with parent_id as the
-    real owner and child_id as an optional, SET-NULL reference, backfilling
-    parent_id from each trip's current child. Idempotent: skipped once the
-    table already has parent_id."""
+    """Rebuild `trips` so a saved plan belongs to the account, not the child.
+
+    child_id becomes an optional SET NULL reference and parent_id the real
+    owner, backfilled from each trip's current child. SQLite cannot ALTER a
+    column's constraints in place, hence the rebuild. Idempotent: skipped once
+    the table has parent_id.
+    """
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(trips)")}
     if "parent_id" in existing:
         return
@@ -555,8 +500,6 @@ def _migrate_trips_ownership(conn):
         conn.execute("DROP TABLE trips_old")
 
 
-
-
 def _seed_sample_data(conn):
     """Insert one demo parent -> child -> trip when there are no parents yet, so
     the tables have something to browse. Idempotent: skipped once data exists."""
@@ -588,17 +531,12 @@ DEFAULT_ADMIN_EMAIL = "admin@travelwithtots.app"
 def _seed_admin(conn):
     """Create the first admin account, from ADMIN_PASSWORD in the environment.
 
-    The password used to be the literal "admin1234", which is the same mistake
-    SECRET_KEY used to make and for the same reason: a default that works is one
-    an attacker also has, and this one is published in the repository next to
-    the app it opens. It grants /settings, which can change the data source and
-    rewrite the chatbot's prompt, and every component page that spends API
-    budget.
+    No fallback password: without ADMIN_PASSWORD there is simply no admin, and
+    the printed message says how to make one. An admin grants /settings, which
+    can change the data source and rewrite the chatbot's prompt.
 
-    No fallback, so a deployment cannot come up with an account somebody else
-    knows the password to. Without ADMIN_PASSWORD there is simply no admin, and
-    the message below says how to make one. Idempotent: skipped once any admin
-    exists, so setting the variable does not reset a password already chosen.
+    Idempotent: skipped once any admin exists, so setting the variable does not
+    reset a password already chosen.
     """
     if conn.execute("SELECT COUNT(*) FROM parents WHERE is_admin = 1").fetchone()[0]:
         return
@@ -613,5 +551,3 @@ def _seed_admin(conn):
             "INSERT INTO parents (email, password_hash, name, is_admin) "
             "VALUES (?, ?, ?, 1)", (email, generate_password_hash(password), "Admin"))
     print(f"Created the admin account {email}")
-
-
