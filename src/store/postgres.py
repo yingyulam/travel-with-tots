@@ -128,7 +128,6 @@ class Connection:
     writes `with closing(connect()) as conn, conn:`, so closing here would close
     the connection twice and, worse, before `closing` had finished with it.
     """
-
     def __init__(self, connection):
         self._connection = connection
 
@@ -167,9 +166,8 @@ _PASSWORD = re.compile(r"(://[^:/@\s]+:)[^@/\s]+(@)")
 def redact(text):
     """A message with any connection-string password replaced.
 
-    Applied to every error that reaches a page or a log. psycopg usually reports
-    host and user without the password, but a malformed connection string can
-    come back quoted whole, and /settings is not the place to find that out.
+    Applied to every error that reaches a page or a log, because a malformed
+    connection string can come back quoted whole.
     """
     return _PASSWORD.sub(r"\1***\2", str(text))
 
@@ -184,8 +182,8 @@ def connect(dsn):
     """Open a Postgres connection returning rows as dicts.
 
     `dict_row` rather than psycopg's default tuples: a dict is a superset of
-    `sqlite3.Row`, so the 12 functions that hand rows straight to callers keep
-    working and gain `.get()`.
+    `sqlite3.Row`, so functions that hand rows straight to callers keep working
+    and gain `.get()`.
 
     `prepare_threshold=None` disables server-side prepared statements. Harmless
     on a direct connection, and required on Supabase's transaction pooler, where

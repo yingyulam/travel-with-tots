@@ -1,9 +1,10 @@
-"""Persisted thumbs-up/down feedback on chatbot responses, AI-generated
-plans, and AI replans, discriminated by "kind" ("chatbot", "plan", or
-"replan"). Records written before this discriminator existed have no "kind"
-key and are treated as "chatbot". "plan"/"replan" store their raw
-question/response as JSON; get_results() also attaches a human-readable
-question_display/response_display for display."""
+"""Thumbs-up/down feedback on chatbot answers, plans and replans, in
+data/results.json.
+
+`kind` is "chatbot", "plan" or "replan"; a record without one reads as
+"chatbot". "plan" and "replan" store their question and response as JSON, and
+get_results() attaches readable question_display/response_display alongside.
+"""
 
 import json
 import threading
@@ -113,11 +114,12 @@ def _format_replan_question(req: dict) -> str:
 
 
 def _humanize(kind: str, question: str, response: str) -> tuple[str, str]:
-    """Best-effort human-readable versions of a record's raw question/
-    response -- plain text already for "chatbot", JSON-encoded payloads for
-    "plan"/"replan". Falls back to the raw text if parsing or the expected
-    shape doesn't hold, so a malformed or pre-existing record never breaks
-    the Results page."""
+    """Readable versions of a record's raw question and response.
+
+    Plain text already for "chatbot", JSON payloads for "plan" and "replan".
+    Falls back to the raw text when parsing or the expected shape does not
+    hold, so one malformed record cannot break the Results page.
+    """
     if kind not in ("plan", "replan"):
         return question, response
     try:

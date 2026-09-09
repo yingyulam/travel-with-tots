@@ -57,12 +57,8 @@ _NOW = "to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')"
 
 # Which backend the app is set to use. A file rather than an env var so the
 # dropdown can change it without a restart, and beside the other generated
-# state in data/.
-#
-# Wrapped in Path() because this runs at import, and `db.connect()` imports this
-# module lazily -- so it can now run at any moment, including while a test has
-# `db.DB_PATH` patched to a plain string. It used to work only because something
-# else had already imported this module first, which is not a guarantee.
+# state in data/. Wrapped in Path() because this runs at import while
+# db.DB_PATH may be a plain string, since db.connect() imports this lazily.
 SOURCE_PATH = Path(db.DB_PATH).parent / "data_source.json"
 LOCAL, SUPABASE = "local", "supabase"
 SOURCES = (LOCAL, SUPABASE)
@@ -71,9 +67,8 @@ SOURCES = (LOCAL, SUPABASE)
 def active_source():
     """The selected backend, defaulting to local.
 
-    Read on every call rather than cached: this is the one switch a future
-    Supabase read path would hook into, and a stale value would mean the app
-    served from a database the admin had already switched away from.
+    Read on every call rather than cached, so the app never serves from a
+    database the admin has already switched away from.
     """
     try:
         chosen = json.loads(SOURCE_PATH.read_text()).get("source")
@@ -96,15 +91,13 @@ class SyncError(Exception):
 def _setting(name):
     """One value from .env, re-read on every call.
 
-    The re-read is the point rather than a detail: `load_dotenv` fills
-    os.environ once at import, so a value pasted into .env while the server is
-    running would not be seen until a restart. Swapping the key is exactly what
-    an admin does here, having been told by the previous error to swap it, and
-    being told to restart as well would be a poor answer.
+    `load_dotenv` fills os.environ once at import, so a value pasted into .env
+    while the server runs would not be seen until a restart. Swapping a key is
+    exactly what an admin does here.
 
-    `override=True` so the new value wins over the stale one already in
-    os.environ. A real environment variable set outside .env still wins when
-    there is no .env entry, which is the deployment case.
+    `override=True` so the new value wins over the stale one in os.environ. A
+    real environment variable still wins when there is no .env entry, which is
+    the deployment case.
     """
     if _ENV_PATH.exists():
         load_dotenv(_ENV_PATH, override=True)
@@ -162,13 +155,13 @@ def _column_ddl(name, sql_type, notnull, default):
 def postgres_ddl(tables=TABLES):
     """CREATE TABLE statements for Supabase's SQL editor.
 
-    Generated from the live SQLite schema rather than written out by hand, so a
-    column added to `schema.SCHEMA` cannot be forgotten here. `IF NOT EXISTS`
-    throughout, so running it twice is safe.
+    Generated from the live SQLite schema, so a column added to `schema.SCHEMA`
+    cannot be forgotten here. `IF NOT EXISTS` throughout, so running it twice
+    is safe.
 
-    Foreign keys are deliberately omitted. They would enforce the copy order
-    this module already follows, and a half-finished copy that a reviewer wants
-    to retry is more useful than one that fails on a missing parent row.
+    Foreign keys are omitted: they would enforce the copy order this module
+    already follows, and a half-finished copy worth retrying beats one that
+    fails on a missing parent row. See postgres_runtime_ddl.
     """
     with closing(db.connect_sqlite()) as conn:
         out = []
@@ -195,14 +188,14 @@ def _foreign_keys(conn, table):
 def _identity_ddl(table):
     """Give `table.id` a sequence, and set it past the highest cloned id.
 
-    postgres_ddl() emits `id bigint` with no default on purpose, so the copy can
-    carry SQLite's ids and every venue_id and parent_id still points at the same
-    row. Serving needs the opposite: every INSERT in db.py omits `id`, so
-    without a sequence the first registration fails on a not-null violation.
+    postgres_ddl() emits `id bigint` with no default so the copy can carry
+    SQLite's ids and every venue_id and parent_id still points at the same row.
+    Serving needs the opposite: every INSERT in db.py omits `id`, so without a
+    sequence the first registration fails on a not-null violation.
 
-    Wrapped in a guard rather than run bare because ADD GENERATED errors on a
-    column that already has it. The setval runs unconditionally, which is what
-    makes this the right thing to re-run after another clone.
+    Guarded because ADD GENERATED errors on a column that already has it. The
+    setval runs unconditionally, which is what makes this safe to re-run after
+    another clone.
     """
     return f"""DO $$
 DECLARE next_id bigint;
@@ -381,18 +374,15 @@ def remote_rows(table, client=None):
 def pull(dest=None, client=None, tables=TABLES):
     """Copy every Supabase row into a fresh SQLite file. Returns (path, summary).
 
-    The direction `clone` does not go, and the reason this exists: nothing else
-    in the app reads Supabase downward, so the live project is the only copy of
-    production data. A row written there stays there.
+    The direction `clone` does not go. Nothing else reads Supabase downward,
+    so without this the live project is the only copy of production data.
 
-    Writes a new file rather than touching data/app.db. Production and the local
-    database have diverged in both directions, so overwriting the one you
-    develop against would destroy local-only rows to fix a backup problem. Copy
-    the result over app.db yourself when that is what you actually want.
+    Writes a new file rather than touching data/app.db, which can hold rows
+    Supabase does not. Copy the result over it deliberately if that is what you
+    want.
 
-    The schema comes from schema.create_schema, the same one the app uses, so
-    the result is a database the app can open rather than a dump only Postgres
-    can read.
+    Built with schema.create_schema, so the result is a database the app can
+    open, not a dump only Postgres can read.
     """
     from . import schema
     client = client or get_client()

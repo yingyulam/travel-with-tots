@@ -2,21 +2,18 @@
 
 Two jobs in one file, `data/venue_candidates.csv`:
 
-1. The review artifact. What the agent found, with the evidence and the URL it
+1. The review artifact: what the agent found, with the evidence and the URL it
    came from, so a human can judge it.
 2. The agent's memory. `known_names()` covers rejected rows as well as approved
-   ones, so a place you turned down is never proposed again. Without that the
-   agent re-proposes the same venues every run and a reviewer's limited capacity
-   goes on re-rejecting them, which is the difference between a loop that
-   converges and one that spins.
+   ones, so a place you turned down is never proposed again.
 
 The agent only ever writes here, never to the venues table. A row becomes a
 venue when a human approves it, and that is the whole of the gate.
 
-CSV rather than JSON, against the grain of the rest of `data/`, because this is
-a flat table someone may want to sort, diff or read outside the app. It is
-tracked in git, unlike `data/app.db`, so it is also the durable record of which
-venues were verified: see scripts/replay_candidates.py.
+CSV rather than JSON because this is a flat table someone may want to sort,
+diff or read outside the app. Tracked in git, unlike data/app.db, so it is also
+the durable record of which venues were verified. See
+scripts/replay_candidates.py.
 """
 
 import csv
@@ -43,35 +40,27 @@ PROPOSED_COLUMNS = ("name", "type", "setting", "neighbourhood", "city",
                     "address", "lat", "lng", "source_url", "evidence",
                     "official_url", "hours_note", "hours_source", "external_id")
 
-# Fields the proposer fills even though review owns them. Hours still never
-# come from a search snippet -- the proposal prompt forbids that, because a
-# listicle does not establish when a museum opens. They come from two outside
-# sources a person can check: OpenStreetMap, and failing that the venue's own
-# page, read by a model and grounded against the times actually printed on it.
+# Fields the proposer fills even though review owns them. Hours never come
+# from a search snippet: they come from OpenStreetMap, or failing that the
+# venue's own page, read by a model and grounded against the times printed.
 #
 # `hours_week` holds a whole week in the notation osm.per_day_hours reads, e.g.
-# "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00". One column rather than fourteen, in
-# the same syntax OSM would have given, so one parser serves both sources and a
-# reviewer reads one notation. Blank when the week is uniform, since the plain
-# pair says it, or when neither source produced a usable timetable.
+# "Mo-Th 10:00-16:00; Fr-Su 08:30-16:00". Blank when the week is uniform, since
+# the plain pair says it, or when neither source produced a usable timetable.
 #
 # `hours_source` is where the times came from, in words, so the review page can
-# say "read from maplewoodfarm.bc.ca" rather than presenting them as fact. It
-# is evidence, not a judgment, which is why it is outside EDITABLE.
+# say "read from maplewoodfarm.bc.ca" rather than presenting them as fact.
 PREFILLED_COLUMNS = ("open_time", "close_time", "hours_week")
 
-# What only review writes. An amenity nobody checked is a claim rather than a
-# fact, so the agent leaves every one of these blank. Built from
-# CANDIDATE_FEATURE_COLUMNS rather than typed out, so the review form and the
-# planner's filters cannot drift.
-# There were 12 more columns here, hours by season and day type, and not one
-# was ever filled. They are gone with the venue_hours table: the model could
-# not express a museum closed on Mondays anyway, and hours_note can.
-# The amenity ticks a reviewer makes, plus can_eat. All six live here even
-# though five of them are no longer columns on `venues`: this file is the
-# reviewer's working copy, held between "save edits" and "approve", and on
-# approval the five become venue_reports authored by the reviewer while can_eat
-# goes to its column. See app._approve_candidate.
+# The amenity ticks a reviewer makes, plus can_eat. An amenity nobody checked
+# is a claim rather than a fact, so the agent leaves all six blank. Built from
+# CANDIDATE_FEATURE_COLUMNS so the review form and the planner's filters cannot
+# drift.
+#
+# All six live here though only can_eat is a column on `venues`: this file is
+# the reviewer's working copy between "save edits" and "approve", and on
+# approval the other five become venue_reports authored by the reviewer. See
+# web/venues._approve_candidate.
 REVIEWED_COLUMNS = (PREFILLED_COLUMNS
                     + tuple(sorted(set(REPORTABLE_FIELDS)
                                    | CANDIDATE_FEATURE_COLUMNS)))
@@ -79,30 +68,20 @@ REVIEWED_COLUMNS = (PREFILLED_COLUMNS
 COLUMNS = (("id", "status") + PROPOSED_COLUMNS + REVIEWED_COLUMNS
            + ("proposed_at", "decided_at", "decided_by"))
 
-# Fields review may change. Everything the agent proposed is correctable, since
-# a wrong neighbourhood is exactly what a human is there to fix, except the
-# coordinates and the evidence: coordinates come from a place lookup and a
-# hand-typed one is worse than none (a wrong coordinate silently mis-ranks
-# distance, a missing one falls back to neighbourhood matching), and rewriting
-# a citation would break the one thing making the row checkable.
+# Fields review may change. Everything the agent proposed is correctable except
+# coordinates and evidence.
 #
-# official_url, hours_note and hours_source are evidence too, not judgments. The reviewer
-# reads them to decide, and the hours they decide on go in open_time/close_time
-# where the whole app already looks. A reviewer who thinks the official site is
-# wrong should reject the row rather than quietly repoint its citation.
+# Coordinates come from a place lookup, and a hand-typed one is worse than
+# none: a wrong coordinate silently mis-ranks distance, while a missing one
+# falls back to neighbourhood matching.
 #
-# external_id is identity, and identity is nobody's judgment: it is what makes
-# a re-proposal of the same place recognisable instead of a second row. There
-# is deliberately no candidate-level `source`. A venue's source says which
-# pipeline vouched for it, and for an approved candidate that is always
-# "curated" because a human clicked; a settable one would invite writing
-# "municipal_open_data" onto a reviewed row and moving it between queues.
-# hours_source is excluded for the same reason as official_url: it says where
-# the times came from, and a reviewer who disagrees changes the times rather
-# than rewriting the provenance. It also has to be in PROPOSED_COLUMNS, because
-# `add` copies only those and the prefilled ones -- it sat outside both and was
-# silently dropped on write, so a week read from a venue's own page arrived
-# with no record of where it came from.
+# official_url, hours_note and hours_source are evidence, not judgments. A
+# reviewer who thinks the citation is wrong rejects the row rather than
+# repointing it; one who disagrees with the times changes the times.
+#
+# external_id is identity, which makes a re-proposal recognisable rather than a
+# second row. There is no candidate-level `source`: an approved candidate is
+# always "curated", because a human clicked.
 EDITABLE = tuple(c for c in PROPOSED_COLUMNS
                  if c not in ("lat", "lng", "source_url", "evidence",
                               "official_url", "hours_note", "hours_source",
@@ -112,14 +91,10 @@ EDITABLE = tuple(c for c in PROPOSED_COLUMNS
 def normalize_name(name) -> str:
     """A venue name reduced to a comparison key.
 
-    Spacing and punctuation carry no meaning for identity: "VanDusen Botanical
-    Garden" and "Van Dusen Botanical Garden" are one place, and a proposal
-    differing only that way is a duplicate a reviewer should not have to catch.
-
-    American spellings fold into ours for the same reason, and it is not
-    hypothetical: the agent proposed "Roundhouse Community Center" while the
-    City publishes "Roundhouse Community Centre", so the duplicate check missed
-    it and approving would have added a second copy of a venue we already had.
+    Spacing and punctuation carry no meaning for identity, so "VanDusen
+    Botanical Garden" and "Van Dusen Botanical Garden" fold together. American
+    spellings fold into ours for the same reason: "Community Center" matches
+    "Community Centre".
     """
     folded = _SPELLING.sub("re", (name or "").lower())
     return re.sub(r"[^a-z0-9]", "", folded)
@@ -170,19 +145,18 @@ def load(status=None) -> list[dict]:
 def known_names() -> set:
     """Every name ever proposed, whatever was decided about it.
 
-    Includes rejected names on purpose: that is what stops the agent proposing
-    a place you have already turned down.
+    Includes rejected names, which is what stops the agent proposing a place
+    somebody has already turned down.
     """
     return {normalize_name(row.get("name"))
             for row in _read_all() if normalize_name(row.get("name"))}
 
 
 def add(proposals) -> int:
-    """Append proposals as pending, skipping names already on file. Returns how
-    many were actually new.
+    """Append proposals as pending, skipping names already on file.
 
-    Deduplicates within the batch as well as against the file, since two search
-    queries can easily surface the same venue.
+    Returns how many were new. Deduplicates within the batch as well as against
+    the file, since two search queries can surface the same venue.
     """
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
@@ -221,8 +195,7 @@ def update(candidate_id, **fields) -> None:
     """Apply review's edits to one candidate.
 
     Unknown or non-editable field names raise rather than being ignored, so a
-    renamed form input fails loudly instead of silently dropping every edit a
-    reviewer made.
+    renamed form input fails loudly instead of dropping every edit silently.
     """
     unknown = set(fields) - set(EDITABLE)
     if unknown:
@@ -239,14 +212,11 @@ def update(candidate_id, **fields) -> None:
                 return
 
 
-# What a lookup may rewrite, as opposed to what a reviewer may. EDITABLE is
-# the reviewer's permission and deliberately excludes evidence: rewriting a
-# citation would break the one thing that makes a row checkable. Looking a
-# venue up again is the other half of that rule, because the evidence is
-# exactly what a fresh lookup produces.
-#
-# Coordinates are here and not in EDITABLE for the same reason as ever: a
-# geocoder may correct itself, a person typing one cannot.
+# What a lookup may rewrite, as opposed to what a reviewer may. EDITABLE
+# excludes evidence because rewriting a citation would break the one thing that
+# makes a row checkable, and a fresh lookup produces exactly that evidence.
+# Coordinates likewise: a geocoder may correct itself, a person typing one
+# cannot.
 LOOKED_UP = ("official_url", "hours_note", "hours_source", "external_id",
              "lat", "lng", "address", "open_time", "close_time", "hours_week")
 
@@ -255,8 +225,7 @@ def refresh_evidence(candidate_id, **fields) -> None:
     """Write what a fresh lookup found for one candidate.
 
     Separate from `update` because the permissions differ: a reviewer may not
-    rewrite a citation, and a lookup may. Both raise on an unknown field rather
-    than dropping it silently.
+    rewrite a citation and a lookup may. Both raise on an unknown field.
     """
     unknown = set(fields) - set(LOOKED_UP)
     if unknown:
