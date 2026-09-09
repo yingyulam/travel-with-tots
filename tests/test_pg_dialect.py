@@ -18,6 +18,9 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import pathlib
 import tempfile
+import subprocess
+import sys
+import textwrap
 import unittest
 from unittest import mock
 
@@ -464,6 +467,36 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
              mock.patch.object(schema.postgres, "connect", return_value=conn):
             schema._ensure_postgres_columns()
         self.assertEqual(conn.execute.call_count, len(schema.POSTGRES_ADDED_COLUMNS))
+
+
+class TheEnvironmentIsLoadedBeforeAnybodyReadsItTest(unittest.TestCase):
+    """DB_BACKEND must mean the same thing throughout a process.
+
+    backend._setting loads .env with override=True, so the first call to it
+    changes os.environ. Reading DB_BACKEND before that happened gave one answer
+    and after it another, which is how a cold process could choose Supabase
+    using an environment .env was about to override to local.
+
+    Run in a subprocess because the window only exists on a cold import, and by
+    the time this suite reaches here .env has long since been read.
+    """
+
+    PROBE = textwrap.dedent("""
+        import os, sys
+        sys.path.insert(0, %r)
+        os.environ.pop("DB_BACKEND", None)
+        from src.store import backend, db
+        before = db.backend_pinned_by_env()
+        backend.db_url()                 # the call that mutates os.environ
+        print(before, db.backend_pinned_by_env())
+    """)
+
+    def test_reading_a_setting_does_not_change_what_db_backend_says(self):
+        root = str(pathlib.Path(__file__).resolve().parent.parent)
+        out = subprocess.run([sys.executable, "-c", self.PROBE % root],
+                             capture_output=True, text=True, cwd=root)
+        before, after = out.stdout.strip().split()
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

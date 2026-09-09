@@ -23,7 +23,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .db import CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS
+from .db import (CANDIDATE_FEATURE_COLUMNS, REPORTABLE_FIELDS,
+                 reject_unknown_fields)
 
 CANDIDATES_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "venue_candidates.csv"
 _lock = threading.Lock()
@@ -197,9 +198,7 @@ def update(candidate_id, **fields) -> None:
     Unknown or non-editable field names raise rather than being ignored, so a
     renamed form input fails loudly instead of dropping every edit silently.
     """
-    unknown = set(fields) - set(EDITABLE)
-    if unknown:
-        raise ValueError(f"not editable: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(fields, EDITABLE, "editable")
     if not fields:
         return
     with _lock:
@@ -227,9 +226,7 @@ def refresh_evidence(candidate_id, **fields) -> None:
     Separate from `update` because the permissions differ: a reviewer may not
     rewrite a citation and a lookup may. Both raise on an unknown field.
     """
-    unknown = set(fields) - set(LOOKED_UP)
-    if unknown:
-        raise ValueError(f"not a looked-up field: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(fields, LOOKED_UP, "a looked-up field")
     if not fields:
         return
     with _lock:

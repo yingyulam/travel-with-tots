@@ -321,6 +321,17 @@ ADD_VENUE_FIELDS = ("type", "setting", "neighbourhood", "city", "notes",
                     "external_id", "verified_at", "verified_by")
 
 
+def reject_unknown_fields(fields, allowed, what):
+    """Raise unless every name in `fields` is in `allowed`.
+
+    Every **fields writer here takes a whitelist, so a renamed form input fails
+    loudly instead of silently dropping an edit somebody made.
+    """
+    unknown = set(fields) - set(allowed)
+    if unknown:
+        raise ValueError(f"not {what}: {', '.join(sorted(unknown))}")
+
+
 def add_venue(name, *, source, venue_type=None, **fields):
     """Insert a venue. Returns its id.
 
@@ -332,9 +343,9 @@ def add_venue(name, *, source, venue_type=None, **fields):
     are queried, so a "user_submitted" row stays out of every result until it
     is promoted. `venue_type` is spelled out because `type` shadows a builtin.
     """
-    unknown = set(fields) - set(ADD_VENUE_FIELDS) - set(CANDIDATE_FEATURE_COLUMNS)
-    if unknown:
-        raise ValueError(f"not a venue field: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(
+        fields, set(ADD_VENUE_FIELDS) | set(CANDIDATE_FEATURE_COLUMNS),
+        "a venue field")
     if venue_type is not None:
         fields["type"] = venue_type
     # Flags are 0/1 in SQLite, and callers pass real booleans.
@@ -363,9 +374,7 @@ def add_or_update_submission(name, *, parent_id, **fields):
     venues.parent_id is nullable, so id alone would not guard a curated venue
     or another parent's submission.
     """
-    unknown = set(fields) - set(SUBMISSION_FIELDS)
-    if unknown:
-        raise ValueError(f"not a submission field: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(fields, SUBMISSION_FIELDS, "a submission field")
     with closing(connect()) as conn, conn:
         existing = conn.execute(
             "SELECT id FROM venues WHERE parent_id = ? AND name = ? "
@@ -402,9 +411,7 @@ def update_reviewed_venue(venue_id, **fields):
     other queue. Unknown field names raise rather than silently dropping an
     edit.
     """
-    unknown = set(fields) - set(REVIEWABLE_VENUE_FIELDS)
-    if unknown:
-        raise ValueError(f"not reviewable: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(fields, REVIEWABLE_VENUE_FIELDS, "reviewable")
     if not fields:
         return
     source_clause, source_params = _verified_source_clause()
@@ -423,9 +430,7 @@ def update_venue(venue_id, parent_id, **fields):
     Unknown or non-editable field names raise rather than silently dropping an
     edit.
     """
-    unknown = set(fields) - set(EDITABLE_VENUE_FIELDS)
-    if unknown:
-        raise ValueError(f"not editable: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(fields, EDITABLE_VENUE_FIELDS, "editable")
     if not fields:
         return
     assignments = ", ".join(f"{name} = ?" for name in fields)
@@ -553,9 +558,7 @@ def upsert_imported_venue(external_id, name, *, source, source_url, **fields):
     A consequence worth knowing: a renamed or moved record is not picked up by
     a re-run. Delete the row to take such a correction.
     """
-    unknown = set(fields) - set(IMPORT_FIELDS)
-    if unknown:
-        raise ValueError(f"not an import field: {', '.join(sorted(unknown))}")
+    reject_unknown_fields(fields, IMPORT_FIELDS, "an import field")
     with closing(connect()) as conn, conn:
         row = conn.execute("SELECT * FROM venues WHERE external_id = ?",
                            (external_id,)).fetchone()
