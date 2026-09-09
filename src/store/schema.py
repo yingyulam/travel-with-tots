@@ -7,9 +7,9 @@ request, which is why it is separate from db.py.
 truth and rows arrive through review, so nothing here writes to it. Bootstrap a
 fresh database with scripts/seed_venues.py.
 
-SCHEMA is the single definition. There is no SQLite migration step: a fresh
-database gets the tables as written here, and a column added to SCHEMA reaches
-Supabase only if it is also listed in POSTGRES_ADDED_COLUMNS.
+SCHEMA is the single definition: a database gets exactly the tables written
+there. A column added to it reaches Supabase only if it is also listed in
+POSTGRES_ADDED_COLUMNS.
 
 The dependency runs one way: schema imports db for its connections, never the
 reverse.

@@ -339,19 +339,16 @@
     return box;
   }
 
-  // The venue data grounding a stop's "reason" -- rule-based venues use
-  // open/close with no age fields; AI-planner venues use open_time/close_time
-  // plus min_age_months/max_age_months. Tolerate both.
+  // The venue data grounding a stop's "reason". Rule-based venues carry
+  // open/close, AI-planner venues open_time/close_time. Tolerate both.
   function stopWhyDetail(v) {
     const open = v.open || v.open_time;
     const close = v.close || v.close_time;
     const hours = (open && close) ? `Open ${open}-${close}` : "Hours unknown";
-    const age = (v.min_age_months != null && v.max_age_months != null)
-      ? ` · Ages ${v.min_age_months}-${v.max_age_months} months` : "";
     const detail = el("div", "twt-citation-detail stop-why-detail");
     detail.hidden = true;
     detail.append(
-      el("div", "twt-citation-detail-meta", `${v.neighbourhood}${age}`),
+      el("div", "twt-citation-detail-meta", v.neighbourhood),
       el("p", null, hours));
     // What one open/close pair cannot hold -- "Closed Mondays September to
     // May" -- in the venue's own words. The planner does not model it, so the

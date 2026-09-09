@@ -65,10 +65,12 @@ def workflows():
 @login_required
 @admin_required
 def agent_page():
-    """The AI Agent's test page. Deliberately has no chat of its own: it uses
-    the real bubble every page carries, and adds a panel showing what the agent
-    actually did with each message, so what's tested here is what a parent gets.
-    There is no /agent/chat any more -- that was a second implementation."""
+    """The AI Agent's test page.
+
+    Has no chat of its own: it uses the real bubble every page carries, and adds
+    a panel showing what the agent did with each message, so what is tested here
+    is what a parent gets.
+    """
     return render_template("ai_agent.html")
 
 
