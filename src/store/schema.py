@@ -7,10 +7,9 @@ request, which is why it is separate from db.py.
 truth and rows arrive through review, so nothing here writes to it. Bootstrap a
 fresh database with scripts/seed_venues.py.
 
-Migrations are write-once and delete-never: a column added to SCHEMA is free
-for a database created afterwards and needs a patch for every database created
-before. So each `_ensure_*` and `_migrate_*` check stays permanently and does
-nothing on any boot after the first.
+SCHEMA is the single definition. There is no SQLite migration step: a fresh
+database gets the tables as written here, and a column added to SCHEMA reaches
+Supabase only if it is also listed in POSTGRES_ADDED_COLUMNS.
 
 The dependency runs one way: schema imports db for its connections, never the
 reverse.
@@ -118,22 +117,16 @@ CREATE TABLE IF NOT EXISTS venues (
                                                 -- hold: "Closed Mondays September to May"
 );
 
--- A comparison between our stored hours and an outside source, and what a
--- person decided about it. The point is that hours change: they are entered
--- once at review and nothing else ever writes them, so without this a venue's
--- hours are frozen at whatever was typed the day it was approved.
--- Opening hours for one day of the week, when a venue's hours are not the same
--- every day. Keyed on the weekday alone: 0 is Monday, matching date.weekday().
+-- Opening hours for one weekday, for venues whose hours are not the same every
+-- day. Keyed on the weekday alone: 0 is Monday, matching date.weekday().
 --
--- Two rules, and they are what make the table unambiguous:
---   * a venue with **no rows** keeps venues.open_time/close_time all week,
---     which is what most venues are and why adding this needed no migration;
---   * a venue with **any rows** is described entirely by them, so a weekday
---     with no row is closed that day.
+-- Two rules make the table unambiguous:
+--   * a venue with no rows keeps venues.open_time/close_time all week;
+--   * a venue with any rows is described entirely by them, so a weekday with
+--     no row is closed that day.
 --
--- The second rule is the reason for a table rather than columns: "closed on
--- Mondays" is the commonest real closure and a nullable column cannot say it
--- differently from "not filled in".
+-- The second rule is why this is a table rather than columns: a nullable
+-- column cannot say "closed on Mondays" differently from "not filled in".
 CREATE TABLE IF NOT EXISTS venue_hours (
     venue_id   INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
     weekday    INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
@@ -142,6 +135,9 @@ CREATE TABLE IF NOT EXISTS venue_hours (
     PRIMARY KEY (venue_id, weekday)
 );
 
+-- A comparison between our stored hours and an outside source, and what a
+-- person decided about it. Hours are entered once at review and nothing else
+-- writes them, so without this they stay frozen at whatever was typed then.
 CREATE TABLE IF NOT EXISTS venue_hours_checks (
     id          INTEGER PRIMARY KEY,
     venue_id    INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
@@ -271,9 +267,8 @@ def init_db():
     Creates no venues: those arrive through review, and the table is the source
     of truth. Bootstrap a fresh database with scripts/seed_venues.py.
 
-    On Supabase the tables were created by the SQL on /settings and the SQLite
-    migration machinery cannot run there, so only _ensure_postgres_columns
-    does.
+    On Supabase the tables were created by the SQL on /settings, so only
+    _ensure_postgres_columns runs there.
     """
     if db._supabase_dsn() is not None:
         _ensure_postgres_columns()
@@ -282,10 +277,6 @@ def init_db():
         create_schema(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)
-
-
-
-
 
 
 def _seed_sample_data(conn):
