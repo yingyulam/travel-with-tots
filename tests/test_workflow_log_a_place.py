@@ -10,7 +10,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.components.geocode import GeocodeError
 from src.workflows import log_a_place
 from src.workflows.log_a_place import WORKFLOW
@@ -24,9 +24,9 @@ class _VenueDbTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.other_id = db.add_parent("q@example.com", "hash", name="Q")
@@ -36,7 +36,7 @@ class _VenueDbTest(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _row(self, name):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute(
                 "SELECT * FROM venues WHERE name = ?", (name,)).fetchone()
 
@@ -226,7 +226,7 @@ class RunTest(_VenueDbTest):
                 "name": "Mall", "has_nursing_room": "on",
             })
         row = self._row("Mall")
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             authors = {r["reported_by"] for r in conn.execute(
                 "SELECT reported_by FROM venue_reports WHERE venue_id = ?",
                 (row["id"],))}
@@ -433,7 +433,7 @@ class ResubmittingAPlaceTest(_VenueDbTest):
                                  place=dict(log_a_place.UNRESOLVED_PLACE))
 
     def _rows(self, name="Science World"):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute(
                 "SELECT * FROM venues WHERE name = ? ORDER BY id", (name,)).fetchall()
 
@@ -507,7 +507,7 @@ class ResubmittingAPlaceTest(_VenueDbTest):
         # removed before the index could exist.
         self._store()
         with self.assertRaises(sqlite3.IntegrityError):
-            with closing(db.connect()) as conn, conn:
+            with closing(connection.connect()) as conn, conn:
                 conn.execute(
                     "INSERT INTO venues (name, source, parent_id) "
                     "VALUES ('Science World', 'user_submitted', ?)",

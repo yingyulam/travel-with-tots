@@ -13,23 +13,20 @@ shortcut.
 
 **It does not serve pages.** Reading and writing through Supabase is
 `src/postgres.py`'s job, over a direct Postgres connection, because PostgREST
-takes no SQL and `src/db.py` is 1451 lines of it. This module owns the copy and
+takes no SQL and `db.py` is a thousand lines of it. This module owns the copy and
 the switch; that one owns the dialect.
 
 The client is a parameter rather than a module-level singleton so the whole of
 this can be tested against a fake.
 """
 
-import json
 import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-from . import db, schema
+from . import connection, schema
 from .backend import SyncError, credentials
 
 # Parents before children, venues before the rows that reference them. A copy
@@ -100,7 +97,7 @@ def postgres_ddl(tables=TABLES):
     already follows, and a half-finished copy worth retrying beats one that
     fails on a missing parent row. See postgres_runtime_ddl.
     """
-    with closing(db.connect_sqlite()) as conn:
+    with closing(connection.connect_sqlite()) as conn:
         out = []
         for table in tables:
             columns = _columns(conn, table)
@@ -176,7 +173,7 @@ def postgres_runtime_ddl(tables=TABLES):
     Generated from the live SQLite schema, like the CREATE TABLEs, so a new
     reference or a new index cannot be forgotten here.
     """
-    with closing(db.connect_sqlite()) as conn:
+    with closing(connection.connect_sqlite()) as conn:
         out = []
         for table in tables:
             columns = _columns(conn, table)
@@ -192,13 +189,13 @@ def postgres_runtime_ddl(tables=TABLES):
 
 def primary_key(table):
     """The column names that identify a row, for skipping duplicates."""
-    with closing(db.connect_sqlite()) as conn:
+    with closing(connection.connect_sqlite()) as conn:
         return [name for name, _k, _n, _d, pk in _columns(conn, table) if pk]
 
 
 def local_rows(table):
     """Every row of one local table, as plain dicts ready to send."""
-    with closing(db.connect_sqlite()) as conn:
+    with closing(connection.connect_sqlite()) as conn:
         return [dict(row) for row in conn.execute(f"SELECT * FROM {table}")]
 
 

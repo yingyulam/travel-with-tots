@@ -13,13 +13,14 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import json
 import os
 import tempfile
+import sqlite3
 import unittest
 from contextlib import closing
 from datetime import date, timedelta
 from unittest import mock
 
 from src import memory
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.form_helpers import DEFAULTS, MAX_AGE_YEARS
 
 PLAN = json.dumps({"label": "Mixed", "blurb": "b", "stops": []})
@@ -42,9 +43,9 @@ class _MemoryTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.other_id = db.add_parent("q@example.com", "hash", name="Q")
@@ -80,7 +81,7 @@ class NothingToRememberTest(_MemoryTest):
         # handle_message does not catch sqlite errors, so a raise here would
         # reach the route as a 500 and cost the parent their reply.
         with mock.patch.object(memory, "get_children",
-                               side_effect=db.sqlite3.OperationalError("locked")):
+                               side_effect=sqlite3.OperationalError("locked")):
             result = memory.recall(self.parent_id)
         self.assertEqual(result["remembered"], [])
 
@@ -140,7 +141,7 @@ class DirtyAgesTest(_MemoryTest):
         self.assertEqual(result["form"]["age_months"], "0")
 
     def test_one_unreadable_date_of_birth_does_not_cost_the_recall(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             conn.execute("INSERT INTO children (parent_id, name, date_of_birth) "
                          "VALUES (?, ?, ?)", (self.parent_id, "Broken", "10/05/2023"))
             conn.commit()
@@ -199,7 +200,7 @@ class TheRoutineTest(_MemoryTest):
         stamp = "2026-08-11 20:06:19"
         # Distinguished by stop_count rather than destination: destination is a
         # closed list of one now, so two rows cannot differ on it.
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             for child_id, stops in ((a, "2"), (b, "5")):
                 conn.execute(
                     "INSERT INTO trips (parent_id, child_id, destination, "
@@ -223,7 +224,7 @@ class DirtyRoutineTest(_MemoryTest):
         for stored in ("", "{}", "[1,2]", "not json",
                        json.dumps([{"duration_min": 30}])):
             with self.subTest(stored=stored):
-                with closing(db.connect()) as conn:
+                with closing(connection.connect()) as conn:
                     conn.execute("DELETE FROM trips")
                     conn.commit()
                 self._trip(destination="Vancouver", naps=stored)

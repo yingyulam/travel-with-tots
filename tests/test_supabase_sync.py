@@ -24,7 +24,7 @@ from contextlib import closing
 from unittest import mock
 
 import src.store.db as db
-from src.store import backend, schema
+from src.store import backend, connection, schema
 from src.store import supabase_sync as sync
 
 
@@ -74,11 +74,11 @@ class _SyncTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                     os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "hash", name="P")
         self.child = db.add_child(self.parent, "Sam", "2024-01-01")
@@ -126,7 +126,7 @@ class TheGeneratedSchemaTest(_SyncTest):
 
     def test_it_is_generated_from_the_live_schema(self):
         # Written by hand it would drift the first time a column was added.
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             conn.execute("ALTER TABLE venues ADD COLUMN a_new_column TEXT")
             conn.commit()
         self.assertIn("a_new_column text", sync.postgres_ddl(["venues"]))
@@ -354,7 +354,7 @@ class PullBringsProductionBackTest(_SyncTest):
         # The point of building it with schema.create_schema rather than
         # dumping SQL: the app's own query functions must work against it.
         dest, _summary = self._pull()
-        with mock.patch.object(db, "DB_PATH", str(dest)):
+        with mock.patch.object(connection, "DB_PATH", str(dest)):
             parent = db.get_parent(14)
         self.assertEqual(parent["email"], "only-in-prod@example.com")
         self.assertTrue(parent["is_admin"])
@@ -363,7 +363,7 @@ class PullBringsProductionBackTest(_SyncTest):
         # create_schema seeds venues.json, and those rows would sit alongside
         # production's, making the backup a mix of two databases.
         dest, summary = self._pull()
-        with mock.patch.object(db, "DB_PATH", str(dest)):
+        with mock.patch.object(connection, "DB_PATH", str(dest)):
             names = [v["name"] for v in db.get_venues_in_city("")]
         self.assertEqual(summary["venues"], 1)
         self.assertEqual(names, ["Remote Park"])

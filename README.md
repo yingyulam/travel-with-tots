@@ -165,9 +165,11 @@ travel-with-tots/
 │   │   ├── lookups.py         # map lookups shared by blueprints
 │   │   └── ratelimit.py       # per-caller request buckets
 │   ├── store/                 # all persistence, the only SQL
+│   │   ├── connection.py      # which database is serving, and opening it
 │   │   ├── db.py              # every query
-│   │   ├── schema.py          # tables and migrations
+│   │   ├── schema.py          # the tables
 │   │   ├── postgres.py        # the same SQL in Supabase's dialect
+│   │   ├── backend.py         # which database is selected, and credentials
 │   │   ├── supabase_sync.py   # clone up, pull down
 │   │   ├── candidates.py      # proposed venues awaiting review
 │   │   └── results.py         # thumbs up/down ratings

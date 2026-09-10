@@ -32,9 +32,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.store import db, schema
+from src.store import connection, db, schema
 
-VENUES_SEED = db._DATA_DIR / "venues.json"
+VENUES_SEED = connection._DATA_DIR / "venues.json"
 
 # The columns the seed file owns. No source, parent_id or provenance: this
 # writes a row nobody has checked, so it must not claim otherwise. seed_rank is
@@ -75,7 +75,7 @@ def seed(conn):
 def main():
     write = "--write" in sys.argv
     schema.init_db()
-    with closing(db.connect()) as conn:
+    with closing(connection.connect()) as conn:
         if not write:
             # The dry run asks the same question the write does, so the count
             # it prints is the count you will get.

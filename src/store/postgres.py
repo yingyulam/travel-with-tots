@@ -1,6 +1,6 @@
 """Run this app's SQL against Postgres instead of SQLite.
 
-`src/db.py` is the only module that writes SQL, and it writes SQLite's dialect.
+`db.py` is the only module that writes SQL, and it writes SQLite's dialect.
 Almost all of it is already valid Postgres: there is no GROUP BY, no CASE and no
 window function anywhere, and `ORDER BY x IS NULL` means the same thing in both.
 What differs is small enough to translate, which is why this is 150 lines rather
@@ -206,7 +206,7 @@ def _errors():
 def integrity_errors():
     """Postgres' unique-violation class, or () when psycopg is absent.
 
-    Joined with sqlite3.IntegrityError in `db.INTEGRITY_ERRORS`, so the review
+    Joined with sqlite3.IntegrityError in `connection.INTEGRITY_ERRORS`, so the review
     page's duplicate-venue catch works whichever database is serving.
     """
     errors = _errors()

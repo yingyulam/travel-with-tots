@@ -18,18 +18,18 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src.store import db, schema
+from src.store import connection, db, schema
 
 
 class ReportedFlagsTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.other = db.add_parent("q@example.com", "h", name="Q")
@@ -42,7 +42,7 @@ class ReportedFlagsTest(unittest.TestCase):
     def _report(self, field, value, by=None, at=None):
         report_id = db.add_report(self.venue, field, value, reported_by=by)
         if at:
-            with closing(db.connect()) as conn, conn:
+            with closing(connection.connect()) as conn, conn:
                 conn.execute("UPDATE venue_reports SET reported_at = ? WHERE id = ?",
                              (at, report_id))
         return report_id
@@ -93,11 +93,11 @@ class ReportRouteTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         import app as app_module
         self.app_module = app_module
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="P")
         self.child = db.add_child(self.parent, "Sam", "2024-01-01")
@@ -135,7 +135,7 @@ class ReportRouteTest(unittest.TestCase):
         db.settle_reports_for(self.venue, self.parent, approved=True)
 
     def _count(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM venue_reports").fetchone()[0]
 
     def test_a_tick_waits_for_a_reviewer(self):
@@ -160,7 +160,7 @@ class ReportRouteTest(unittest.TestCase):
         self._post(found=["has_washroom"])
         self._approve()
         self.assertIs(self._flags()["has_washroom"], True)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT reported_by FROM venue_reports").fetchone()
         self.assertEqual(row["reported_by"], self.parent)
 
@@ -274,11 +274,11 @@ class TheReviewQueueTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="Pat")
         self.other = db.add_parent("q@example.com", "h", name="Quinn")
@@ -318,7 +318,7 @@ class TheReviewQueueTest(unittest.TestCase):
         # deleted row would let the same claim arrive again looking new.
         self._report(self.parent, has_nursing_room=True)
         db.settle_reports_for(self.venue, self.parent, approved=False)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT status FROM venue_reports").fetchone()
         self.assertEqual(row["status"], "rejected")
 
@@ -361,11 +361,11 @@ class SettlingIsAdminOnlyTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         import app as app_module
         self.app_module = app_module
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.parent = db.add_parent("p@example.com", "h", name="Pat")
         self.admin = db.add_parent("a@example.com", "h", name="Ada")

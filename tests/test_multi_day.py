@@ -29,7 +29,7 @@ import os
 import re
 import tempfile
 import unittest
-from src.store import schema
+from src.store import connection, schema
 from src.web import planning as web_planning
 from contextlib import closing
 from unittest import mock
@@ -365,11 +365,11 @@ class SavingAVisitTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                     os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect_sqlite()) as conn:
+        with closing(connection.connect_sqlite()) as conn:
             schema.create_schema(conn)
         self.parent_id = db.add_parent("p@example.com", "hash", name="P")
         self.client = app_module.app.test_client()
@@ -464,7 +464,7 @@ class ReopeningAVisitTest(SavingAVisitTest):
     def test_a_row_saved_before_groups_existed_reads_as_one_day(self):
         # Every trip already in the live database has no group id.
         rows = self._save(self._plans("2026-09-14"))
-        with closing(db.connect_sqlite()) as conn:
+        with closing(connection.connect_sqlite()) as conn:
             with conn:
                 conn.execute("UPDATE trips SET trip_group_id = NULL, "
                              "day_index = NULL WHERE id = ?", (rows[0]["id"],))

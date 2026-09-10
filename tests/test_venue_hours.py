@@ -25,7 +25,7 @@ from datetime import date
 from unittest import mock
 
 from src import data_loader
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.data_loader import HOURS_ARE_A_CONVENTION
 from src.dates import bc_holidays, day_type_for, parse_date
 
@@ -55,11 +55,11 @@ class _WithVenues(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def _add(self, name, venue_type, opens="10:00", closes="17:00"):
@@ -202,7 +202,7 @@ class HoursNoteTest(_WithVenues):
             "Maritime Museum", source="curated", city="Vancouver",
             venue_type="museum", open_time="10:00", close_time="17:00",
             hours_note="Closed Mondays September to May.")
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT hours_note FROM venues WHERE id = ?",
                                (venue_id,)).fetchone()
         self.assertEqual(row["hours_note"], "Closed Mondays September to May.")

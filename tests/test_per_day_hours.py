@@ -22,7 +22,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import tempfile
 import unittest
-from src.store import schema
+from src.store import connection, schema
 from src.web import guards
 from contextlib import closing
 from datetime import date
@@ -152,11 +152,11 @@ class _HoursTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         import app as app_module
         self.app_module = app_module
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                     os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.admin = db.add_parent("a@example.com", "h", name="A")
         self.venue = db.add_venue("A Gallery", source="curated", city="Vancouver",
@@ -173,7 +173,7 @@ class _HoursTest(unittest.TestCase):
         return db.get_venue_hours([self.venue]).get(self.venue)
 
     def _pair(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT open_time, close_time, hours_note "
                                "FROM venues WHERE id = ?", (self.venue,)).fetchone()
         return row["open_time"], row["close_time"], row["hours_note"]

@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src.store import db, schema
+from src.store import connection, db, schema
 
 from src.ai.agents import ReplanningAgent, ReplanningAgentError
 from src.components.replan_trip import replan_trip
@@ -68,11 +68,11 @@ class _VenueDBTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(os.unlink, self.db_path)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
             with conn:
                 for rank, (name, kind, setting, can_eat, lat, lng) in enumerate(_POOL):

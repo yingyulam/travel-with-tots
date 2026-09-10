@@ -18,7 +18,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src.store import candidates, db, schema
+from src.store import candidates, connection, db, schema
 
 
 class _ReviewTest(unittest.TestCase):
@@ -31,13 +31,13 @@ class _ReviewTest(unittest.TestCase):
         import app as app_module
         self.app_module = app_module
         for target, attr, value in (
-                (db, "DB_PATH", self.db_path),
+                (connection, "DB_PATH", self.db_path),
                 (candidates, "CANDIDATES_PATH", self.csv_path)):
             patcher = mock.patch.object(target, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.admin_id = db.add_parent("admin@example.com", "h", name="Admin")
         self.parent_id = db.add_parent("p@example.com", "h", name="P")
@@ -50,7 +50,7 @@ class _ReviewTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def _venue(self, name):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute("SELECT * FROM venues WHERE name = ?", (name,)).fetchone()
 
     def _submit(self, name, **fields):
@@ -89,7 +89,7 @@ class PromoteSubmissionTest(_ReviewTest):
         self.assertEqual(self._venue_count("Science World"), 2)
 
     def _venue_count(self, name):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM venues WHERE name = ?",
                                 (name,)).fetchone()[0]
 
@@ -229,7 +229,7 @@ class ReviewPageTest(_ReviewTest):
         self.client.post("/venues/confirm", data={
             "picked": str(venue["id"]),
             f"{venue['id']}-source_url": "https://example.org/hours"})
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT source_url, verified_at FROM venues "
                                "WHERE id = ?", (venue["id"],)).fetchone()
         self.assertEqual(row["source_url"], "https://example.org/hours")
@@ -243,7 +243,7 @@ class ReviewPageTest(_ReviewTest):
         self.client.post("/venues/confirm", data={
             "picked": str(venue["id"]),
             f"{venue['id']}-source_url": "javascript:alert(1)"})
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT source_url, verified_at FROM venues "
                                "WHERE id = ?", (venue["id"],)).fetchone()
         self.assertIsNone(row["source_url"])
@@ -253,7 +253,7 @@ class ReviewPageTest(_ReviewTest):
         self._awaiting()
         venue = db.get_unverified_venues()[0]
         self.client.post("/venues/confirm", data={"picked": str(venue["id"])})
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT verified_at FROM venues WHERE id = ?",
                                (venue["id"],)).fetchone()
         self.assertIsNotNone(row["verified_at"])
@@ -276,7 +276,7 @@ class ReviewPageTest(_ReviewTest):
             f"{venue}-setting": "indoor", f"{venue}-city": "Vancouver",
             f"{venue}-open_time": "11:00", f"{venue}-close_time": "16:00",
             f"{venue}-has_washroom": "on"})
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT * FROM venues WHERE id = ?",
                                (venue,)).fetchone()
         self.assertEqual(row["name"], "Right Name")
@@ -290,7 +290,7 @@ class ReviewPageTest(_ReviewTest):
         self.client.post("/venues/confirm", data={
             "on_page": str(venue), f"{venue}-name": "Right Name",
             f"{venue}-open_time": "09:00", f"{venue}-close_time": "17:00"})
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT name, verified_at FROM venues WHERE id = ?",
                                (venue,)).fetchone()
         self.assertEqual(row["name"], "Right Name")
@@ -312,7 +312,7 @@ class ReviewPageTest(_ReviewTest):
         # would be indistinguishable from one whose fields all came back empty.
         venue = self._awaiting(name="Left Alone")
         self.client.post("/venues/confirm", data={f"{venue}-name": "Hijacked"})
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT name FROM venues WHERE id = ?",
                                (venue,)).fetchone()
         self.assertEqual(row["name"], "Left Alone")
@@ -399,7 +399,7 @@ class ApprovalClashTest(_ReviewTest):
         db.add_venue("Clashing Venue", source="curated", city="Vancouver")
         rows = self._batch("Clashing Venue")
         self._approve_all(rows)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM venues WHERE name = 'Clashing Venue'"
             ).fetchone()[0]
@@ -668,7 +668,7 @@ class CandidateBatchTest(_ReviewTest):
         venue_id = self._venue("Bloedel Conservatory")["id"]
         self.assertIs(db.reported_flags([venue_id])[venue_id]["has_family_room"],
                       True)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             author = conn.execute(
                 "SELECT reported_by FROM venue_reports WHERE venue_id = ? "
                 "AND field = 'has_family_room'", (venue_id,)).fetchone()

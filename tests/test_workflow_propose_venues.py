@@ -16,7 +16,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src.store import candidates, db, schema
+from src.store import candidates, connection, db, schema
 from src.clients import nominatim, osm
 from src.workflows import propose_venues
 
@@ -41,13 +41,13 @@ class ProposeVenuesTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         for target, attr, value in (
-                (db, "DB_PATH", os.path.join(self._tmp.name, "app.db")),
+                (connection, "DB_PATH", os.path.join(self._tmp.name, "app.db")),
                 (candidates, "CANDIDATES_PATH",
                  Path(self._tmp.name) / "venue_candidates.csv")):
             patcher = mock.patch.object(target, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         # Enrichment reaches two networks. Stubbed for the whole class rather
         # than per test, so a new test cannot accidentally call Overpass for
@@ -74,7 +74,7 @@ class ProposeVenuesTest(unittest.TestCase):
             return propose_venues.propose(batch_size=batch_size)
 
     def _venue_count(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]
 
     def test_it_never_writes_to_the_venues_table(self):

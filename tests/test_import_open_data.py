@@ -19,7 +19,7 @@ from unittest import mock
 
 import app as app_module
 from src import importers
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.clients import opendata
 
 # parks. Chosen for what each one proves:
@@ -174,9 +174,9 @@ class _WithDatabase(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.washroom_names = importers.washroom_places(WASHROOMS)
 
@@ -191,17 +191,17 @@ class _WithDatabase(unittest.TestCase):
         fields.setdefault("close_time", "22:00")
         columns = ", ".join(("name", "source") + tuple(fields))
         placeholders = ", ".join("?" for _ in range(len(fields) + 2))
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             return conn.execute(
                 f"INSERT INTO venues ({columns}) VALUES ({placeholders})",
                 (name, "curated", *fields.values())).lastrowid
 
     def _count(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0]
 
     def _row(self, venue_id):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute("SELECT * FROM venues WHERE id = ?",
                                 (venue_id,)).fetchone()
 
@@ -215,7 +215,7 @@ class _WithDatabase(unittest.TestCase):
         """Import one park. Returns (venue_id, what the washroom resolved to)."""
         entry = importers.park_entry(_park(park_name))
         _, washroom = importers.store(entry, self.washroom_names)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT id FROM venues WHERE name = ?",
                                (entry["name"],)).fetchone()
         return row["id"], washroom
@@ -296,7 +296,7 @@ class ImportTest(_WithDatabase):
         # touching the database, so the printed counts are the real counts.
         self._seed_curated("Queen Elizabeth Park", type="park")
         entries = [importers.park_entry(r) for r in PARKS]
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             existing = conn.execute(
                 "SELECT id, name, source, external_id FROM venues").fetchall()
         predicted = [importers.classify(e, existing) for e in entries]
@@ -307,7 +307,7 @@ class ImportTest(_WithDatabase):
     def test_the_dry_run_sees_its_own_earlier_run(self):
         entry = importers.park_entry(_park("Trafalgar Park"))
         importers.store(entry, self.washroom_names)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             existing = conn.execute(
                 "SELECT id, name, source, external_id FROM venues").fetchall()
         self.assertEqual(importers.classify(entry, existing),
@@ -318,7 +318,7 @@ class WashroomReportTest(_WithDatabase):
     def test_the_citys_yes_becomes_a_report_by_nobody(self):
         venue_id, _ = self._store_park("Trafalgar Park")
         self.assertIs(self._flags(venue_id)["has_washroom"], True)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             rows = conn.execute(
                 "SELECT reported_by FROM venue_reports WHERE venue_id = ?",
                 (venue_id,)).fetchall()
@@ -347,7 +347,7 @@ class WashroomReportTest(_WithDatabase):
         # name join answers this for centres as well, with no extra mechanism.
         entry = importers.centre_entry(CENTRES[0])
         importers.store(entry, self.washroom_names)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             venue_id = conn.execute(
                 "SELECT id FROM venues WHERE name = ?",
                 ("Hastings Community Centre",)).fetchone()["id"]

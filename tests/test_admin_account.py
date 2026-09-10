@@ -14,7 +14,7 @@ import tests  # noqa: F401  -- applies the suite-wide safety settings
 import os
 import tempfile
 import unittest
-from src.store import schema
+from src.store import connection, schema
 from contextlib import closing
 from unittest import mock
 
@@ -27,11 +27,11 @@ class _FreshDatabase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                     os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect_sqlite()) as conn:
+        with closing(connection.connect_sqlite()) as conn:
             schema.create_schema(conn)
 
     def _seed(self, **env):
@@ -39,7 +39,7 @@ class _FreshDatabase(unittest.TestCase):
             for key in ("ADMIN_EMAIL", "ADMIN_PASSWORD"):
                 if key not in env:
                     os.environ.pop(key, None)
-            with closing(db.connect_sqlite()) as conn:
+            with closing(connection.connect_sqlite()) as conn:
                 schema._seed_admin(conn)
 
 
@@ -50,7 +50,7 @@ class SeedingTest(_FreshDatabase):
         # /settings, and says so on startup.
         self._seed()
         self.assertEqual(db.admins_with_password(db.RETIRED_PASSWORD), [])
-        with closing(db.connect_sqlite()) as conn:
+        with closing(connection.connect_sqlite()) as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM parents WHERE is_admin = 1").fetchone()[0]
         self.assertEqual(count, 0)

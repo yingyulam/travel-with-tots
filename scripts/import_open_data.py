@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import requests
 
 from src import importers
-from src.store import db
+from src.store import connection, db
 from src.clients import opendata
 from src.store import schema
 
@@ -34,7 +34,7 @@ SOURCES = {
 
 def _existing():
     """Every venue the matcher could match against, name and external_id only."""
-    with closing(db.connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT id, name, source, external_id FROM venues").fetchall()
 

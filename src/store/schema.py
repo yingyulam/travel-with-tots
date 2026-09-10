@@ -21,11 +21,11 @@ from contextlib import closing
 
 from werkzeug.security import generate_password_hash
 
-from . import db, postgres
+from . import connection, db, postgres
 
-# db's own names are reached through the module rather than imported, so
-# whichever module owns a name is the one place to patch it: db.connect_sqlite
-# is db's, create_schema below is this module's.
+# Names are reached through their module rather than imported, so whichever
+# module owns a name is the one place to patch it: connect_sqlite is
+# connection's, create_schema below is this module's.
 
 
 # Age is never stored -- children keep a date of birth and age is derived.
@@ -242,7 +242,7 @@ def _ensure_postgres_columns():
     Never raises. Failing here would take every page down rather than the one
     feature the column serves.
     """
-    dsn = db._supabase_dsn()
+    dsn = connection._supabase_dsn()
     if dsn is None:
         return
     try:
@@ -270,10 +270,10 @@ def init_db():
     On Supabase the tables were created by the SQL on /settings, so only
     _ensure_postgres_columns runs there.
     """
-    if db._supabase_dsn() is not None:
+    if connection._supabase_dsn() is not None:
         _ensure_postgres_columns()
         return
-    with closing(db.connect_sqlite()) as conn:
+    with closing(connection.connect_sqlite()) as conn:
         create_schema(conn)
         _seed_sample_data(conn)
         _seed_admin(conn)

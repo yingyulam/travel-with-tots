@@ -19,11 +19,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.store import candidates, db
+from src.store import candidates, connection, db
 
 
 def _existing():
-    with closing(db.connect()) as conn:
+    with closing(connection.connect()) as conn:
         return {((row["name"] or "").strip().casefold(),
                  (row["city"] or "").strip().casefold())
                 for row in conn.execute("SELECT name, city FROM venues")}

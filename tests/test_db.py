@@ -8,7 +8,7 @@ import unittest
 from contextlib import closing
 from unittest import mock
 
-from src.store import db, schema
+from src.store import connection, db, schema
 
 
 def _insert_venue(conn, name, *, city="Vancouver", neighbourhood="Downtown",
@@ -41,9 +41,9 @@ class GetCandidateVenuesTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def tearDown(self):
@@ -51,7 +51,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         os.unlink(self.db_path)
 
     def test_filters_by_city(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Local")
             _insert_venue(conn, "Wrong City", city="Toronto")
         names = {v["name"] for v in db.get_candidate_venues("Vancouver")}
@@ -61,7 +61,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         # Every row ever written had a 0-60 month range, so the clause never
         # excluded anything. Age paces the day (realistic_stop_count), it does
         # not filter venues. The argument stays so agents.py needs no change.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "For Babies")
             _insert_venue(conn, "For Big Kids")
         names = {v["name"] for v in db.get_candidate_venues("Vancouver", age_months=12)}
@@ -71,7 +71,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         # Amenity filtering moved to find_nearby, where a parent asks in the
         # moment. Narrowing a whole day to venues someone happened to have
         # reported on would return almost nothing.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Has Nursing Room", has_nursing_room=1)
             _insert_venue(conn, "No Nursing Room", has_nursing_room=0)
         names = {v["name"] for v in
@@ -79,7 +79,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertEqual(names, {"Has Nursing Room", "No Nursing Room"})
 
     def test_narrows_to_near_neighbourhood_when_large_enough(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             for i in range(db.MIN_CLUSTER_SIZE):
                 _insert_venue(conn, f"Downtown {i}", neighbourhood="Downtown")
             _insert_venue(conn, "Elsewhere", neighbourhood="Elsewhere")
@@ -88,7 +88,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertTrue(all(v["neighbourhood"] == "Downtown" for v in rows))
 
     def test_ignores_near_neighbourhood_when_too_small(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Only One Downtown", neighbourhood="Downtown")
             _insert_venue(conn, "Elsewhere", neighbourhood="Elsewhere")
         rows = db.get_candidate_venues(
@@ -97,7 +97,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertEqual(names, {"Only One Downtown", "Elsewhere"})
 
     def test_clusters_to_largest_neighbourhood_without_a_car(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             for i in range(db.MIN_CLUSTER_SIZE):
                 _insert_venue(conn, f"Big {i}", neighbourhood="Big")
             _insert_venue(conn, "Small", neighbourhood="Small")
@@ -105,7 +105,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertTrue(all(v["neighbourhood"] == "Big" for v in rows))
 
     def test_keeps_all_neighbourhoods_with_a_car(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             for i in range(db.MIN_CLUSTER_SIZE):
                 _insert_venue(conn, f"Big {i}", neighbourhood="Big")
             _insert_venue(conn, "Small", neighbourhood="Small")
@@ -116,7 +116,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
     def test_dine_out_guarantees_a_can_eat_venue_even_past_the_limit(self):
         # Alphabetically last, so the initial [:limit] slice cuts it off --
         # only the dine_out fallback query can still surface it.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "No Food A", can_eat=False)
             _insert_venue(conn, "No Food B", can_eat=False)
             _insert_venue(conn, "Zz Has Food", can_eat=True)
@@ -125,14 +125,14 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertTrue(any(v["can_eat"] for v in rows))
 
     def test_dine_out_leaves_rows_alone_when_already_satisfied(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "No Food", can_eat=False)
             _insert_venue(conn, "Has Food", can_eat=True)
         rows = db.get_candidate_venues("Vancouver", age_months=12, dining="dine_out")
         self.assertEqual({v["name"] for v in rows}, {"No Food", "Has Food"})
 
     def test_on_the_go_does_not_force_a_can_eat_venue(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "No Food", can_eat=False)
         rows = db.get_candidate_venues("Vancouver", age_months=12, dining="on_the_go")
         self.assertEqual([v["name"] for v in rows], ["No Food"])
@@ -142,7 +142,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         # (data_loader._hours_for_slot), so offering it spends one of a small
         # candidate budget on a stop the validator will refuse. 27 hourless
         # community centres would crowd out most of an 18-venue budget.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Knows Its Hours")
             _insert_venue(conn, "No Hours", open_time=None, close_time=None)
             _insert_venue(conn, "Blank Hours", open_time="", close_time="")
@@ -150,7 +150,7 @@ class GetCandidateVenuesTest(unittest.TestCase):
         self.assertEqual(names, {"Knows Its Hours"})
 
     def test_user_submitted_venues_are_never_planned_around(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Reviewed")
             conn.execute(
                 "INSERT INTO venues (name, city, neighbourhood, source) "
@@ -176,47 +176,47 @@ class VenueIdentityTest(unittest.TestCase):
         # addCleanup rather than tearDown: a setUp that raises never reaches
         # tearDown, so a DB_PATH patch started here would leak into every later
         # test in the process.
-        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(os.unlink, self.db_path)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def test_a_duplicate_external_id_is_refused(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute("INSERT INTO venues (name, source, external_id) "
                          "VALUES ('A', 'curated', 'osm:node/1')")
         with self.assertRaises(sqlite3.IntegrityError):
-            with closing(db.connect()) as conn, conn:
+            with closing(connection.connect()) as conn, conn:
                 conn.execute("INSERT INTO venues (name, source, external_id) "
                              "VALUES ('B', 'curated', 'osm:node/1')")
 
     def test_rows_without_an_external_id_are_not_treated_as_duplicates(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute("INSERT INTO venues (name, source) VALUES ('A', 'curated')")
             conn.execute("INSERT INTO venues (name, source) VALUES ('B', 'curated')")
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM venues").fetchone()[0], 2)
 
     def test_two_curated_copies_of_one_place_are_refused(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute("INSERT INTO venues (name, city, source) "
                          "VALUES ('Dup Park', 'Vancouver', 'curated')")
         with self.assertRaises(sqlite3.IntegrityError):
-            with closing(db.connect()) as conn, conn:
+            with closing(connection.connect()) as conn, conn:
                 conn.execute("INSERT INTO venues (name, city, source) "
                              "VALUES ('Dup Park', 'Vancouver', 'curated')")
 
     def test_the_provenance_columns_round_trip(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute(
                 "INSERT INTO venues (name, city, source, source_url, external_id, "
                 "verified_at, verified_by) VALUES ('Cited', 'Vancouver', "
                 "'municipal_open_data', 'https://example.org/r/1', "
                 "'vanopendata:parks/1', '2026-08-27', NULL)")
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT source_url, external_id, verified_at, "
                                "verified_by FROM venues WHERE name = 'Cited'").fetchone()
         self.assertEqual(row["source_url"], "https://example.org/r/1")
@@ -237,15 +237,15 @@ class SchemaCoversEveryWrittenColumnTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(os.unlink, self.db_path)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def _columns(self, table):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
 
     def test_venues_has_every_column_add_venue_writes(self):

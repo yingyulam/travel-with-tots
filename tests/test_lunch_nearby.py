@@ -22,7 +22,7 @@ from contextlib import closing
 from unittest import mock
 
 from src import interactions
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.components import find_nearby as module
 from src.components.find_nearby import find_nearby
 from src.data_loader import maps_search_url
@@ -61,9 +61,9 @@ class _WithVenues(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def tearDown(self):
@@ -78,7 +78,7 @@ class _WithVenues(unittest.TestCase):
 class LunchIsCappedByHowTheyTravelTest(_WithVenues):
     def setUp(self):
         super().setUp()
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _venue(conn, "Close Cafe", can_eat=1, lat=HERE[0], lng=HERE[1])
             _venue(conn, "Far Food Court", can_eat=1, lat=FAR[0], lng=FAR[1])
 
@@ -100,13 +100,13 @@ class LunchIsCappedByHowTheyTravelTest(_WithVenues):
         # Deliberate, and load-bearing: four curated venues have no coordinates,
         # including both Granville Island markets. Dropping them for incomplete
         # data would hide exactly the places this should surface.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _venue(conn, "Granville Island Market", can_eat=1)
         names = [p["name"] for p in self._lunch(transit="walk", limit=5)["places"]]
         self.assertIn("Granville Island Market", names)
 
     def test_a_venue_without_food_is_never_offered(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _venue(conn, "Playground", can_eat=0, lat=HERE[0], lng=HERE[1])
         names = [p["name"] for p in self._lunch(transit="walk", limit=5)["places"]]
         self.assertNotIn("Playground", names)
@@ -123,7 +123,7 @@ class LunchNeverSearchesTheWebTest(_WithVenues):
         self.assertEqual(result["source"], "none")
 
     def test_no_web_search_when_something_is_found(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _venue(conn, "Close Cafe", can_eat=1, lat=HERE[0], lng=HERE[1])
         with mock.patch.object(module, "search_web") as searched:
             self._lunch(transit="walk")
@@ -143,7 +143,7 @@ class TheMapsHandoffTest(_WithVenues):
     def test_lunch_always_carries_a_maps_link(self):
         # Offered alongside results, not only instead of them: "here is what we
         # know, and here is where to look for more".
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _venue(conn, "Close Cafe", can_eat=1, lat=HERE[0], lng=HERE[1])
         result = self._lunch(transit="walk")
         self.assertTrue(result["places"])

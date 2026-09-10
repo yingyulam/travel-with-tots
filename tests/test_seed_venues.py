@@ -23,7 +23,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from src.store import db, schema
+from src.store import connection, db, schema
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "seed_venues.py"
 _spec = importlib.util.spec_from_file_location("seed_venues_script", _SCRIPT)
@@ -36,19 +36,19 @@ class _FreshDBTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(os.unlink, self.db_path)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def _seed(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return seed_venues.seed(conn)
 
     def _rows(self, sql, params=()):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             return conn.execute(sql, params).fetchall()
 
 
@@ -62,7 +62,7 @@ class ItInsertsAndNeverUpdatesTest(_FreshDBTest):
         # precisely that, and nobody was told -- it happened to the Vancouver
         # Aquarium's opening hours before hours were made fill-only.
         name = json.loads(seed_venues.VENUES_SEED.read_text())[0]["name"]
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute(
                 "INSERT INTO venues (name, source, city, neighbourhood, type, "
                 "setting, open_time, close_time, verified_at, seed_rank) VALUES "
@@ -87,7 +87,7 @@ class ItInsertsAndNeverUpdatesTest(_FreshDBTest):
         self.assertGreater(first, 0)
 
     def test_venues_not_in_the_seed_file_are_left_alone(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute("INSERT INTO venues (name, city, source) "
                          "VALUES ('Not In The Seed File', 'Vancouver', 'curated')")
         self._seed()
@@ -101,7 +101,7 @@ class ItInsertsAndNeverUpdatesTest(_FreshDBTest):
         # against every row instead of only curated ones let them suppress the
         # curated entry entirely.
         name = json.loads(seed_venues.VENUES_SEED.read_text())[0]["name"]
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute("INSERT INTO venues (name, city, source) "
                          "VALUES (?, 'Vancouver', 'user_submitted')", (name,))
         self._seed()
@@ -131,9 +131,9 @@ class StartupDoesNotSeedTest(unittest.TestCase):
         # Venues arrive through review, and the table is the source of truth,
         # so a boot that wrote to it could only overwrite somebody's decision.
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(db, "DB_PATH", os.path.join(tmp, "fresh.db")):
+            with mock.patch.object(connection, "DB_PATH", os.path.join(tmp, "fresh.db")):
                 schema.init_db()
-                with closing(db.connect()) as conn:
+                with closing(connection.connect()) as conn:
                     count = conn.execute(
                         "SELECT COUNT(*) c FROM venues").fetchone()["c"]
         self.assertEqual(count, 0)

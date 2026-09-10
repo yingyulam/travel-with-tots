@@ -18,7 +18,7 @@ from contextlib import closing
 from unittest import mock
 
 from src import data_loader
-from src.store import db, schema
+from src.store import connection, db, schema
 
 
 class GetVenuesTest(unittest.TestCase):
@@ -26,9 +26,9 @@ class GetVenuesTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def tearDown(self):
@@ -45,7 +45,7 @@ class GetVenuesTest(unittest.TestCase):
         fields.setdefault("source", "curated")
         columns = ", ".join(fields)
         placeholders = ", ".join("?" for _ in fields)
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             cur = conn.execute(f"INSERT INTO venues (name, {columns}) "
                                f"VALUES (?, {placeholders})",
                                (name, *fields.values()))

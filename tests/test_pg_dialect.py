@@ -25,7 +25,7 @@ import unittest
 from unittest import mock
 
 import src.store.db as db
-from src.store import backend, postgres, schema
+from src.store import backend, connection, postgres, schema
 from src.store import supabase_sync as sync
 
 
@@ -94,12 +94,12 @@ class SecretsInErrorsTest(unittest.TestCase):
         self.assertNotIn("stack noise", out)
 
     def test_the_fallback_message_is_redacted_too(self):
-        with mock.patch.object(db, "_supabase_dsn", lambda: "postgresql://x"), \
+        with mock.patch.object(connection, "_supabase_dsn", lambda: "postgresql://x"), \
              mock.patch.object(postgres, "connect", side_effect=ImportError(
                  "postgresql://u:s3cret@h/db unavailable")), \
-             mock.patch.object(db, "connect_sqlite", lambda: "sqlite"):
-            db.connect()
-        self.assertNotIn("s3cret", db.LAST_BACKEND_ERROR)
+             mock.patch.object(connection, "connect_sqlite", lambda: "sqlite"):
+            connection.connect()
+        self.assertNotIn("s3cret", connection.LAST_BACKEND_ERROR)
 
 
 class ReturningIdTest(unittest.TestCase):
@@ -226,7 +226,7 @@ class WhichDatabaseServesTest(unittest.TestCase):
                         # reads a non-default DB_PATH as "a test redirected this,
                         # stay local" -- a second guard, and one this class has
                         # to lift too or every case below falls back.
-                        mock.patch.object(db, "DB_PATH", db._DEFAULT_DB_PATH),
+                        mock.patch.object(connection, "DB_PATH", connection._DEFAULT_DB_PATH),
                         mock.patch.dict(os.environ, {"DB_BACKEND": ""})):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -241,16 +241,16 @@ class WhichDatabaseServesTest(unittest.TestCase):
         with mock.patch.object(backend, "db_url", lambda: "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "supabase"}):
             self.assertEqual(backend.active_source(), backend.LOCAL)      # the file
-            self.assertEqual(db.effective_backend(), backend.SUPABASE)  # the truth
-            self.assertEqual(db.backend_pinned_by_env(), backend.SUPABASE)
+            self.assertEqual(connection.effective_backend(), backend.SUPABASE)  # the truth
+            self.assertEqual(connection.backend_pinned_by_env(), backend.SUPABASE)
 
     def test_nothing_is_pinned_when_the_variable_is_unset(self):
         with mock.patch.dict(os.environ, {"DB_BACKEND": ""}):
-            self.assertIsNone(db.backend_pinned_by_env())
+            self.assertIsNone(connection.backend_pinned_by_env())
 
     def test_an_unrecognised_pin_is_not_reported_as_one(self):
         with mock.patch.dict(os.environ, {"DB_BACKEND": "mysql"}):
-            self.assertIsNone(db.backend_pinned_by_env())
+            self.assertIsNone(connection.backend_pinned_by_env())
 
     def test_the_environment_can_pin_supabase_without_the_settings_file(self):
         # How a deployment survives an ephemeral disk. data/data_source.json is
@@ -260,13 +260,13 @@ class WhichDatabaseServesTest(unittest.TestCase):
         backend.set_active_source(backend.LOCAL)
         with mock.patch.object(backend, "db_url", lambda: "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "supabase"}):
-            self.assertEqual(db._supabase_dsn(), "postgresql://somewhere")
+            self.assertEqual(connection._supabase_dsn(), "postgresql://somewhere")
 
     def test_local_wins_over_a_pinned_supabase(self):
         # Whichever way they disagree, the database that always works wins.
         with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "local"}):
-            self.assertIsNone(db._supabase_dsn())
+            self.assertIsNone(connection._supabase_dsn())
 
     def test_the_environment_can_override_the_dropdown(self):
         # How the suite stays offline. Sixty-odd tests call a query function
@@ -275,32 +275,32 @@ class WhichDatabaseServesTest(unittest.TestCase):
         # project. Also how a deployment pins the backend without the file.
         with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "local"}):
-            self.assertIsNone(db._supabase_dsn())
+            self.assertIsNone(connection._supabase_dsn())
 
     def _choose(self, source, url):
         backend.set_active_source(source)
         return mock.patch.object(backend, "db_url", lambda: url)
 
     def test_a_named_database_file_always_means_sqlite(self):
-        # Every test file patches db.DB_PATH at a temp file, and naming a
+        # Every test file patches connection.DB_PATH at a temp file, and naming a
         # specific SQLite file is a clear enough statement of intent to
         # override the dropdown. Without this the suite would send its writes
         # to the live Supabase project.
         with self._choose(backend.SUPABASE, "postgresql://nowhere"), \
-             mock.patch.object(db, "DB_PATH", os.path.join(self._tmp.name, "t.db")):
-            self.assertIsNone(db._supabase_dsn())
+             mock.patch.object(connection, "DB_PATH", os.path.join(self._tmp.name, "t.db")):
+            self.assertIsNone(connection._supabase_dsn())
 
     def test_local_means_sqlite_even_with_a_connection_string(self):
         with self._choose(backend.LOCAL, "postgresql://nowhere"):
-            self.assertIsNone(db._supabase_dsn())
+            self.assertIsNone(connection._supabase_dsn())
 
     def test_supabase_without_a_connection_string_means_sqlite(self):
         with self._choose(backend.SUPABASE, ""):
-            self.assertIsNone(db._supabase_dsn())
+            self.assertIsNone(connection._supabase_dsn())
 
     def test_supabase_with_a_connection_string_uses_it(self):
         with self._choose(backend.SUPABASE, "postgresql://somewhere"):
-            self.assertEqual(db._supabase_dsn(), "postgresql://somewhere")
+            self.assertEqual(connection._supabase_dsn(), "postgresql://somewhere")
 
     def test_an_unreachable_supabase_serves_local_data_and_says_why(self):
         # A page rendering local data with a warning beats every page 500ing,
@@ -309,15 +309,15 @@ class WhichDatabaseServesTest(unittest.TestCase):
         with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
              mock.patch.object(postgres, "connect",
                                side_effect=ImportError("no psycopg")), \
-             mock.patch.object(db, "connect_sqlite", lambda: "sqlite"):
-            self.assertEqual(db.connect(), "sqlite")
-        self.assertIn("no psycopg", db.LAST_BACKEND_ERROR)
+             mock.patch.object(connection, "connect_sqlite", lambda: "sqlite"):
+            self.assertEqual(connection.connect(), "sqlite")
+        self.assertIn("no psycopg", connection.LAST_BACKEND_ERROR)
 
     def test_the_sqlite_setup_is_skipped_on_supabase(self):
         # init_db is PRAGMA table_info and ALTER TABLE the whole way down, and
         # the tables are already there. It seeds no venues on either backend.
         with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
-             mock.patch.object(db, "connect_sqlite") as opened:
+             mock.patch.object(connection, "connect_sqlite") as opened:
             schema.init_db()
         opened.assert_not_called()
 
@@ -328,12 +328,12 @@ class TheRuntimeSchemaTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                     os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
         from contextlib import closing
-        with closing(db.connect_sqlite()) as conn:
+        with closing(connection.connect_sqlite()) as conn:
             schema.create_schema(conn)
         self.ddl = sync.postgres_runtime_ddl()
 
@@ -376,7 +376,7 @@ class TheRuntimeSchemaTest(unittest.TestCase):
 
     def test_it_is_generated_from_the_live_schema(self):
         from contextlib import closing
-        with closing(db.connect_sqlite()) as conn:
+        with closing(connection.connect_sqlite()) as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS venue_hours_extra ("
                          "id INTEGER PRIMARY KEY)")
             conn.commit()
@@ -387,12 +387,12 @@ class TheRuntimeSchemaTest(unittest.TestCase):
 class UniqueViolationsReachTheReviewPageTest(unittest.TestCase):
     def test_both_databases_integrity_errors_are_caught(self):
         import sqlite3
-        self.assertIn(sqlite3.IntegrityError, db.INTEGRITY_ERRORS)
+        self.assertIn(sqlite3.IntegrityError, connection.INTEGRITY_ERRORS)
         try:
             import psycopg
         except ImportError:
             self.skipTest("psycopg not installed")
-        self.assertIn(psycopg.errors.UniqueViolation, db.INTEGRITY_ERRORS)
+        self.assertIn(psycopg.errors.UniqueViolation, connection.INTEGRITY_ERRORS)
 
 
 class ColumnsReachSupabaseTooTest(unittest.TestCase):
@@ -426,26 +426,26 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
         # connect() falls back to SQLite, and ADD COLUMN IF NOT EXISTS is not
         # SQLite syntax, so the fallback would run the wrong dialect against
         # the local file.
-        with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
+        with mock.patch.object(connection, "_supabase_dsn", return_value="postgresql://x/y"), \
              mock.patch.object(schema.postgres, "connect",
                                side_effect=ImportError("no psycopg")), \
-             mock.patch.object(db, "connect_sqlite") as sqlite:
+             mock.patch.object(connection, "connect_sqlite") as sqlite:
             schema._ensure_postgres_columns()
         sqlite.assert_not_called()
 
     def test_boot_runs_it_on_supabase(self):
         # The wiring, and the whole point: init_db returns early on Supabase,
         # so without this line the migration exists and never runs.
-        with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
+        with mock.patch.object(connection, "_supabase_dsn", return_value="postgresql://x/y"), \
              mock.patch.object(schema, "_ensure_postgres_columns") as migrated:
             schema.init_db()
         migrated.assert_called_once()
 
     def test_boot_does_not_run_it_on_sqlite(self):
         # SQLite has _ensure_columns for this, which handles its own dialect.
-        with mock.patch.object(db, "_supabase_dsn", return_value=None), \
+        with mock.patch.object(connection, "_supabase_dsn", return_value=None), \
              mock.patch.object(schema, "_ensure_postgres_columns") as migrated, \
-             mock.patch.object(db, "connect_sqlite"), \
+             mock.patch.object(connection, "connect_sqlite"), \
              mock.patch.object(schema, "create_schema"), \
              mock.patch.object(schema, "_seed_sample_data"), \
              mock.patch.object(schema, "_seed_admin"):
@@ -453,7 +453,7 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
         migrated.assert_not_called()
 
     def test_it_does_nothing_on_sqlite(self):
-        with mock.patch.object(db, "_supabase_dsn", return_value=None), \
+        with mock.patch.object(connection, "_supabase_dsn", return_value=None), \
              mock.patch.object(schema.postgres, "connect") as opened:
             schema._ensure_postgres_columns()
         opened.assert_not_called()
@@ -463,7 +463,7 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
         # not take every page down.
         conn = mock.MagicMock()
         conn.execute.side_effect = [Exception("nope"), None, None]
-        with mock.patch.object(db, "_supabase_dsn", return_value="postgresql://x/y"), \
+        with mock.patch.object(connection, "_supabase_dsn", return_value="postgresql://x/y"), \
              mock.patch.object(schema.postgres, "connect", return_value=conn):
             schema._ensure_postgres_columns()
         self.assertEqual(conn.execute.call_count, len(schema.POSTGRES_ADDED_COLUMNS))
@@ -485,10 +485,10 @@ class TheEnvironmentIsLoadedBeforeAnybodyReadsItTest(unittest.TestCase):
         import os, sys
         sys.path.insert(0, %r)
         os.environ.pop("DB_BACKEND", None)
-        from src.store import backend, db
-        before = db.backend_pinned_by_env()
+        from src.store import backend, connection
+        before = connection.backend_pinned_by_env()
         backend.db_url()                 # the call that mutates os.environ
-        print(before, db.backend_pinned_by_env())
+        print(before, connection.backend_pinned_by_env())
     """)
 
     def test_reading_a_setting_does_not_change_what_db_backend_says(self):

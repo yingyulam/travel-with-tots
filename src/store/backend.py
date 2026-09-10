@@ -1,11 +1,11 @@
 """Which database is selected, and the credentials for reaching it.
 
 The runtime half of the Supabase story, split from supabase_sync.py because the
-lifetimes differ: `active_source` is read on every db.connect(), while cloning
+lifetimes differ: `active_source` is read on every connect(), while cloning
 and generating DDL happen by hand a handful of times.
 
-Imports nothing else in the package, which is what lets db.py depend on it at
-module level.
+Imports nothing else in the package, which is what lets connection.py depend
+on it at module level.
 """
 
 import json

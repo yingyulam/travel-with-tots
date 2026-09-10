@@ -20,7 +20,7 @@ from src.web import guards
 from contextlib import closing
 from unittest import mock
 
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.clients import osm
 
 
@@ -63,11 +63,11 @@ class HoursCheckTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.admin = db.add_parent("a@example.com", "h", name="A")
         self.venue = db.add_venue("An Aquarium", source="curated", city="Vancouver",
@@ -93,7 +93,7 @@ class HoursCheckTest(unittest.TestCase):
         # There was no path by which an approved venue's hours could change:
         # EDITABLE_VENUE_FIELDS excludes them and nothing else wrote them.
         db.set_venue_default_hours(self.venue, "10:00", "17:00")
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT open_time, close_time FROM venues WHERE id = ?",
                                (self.venue,)).fetchone()
         self.assertEqual((row["open_time"], row["close_time"]), ("10:00", "17:00"))
@@ -106,7 +106,7 @@ class HoursCheckTest(unittest.TestCase):
 
     def test_deleting_a_venue_takes_its_findings(self):
         db.record_hours_check(self.venue, "osm", "10:00-17:00", "differs")
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             conn.execute("DELETE FROM venues WHERE id = ?", (self.venue,))
         self.assertEqual(db.get_pending_hours_checks(), [])
 
@@ -117,11 +117,11 @@ class HoursDecisionRouteTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         import app as app_module
         self.app_module = app_module
-        patcher = mock.patch.object(db, "DB_PATH",
+        patcher = mock.patch.object(connection, "DB_PATH",
                                    os.path.join(self._tmp.name, "app.db"))
         patcher.start()
         self.addCleanup(patcher.stop)
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
         self.admin = db.add_parent("a@example.com", "h", name="A")
         self.venue = db.add_venue("An Aquarium", source="curated", city="Vancouver",
@@ -138,7 +138,7 @@ class HoursDecisionRouteTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def _hours(self):
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             row = conn.execute("SELECT open_time, close_time FROM venues WHERE id = ?",
                                (self.venue,)).fetchone()
         return row["open_time"], row["close_time"]

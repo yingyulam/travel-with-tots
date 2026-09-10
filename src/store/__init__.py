@@ -1,5 +1,6 @@
 """Everything that persists, and the only place SQL is written.
 
+    connection.py      which database is serving, and opening it
     db.py              every query, in SQLite's dialect
     schema.py          the tables
     postgres.py        the same SQL, translated for Postgres
@@ -9,6 +10,6 @@
     results.py         thumbs up/down ratings (JSON)
 
 The last two hold no SQL and belong here because this is where durable state
-lives. backend.py imports nothing else in the package, which is what lets db.py
-depend on it at module level.
+lives. backend.py imports nothing else in the package and connection.py imports
+only backend.py and postgres.py, which is what keeps the graph acyclic.
 """

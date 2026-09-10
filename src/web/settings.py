@@ -10,7 +10,7 @@ from contextlib import closing
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src.store import backend, db, postgres, supabase_sync
+from src.store import backend, connection, postgres, supabase_sync
 from src.ai import rag
 from src.ai.agents import WEBSITE_CHATBOT_PROMPT_PATH, reload_website_chatbot_prompt
 from src.form_helpers import clamp_int
@@ -33,11 +33,11 @@ def settings():
         # What is actually serving, which is not always what the dropdown says:
         # the dropdown lives in a file, and a host with an ephemeral disk loses
         # it on every deploy while DB_BACKEND keeps pinning the real backend.
-        effective_source=db.effective_backend(),
-        pinned_backend=db.backend_pinned_by_env(),
+        effective_source=connection.effective_backend(),
+        pinned_backend=connection.backend_pinned_by_env(),
         supabase_configured=_supabase_configured(),
         supabase_db_url_set=bool(backend.db_url()),
-        backend_error=db.LAST_BACKEND_ERROR,
+        backend_error=connection.LAST_BACKEND_ERROR,
         supabase_ddl=supabase_sync.postgres_ddl(),
         supabase_runtime_ddl=supabase_sync.postgres_runtime_ddl())
 

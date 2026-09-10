@@ -7,7 +7,7 @@ real behaviour in place rather than removing it.
 
 import os
 
-# SQLite, never a live database. Most tests point `db.DB_PATH` at a temp file,
+# SQLite, never a live database. Most tests point `connection.DB_PATH` at a temp file,
 # which is enough on its own. Some do not: they call a query function and read
 # whatever database is configured, which was harmless while that could only be a
 # local file. With Supabase selected on /settings it is not -- those become
@@ -128,17 +128,18 @@ else:
 # the pool is explicit rather than whatever the seed file happens to say today,
 # and a test that wants its own database still redirects DB_PATH as before.
 #
-# Note _DEFAULT_DB_PATH is deliberately *not* touched: db._supabase_dsn reads a
+# Note _DEFAULT_DB_PATH is deliberately *not* touched: connection._supabase_dsn reads a
 # non-default DB_PATH as "a test redirected this, stay local", which is a second
 # guard behind the DB_BACKEND pin above. test_pg_dialect's backend-selection
 # tests lift both by hand, because switching backends is what they are for.
 import sqlite3
 import tempfile
 
+from src.store import connection
 from src.store import db as _db
 from src.store import schema as _schema
 
-_db.DB_PATH = tempfile.mkdtemp(prefix="twt-tests-") + "/suite.db"
+connection.DB_PATH = tempfile.mkdtemp(prefix="twt-tests-") + "/suite.db"
 
 # Wide enough for a real day: hours on every row because a venue without them
 # is not schedulable, coordinates because the travel limit filters on them, a
@@ -155,7 +156,7 @@ SUITE_VENUES = (
     ("Suite Market",  "market",  "both",    1, 49.2715, -123.1085),
 )
 
-_conn = sqlite3.connect(_db.DB_PATH)
+_conn = sqlite3.connect(connection.DB_PATH)
 _conn.row_factory = sqlite3.Row
 _schema.create_schema(_conn)
 with _conn:

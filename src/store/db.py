@@ -1,42 +1,17 @@
 """Every query the app runs, against SQLite or Postgres.
 
-`connect()` opens whichever backend is selected and falls back to SQLite when
-Supabase is unreachable. `connect_sqlite()` is for the SQLite-only work:
-PRAGMA, executescript, and the read side of the clone. Table creation and
-migrations live in schema.py.
+SQL is written in SQLite's dialect; postgres.py translates it.
+Connections come from connection.py, table creation from schema.py.
 
-Every connection enables foreign keys. Every write is parameterised and runs in
-a transaction.
+Every write is parameterised and runs in a transaction.
 """
 
-import json
-import os
-import sqlite3
 from contextlib import closing
-from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import backend, postgres
+from . import connection
 
-
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-DB_PATH = _DATA_DIR / "app.db"
-
-# What DB_PATH is when nobody has redirected it. Naming a specific SQLite file
-# overrides the data-source dropdown, so a test or script that redirects it can
-# never reach the live project.
-_DEFAULT_DB_PATH = DB_PATH
-
-# Why the last attempt to reach Supabase failed, or None. Read by /settings so a
-# fallback to local is visible rather than silent.
-LAST_BACKEND_ERROR = None
-
-
-# What a unique-index violation looks like on either backend. The review page
-# catches it per row so one clashing candidate cannot unwind a batch of
-# decisions.
-INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + postgres.integrity_errors()
 
 # Flag columns the planner may filter candidates by. Never interpolate a column
 # name that is not in here. `can_eat` follows the kind of place and is set at
@@ -90,77 +65,6 @@ TRIP_FIELDS = (
 )
 
 
-def connect_sqlite():
-    """Open the local SQLite file, whichever data source is selected.
-
-    Named rather than dispatched so PRAGMA, executescript and the clone's read
-    side can never be handed a Postgres connection.
-    """
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def _supabase_dsn():
-    """The Postgres connection string to serve from, or None to stay local.
-
-    Requires all of: DB_BACKEND is not "local", DB_PATH is the default,
-    Supabase is chosen (by DB_BACKEND or the /settings dropdown), a connection
-    string is set, and psycopg is installed. Anything missing means SQLite.
-
-    DB_BACKEND overrides the dropdown in both directions: "local" keeps the
-    test suite off the live project, "supabase" pins a deployment whose disk
-    does not survive a restart.
-    """
-    pinned = os.environ.get("DB_BACKEND", "").strip().lower()
-    if pinned == backend.LOCAL:
-        return None
-    if Path(DB_PATH) != _DEFAULT_DB_PATH:
-        return None
-    if backend.SUPABASE not in (pinned, backend.active_source()):
-        return None
-    return backend.db_url() or None
-
-
-def effective_backend():
-    """Which database is actually serving: "supabase" or "local".
-
-    Differs from backend.active_source(), which reads the dropdown's file,
-    whenever DB_BACKEND is set.
-    """
-    return backend.SUPABASE if _supabase_dsn() is not None else backend.LOCAL
-
-
-def backend_pinned_by_env():
-    """The backend DB_BACKEND forces, or None when it is not set.
-
-    What lets /settings say the dropdown has no effect, rather than showing a
-    control that silently does nothing.
-    """
-    pinned = os.environ.get("DB_BACKEND", "").strip().lower()
-    return pinned if pinned in backend.SOURCES else None
-
-
-def connect():
-    """A connection to whichever database is selected.
-
-    Falls back to SQLite when Supabase cannot be reached, recording why in
-    LAST_BACKEND_ERROR for /settings to display.
-    """
-    global LAST_BACKEND_ERROR
-    dsn = _supabase_dsn()
-    if dsn is None:
-        return connect_sqlite()
-    try:
-        conn = postgres.connect(dsn)
-    except (ImportError, *postgres.unreachable_errors()) as e:
-        LAST_BACKEND_ERROR = postgres.first_line(e)
-        return connect_sqlite()
-    LAST_BACKEND_ERROR = None
-    return conn
-
-
 # The password `schema._seed_admin` used to hard-code, published in this repository.
 # Kept only so a database seeded before that changed can be checked for it,
 # which is the one thing a published password is still good for.
@@ -179,7 +83,7 @@ def admins_with_password(password):
     Every hash is checked, which is slow by design and fine over a handful of
     admins.
     """
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         rows = conn.execute(
             "SELECT id, email, password_hash FROM parents WHERE is_admin = 1"
         ).fetchall()
@@ -203,7 +107,7 @@ def admins_with_weak_password():
 def list_admins():
     """Every account that can reach /settings, so the answer to "who has admin"
     is one command rather than a query somebody writes by hand."""
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return [dict(row) for row in conn.execute(
             "SELECT id, email, name FROM parents WHERE is_admin = 1 "
             "ORDER BY email")]
@@ -263,7 +167,7 @@ def delete_parent(email):
 
 def _write(sql, params):
     """Run one parameterized write in its own transaction; return lastrowid."""
-    with closing(connect()) as conn, conn:
+    with closing(connection.connect()) as conn, conn:
         return conn.execute(sql, params).lastrowid
 
 
@@ -375,7 +279,7 @@ def add_or_update_submission(name, *, parent_id, **fields):
     or another parent's submission.
     """
     reject_unknown_fields(fields, SUBMISSION_FIELDS, "a submission field")
-    with closing(connect()) as conn, conn:
+    with closing(connection.connect()) as conn, conn:
         existing = conn.execute(
             "SELECT id FROM venues WHERE parent_id = ? AND name = ? "
             "AND source = 'user_submitted'", (parent_id, name)).fetchone()
@@ -458,7 +362,7 @@ def get_pending_submissions():
     same name and city, which is what idx_venues_curated_identity would refuse
     on promotion.
     """
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute("""
             SELECT v.*, p.email AS submitted_by,
                    (SELECT COUNT(*) FROM venues c
@@ -477,7 +381,7 @@ def promote_submission(venue_id, admin_id):
     invisible at once) or when a curated venue of the same name and city
     already exists.
     """
-    with closing(connect()) as conn, conn:
+    with closing(connection.connect()) as conn, conn:
         row = conn.execute(
             "SELECT name, city FROM venues WHERE id = ? AND source = 'user_submitted' "
             "AND rejected_at IS NULL",
@@ -521,7 +425,7 @@ def restore_submission(venue_id):
 
 def get_rejected_submissions():
     """Submissions set aside, newest decision first, so they can be revisited."""
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute("""
             SELECT v.*, p.email AS submitted_by
             FROM venues v LEFT JOIN parents p ON p.id = v.parent_id
@@ -559,7 +463,7 @@ def upsert_imported_venue(external_id, name, *, source, source_url, **fields):
     a re-run. Delete the row to take such a correction.
     """
     reject_unknown_fields(fields, IMPORT_FIELDS, "an import field")
-    with closing(connect()) as conn, conn:
+    with closing(connection.connect()) as conn, conn:
         row = conn.execute("SELECT * FROM venues WHERE external_id = ?",
                            (external_id,)).fetchone()
         action = "unchanged"
@@ -597,7 +501,7 @@ def get_venues_missing_hours():
     invisible to the planner. The review page lists them to be filled in.
     """
     source_clause, source_params = _verified_source_clause()
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             f"SELECT * FROM venues WHERE {source_clause} "
             "AND (open_time IS NULL OR open_time = '' "
@@ -620,7 +524,7 @@ def get_unverified_venues(limit=None):
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(sql, params).fetchall()
 
 
@@ -656,7 +560,7 @@ def get_venue_hours(venue_ids=None):
         sql += f" WHERE venue_id IN ({', '.join('?' * len(venue_ids))})"
         params = list(venue_ids)
     out = {}
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         for row in conn.execute(sql, params):
             out.setdefault(row["venue_id"], {})[row["weekday"]] = (
                 row["open_time"], row["close_time"])
@@ -674,7 +578,7 @@ def set_venue_hours(venue_id, by_weekday):
     rows = [(venue_id, day, opens, closes)
             for day, (opens, closes) in sorted(by_weekday.items())
             if opens and closes]
-    with closing(connect()) as conn, conn:
+    with closing(connection.connect()) as conn, conn:
         conn.execute("DELETE FROM venue_hours WHERE venue_id = ?", (venue_id,))
         if rows:
             conn.executemany(
@@ -710,7 +614,7 @@ def record_hours_check(venue_id, source, source_says, finding,
 
 def get_pending_hours_checks():
     """Open hours comparisons, with the venue they concern."""
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute("""
             SELECT c.*, v.name, v.type, v.neighbourhood,
                    v.open_time AS current_open, v.close_time AS current_close,
@@ -738,7 +642,7 @@ def pending_reports_for(parent_id, venue_ids):
         return {}
     placeholders = ", ".join("?" for _ in ids)
     pending = {}
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         rows = conn.execute(
             f"SELECT venue_id, field, value FROM venue_reports "
             f"WHERE status = 'pending' AND reported_by = ? "
@@ -755,7 +659,7 @@ def get_pending_reports():
     Grouped by venue and parent in the caller, so a reviewer settles the batch
     a parent submitted rather than clicking once per tick.
     """
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute("""
             SELECT r.*, v.name AS venue_name, v.type AS venue_type,
                    v.neighbourhood, p.name AS reporter_name
@@ -862,26 +766,26 @@ def reported_flags(venue_ids=None):
     # reports, and older reports before newer.
     sql += " ORDER BY reported_by IS NOT NULL, reported_at, id"
     flags = {}
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         for row in conn.execute(sql, params):
             flags.setdefault(row["venue_id"], {})[row["field"]] = bool(row["value"])
     return flags
 
 
 def get_parent_by_email(email):
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT * FROM parents WHERE email = ?", (email,)).fetchone()
 
 
 def get_parent(parent_id):
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT * FROM parents WHERE id = ?", (parent_id,)).fetchone()
 
 
 def get_children(parent_id):
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT * FROM children WHERE parent_id = ? ORDER BY created_at",
             (parent_id,)).fetchall()
@@ -892,7 +796,7 @@ def get_trips_for_parent(parent_id):
     rows saved without a plan_json have nothing to open, so they're excluded
     rather than shown as a dead link). LEFT JOIN so a trip whose child was
     since removed still shows, with child_name as NULL."""
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT trips.*, children.name AS child_name FROM trips "
             "LEFT JOIN children ON children.id = trips.child_id "
@@ -906,7 +810,7 @@ def get_trip_group(parent_id, group_id):
     Ordered by day_index rather than date, so a row whose date failed to save
     keeps its place.
     """
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT trips.*, children.name AS child_name, "
             "children.date_of_birth AS child_dob FROM trips "
@@ -917,7 +821,7 @@ def get_trip_group(parent_id, group_id):
 
 def get_trip_for_parent(parent_id, trip_id):
     """One trip by id, scoped to this parent's own trips (ownership check)."""
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT trips.*, children.name AS child_name, "
             "children.date_of_birth AS child_dob FROM trips "
@@ -943,7 +847,7 @@ def get_candidate_venues(city, age_months=None, features=None, transit=None,
     """
     where, params = _candidate_where_clause(city)
 
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         rows = conn.execute(
             f"SELECT * FROM venues WHERE {where} ORDER BY name", params).fetchall()
         rows = _narrow_by_neighbourhood(rows, near_neighbourhood, transit)
@@ -989,7 +893,7 @@ def get_venue_types_in_use():
     nothing behind.
     """
     source_clause, source_params = _verified_source_clause()
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return {row["type"] for row in conn.execute(
             f"SELECT DISTINCT type FROM venues WHERE {source_clause} "
             "AND type IS NOT NULL AND type != ''", source_params)}
@@ -1001,7 +905,7 @@ def get_venues_in_city(city):
     decide what "matching" means -- see components/find_nearby.py, which
     applies interactions.NEED_FILTERS so need semantics live in one place."""
     source_clause, source_params = _verified_source_clause()
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             f"SELECT * FROM venues WHERE {source_clause} AND city LIKE ? "
             "ORDER BY name", source_params + [f"%{city}%"]).fetchall()
@@ -1044,7 +948,7 @@ def _ensure_dining_option(conn, rows, where, params, dining, limit):
 
 
 def get_logged_venues_for_parent(parent_id):
-    with closing(connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT * FROM venues WHERE parent_id = ? AND source = 'user_submitted' "
             "ORDER BY created_at DESC", (parent_id,)).fetchall()

@@ -9,7 +9,7 @@ from unittest import mock
 
 import requests
 
-from src.store import db, schema
+from src.store import connection, db, schema
 from src.components.find_nearby import find_nearby
 from src.components.geocode import GeocodeError, geocode, reverse_geocode
 
@@ -64,9 +64,9 @@ class FindNearbyCuratedTest(unittest.TestCase):
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         self.db_path = tmp.name
-        self.patcher = mock.patch.object(db, "DB_PATH", self.db_path)
+        self.patcher = mock.patch.object(connection, "DB_PATH", self.db_path)
         self.patcher.start()
-        with closing(db.connect()) as conn:
+        with closing(connection.connect()) as conn:
             schema.create_schema(conn)
 
     def tearDown(self):
@@ -74,21 +74,21 @@ class FindNearbyCuratedTest(unittest.TestCase):
         os.unlink(self.db_path)
 
     def test_curated_hit_reports_curated_source(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Nursing Spot", has_nursing_room=1)
         result = find_nearby(need="nursing_room", city="Vancouver")
         self.assertEqual(result["source"], "curated")
         self.assertEqual([p["name"] for p in result["places"]], ["Nursing Spot"])
 
     def test_city_filter_excludes_other_cities(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Vancouver Spot", has_nursing_room=1)
             _insert_venue(conn, "Toronto Spot", city="Toronto", has_nursing_room=1)
         result = find_nearby(need="nursing_room", city="Vancouver")
         self.assertEqual([p["name"] for p in result["places"]], ["Vancouver Spot"])
 
     def test_need_predicate_is_respected(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Has Nursing", has_nursing_room=1)
             _insert_venue(conn, "No Nursing", has_nursing_room=0)
         result = find_nearby(need="nursing_room", city="Vancouver")
@@ -101,7 +101,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         # table cannot do -- enumerate the restaurants of a city -- goes to
         # Google Maps rather than to a web search that returns pages, not
         # places. See tests/test_lunch_nearby.py.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "A Mall", can_eat=1)
             _insert_venue(conn, "A Park")
         with mock.patch("src.components.find_nearby.search_web") as searched:
@@ -115,7 +115,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         # arbitrary nearby venue is worse than admitting it does not know, and
         # the web is the only place left to look. "restaurant" used to be here
         # too and is now answered above.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "A Park")
             _insert_venue(conn, "A Mall", can_eat=1)
         # search_web is mocked: escalating is the point of the test, and a real
@@ -130,7 +130,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         # The fallback path: no venue has coordinates, so neighbourhood is the
         # only proximity signal available. Still load-bearing, since only some
         # venues resolve from open data and user-submitted rows never will.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Far A", neighbourhood="Far", has_nursing_room=1)
             _insert_venue(conn, "Far B", neighbourhood="Far", has_nursing_room=1)
             _insert_venue(conn, "Close One", neighbourhood="Kitsilano", has_nursing_room=1)
@@ -141,7 +141,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
     def test_real_distance_beats_neighbourhood_when_coordinates_exist(self):
         # "Wrong Hood" is physically closest but in a different neighbourhood,
         # so it only wins if real distance is being used, not the name proxy.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Wrong Hood", neighbourhood="Elsewhere",
                           has_nursing_room=1, lat=49.2755, lng=-123.1535)
             _insert_venue(conn, "Right Hood Far", neighbourhood="Kitsilano",
@@ -152,7 +152,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.assertEqual([p["name"] for p in result["places"]], ["Wrong Hood"])
 
     def test_distance_km_reported_only_when_computable(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Has Coords", has_nursing_room=1,
                           lat=49.2800, lng=-123.1200)
             _insert_venue(conn, "No Coords", has_nursing_room=1)
@@ -163,7 +163,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.assertIsNone(by_name["No Coords"]["distance_km"])
 
     def test_venues_with_coordinates_rank_before_those_without(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "No Coords", has_nursing_room=1)
             _insert_venue(conn, "Has Coords", has_nursing_room=1,
                           lat=49.2800, lng=-123.1200)
@@ -172,7 +172,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.assertEqual([p["name"] for p in result["places"]], ["Has Coords"])
 
     def test_open_data_source_is_visible_but_user_submitted_is_not(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "From Open Data", has_nursing_room=1,
                           source="municipal_open_data")
             _insert_venue(conn, "From A Parent", has_nursing_room=1,
@@ -182,7 +182,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.assertEqual(names, {"From Open Data"})
 
     def test_curated_places_carry_a_maps_url(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Nursing Spot", has_nursing_room=1)
         place = find_nearby(need="nursing_room", city="Vancouver")["places"][0]
         self.assertIn("google.com/maps", place["maps_url"])
@@ -211,7 +211,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         self.assertEqual(result["places"], [])
 
     def test_no_city_and_no_coordinates_skips_curated_and_searches(self):
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Nursing Spot", has_nursing_room=1)
         with mock.patch("src.components.find_nearby.search_web", return_value=[]) as searched:
             result = find_nearby(need="nursing_room", city="")
@@ -222,7 +222,7 @@ class FindNearbyCuratedTest(unittest.TestCase):
         # No city means no geocoder was available, but shared coordinates are
         # enough on their own -- this is what lets the feature work with no
         # Google Maps key configured at all.
-        with closing(db.connect()) as conn, conn:
+        with closing(connection.connect()) as conn, conn:
             _insert_venue(conn, "Near", has_nursing_room=1,
                           lat=49.2755, lng=-123.1535)
             _insert_venue(conn, "Far", has_nursing_room=1,

@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.store import db
+from src.store import connection, db
 from src.clients import osm
 from src.data_loader import HOURS_ARE_A_CONVENTION
 
@@ -43,7 +43,7 @@ SKIP_TYPES = HOURS_ARE_A_CONVENTION
 
 
 def _venues():
-    with closing(db.connect()) as conn:
+    with closing(connection.connect()) as conn:
         return conn.execute(
             "SELECT id, name, type, open_time, close_time FROM venues "
             "WHERE source IN ('curated', 'municipal_open_data') "

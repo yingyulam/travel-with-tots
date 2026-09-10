@@ -15,7 +15,7 @@ import requests
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 
-from src.store import candidates, db
+from src.store import candidates, connection, db
 from src.clients import osm
 from src.data_loader import CITIES, FEATURE_LABELS, NEIGHBOURHOODS, SETTINGS, VENUE_TYPES
 from src.store.db import (PromotionError, add_venue, get_pending_hours_checks,
@@ -317,7 +317,7 @@ def venue_review_candidates():
                 continue
             try:
                 _approve_candidate(merged, admin_id)
-            except db.INTEGRITY_ERRORS:
+            except connection.INTEGRITY_ERRORS:
                 # idx_venues_curated_identity refuses a second curated venue
                 # with the same name and city. Uncaught, this unwound the loop
                 # and 500'd the whole submit: every row after this one lost its
