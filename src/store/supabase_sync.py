@@ -12,7 +12,7 @@ once in the Supabase SQL editor. That is a real limit of the client, not a
 shortcut.
 
 **It does not serve pages.** Reading and writing through Supabase is
-`src/postgres.py`'s job, over a direct Postgres connection, because PostgREST
+`postgres.py`'s job, over a direct Postgres connection, because PostgREST
 takes no SQL and `db.py` is a thousand lines of it. This module owns the copy and
 the switch; that one owns the dialect.
 

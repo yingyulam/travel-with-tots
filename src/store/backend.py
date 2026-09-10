@@ -19,8 +19,8 @@ _ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 # Loaded here, at import, and not only inside _setting. _setting overrides
 # os.environ, so the first call to it used to change what DB_BACKEND said
 # mid-process: anything reading the variable before that saw one answer and
-# after it another. db.py imports this module at module level, so doing it here
-# means every reader agrees from the start.
+# after it another. connection.py imports this module at module level, so
+# doing it here means every reader agrees from the start.
 if _ENV_PATH.exists():
     load_dotenv(_ENV_PATH, override=True)
 

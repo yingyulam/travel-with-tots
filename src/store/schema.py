@@ -11,8 +11,8 @@ SCHEMA is the single definition: a database gets exactly the tables written
 there. A column added to it reaches Supabase only if it is also listed in
 POSTGRES_ADDED_COLUMNS.
 
-The dependency runs one way: schema imports db for its connections, never the
-reverse.
+The dependency runs one way: schema reads connection.py for its connections
+and db.py for REPORTABLE_FIELDS, never the reverse.
 """
 
 import json
