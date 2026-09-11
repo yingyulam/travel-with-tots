@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import connection, schema
-from .backend import SyncError, credentials
+from .data_source import SyncError, credentials
 
 # Parents before children, venues before the rows that reference them. A copy
 # into a database with foreign keys fails on order, and Supabase's generated

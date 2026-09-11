@@ -6,7 +6,7 @@ Supabase is unreachable, recording why in LAST_BACKEND_ERROR.
 read side of the clone.
 
 Every module that runs SQL depends on this one, and it depends on nothing in
-the package except backend.py and postgres.py. Redirect DB_PATH here, not on a
+the package except data_source.py and postgres.py. Redirect DB_PATH here, not on a
 module that imported it, or the redirect reaches only that module's copy of the
 name.
 """
@@ -15,7 +15,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from . import backend, postgres
+from . import data_source, postgres
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
@@ -60,22 +60,22 @@ def _supabase_dsn():
     does not survive a restart.
     """
     pinned = os.environ.get("DB_BACKEND", "").strip().lower()
-    if pinned == backend.LOCAL:
+    if pinned == data_source.LOCAL:
         return None
     if Path(DB_PATH) != _DEFAULT_DB_PATH:
         return None
-    if backend.SUPABASE not in (pinned, backend.active_source()):
+    if data_source.SUPABASE not in (pinned, data_source.active_source()):
         return None
-    return backend.db_url() or None
+    return data_source.db_url() or None
 
 
 def effective_backend():
     """Which database is actually serving: "supabase" or "local".
 
-    Differs from backend.active_source(), which reads the dropdown's file,
+    Differs from data_source.active_source(), which reads the dropdown's file,
     whenever DB_BACKEND is set.
     """
-    return backend.SUPABASE if _supabase_dsn() is not None else backend.LOCAL
+    return data_source.SUPABASE if _supabase_dsn() is not None else data_source.LOCAL
 
 
 def backend_pinned_by_env():
@@ -85,7 +85,7 @@ def backend_pinned_by_env():
     control that silently does nothing.
     """
     pinned = os.environ.get("DB_BACKEND", "").strip().lower()
-    return pinned if pinned in backend.SOURCES else None
+    return pinned if pinned in data_source.SOURCES else None
 
 
 def connect():

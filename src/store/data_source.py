@@ -37,7 +37,7 @@ class SyncError(Exception):
 
 
 def active_source():
-    """The selected backend, defaulting to local.
+    """The selected data source, defaulting to local.
 
     Read on every call rather than cached, so the app never serves from a
     database the admin has already switched away from.

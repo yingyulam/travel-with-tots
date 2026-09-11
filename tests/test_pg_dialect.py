@@ -25,7 +25,7 @@ import unittest
 from unittest import mock
 
 import src.store.db as db
-from src.store import backend, connection, postgres, schema
+from src.store import connection, data_source, postgres, schema
 from src.store import supabase_sync as sync
 
 
@@ -219,7 +219,7 @@ class WhichDatabaseServesTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self._source = pathlib.Path(self._tmp.name) / "data_source.json"
-        for patcher in (mock.patch.object(backend, "SOURCE_PATH", self._source),
+        for patcher in (mock.patch.object(data_source, "SOURCE_PATH", self._source),
                         # tests/__init__.py pins the whole suite to local, which
                         # is what this class exists to switch off. It also points
                         # DB_PATH at the suite's own database, and _supabase_dsn
@@ -237,12 +237,12 @@ class WhichDatabaseServesTest(unittest.TestCase):
         # DB_BACKEND pinned Supabase and Supabase was serving every page. An
         # admin was told the wrong database was live by the one page whose job
         # is answering that.
-        backend.set_active_source(backend.LOCAL)
-        with mock.patch.object(backend, "db_url", lambda: "postgresql://somewhere"), \
+        data_source.set_active_source(data_source.LOCAL)
+        with mock.patch.object(data_source, "db_url", lambda: "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "supabase"}):
-            self.assertEqual(backend.active_source(), backend.LOCAL)      # the file
-            self.assertEqual(connection.effective_backend(), backend.SUPABASE)  # the truth
-            self.assertEqual(connection.backend_pinned_by_env(), backend.SUPABASE)
+            self.assertEqual(data_source.active_source(), data_source.LOCAL)      # the file
+            self.assertEqual(connection.effective_backend(), data_source.SUPABASE)  # the truth
+            self.assertEqual(connection.backend_pinned_by_env(), data_source.SUPABASE)
 
     def test_nothing_is_pinned_when_the_variable_is_unset(self):
         with mock.patch.dict(os.environ, {"DB_BACKEND": ""}):
@@ -257,14 +257,14 @@ class WhichDatabaseServesTest(unittest.TestCase):
         # generated and does not persist across a deploy, so without this the
         # app would come back up reading a fresh empty SQLite file it had just
         # seeded with demo rows, and say nothing about it.
-        backend.set_active_source(backend.LOCAL)
-        with mock.patch.object(backend, "db_url", lambda: "postgresql://somewhere"), \
+        data_source.set_active_source(data_source.LOCAL)
+        with mock.patch.object(data_source, "db_url", lambda: "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "supabase"}):
             self.assertEqual(connection._supabase_dsn(), "postgresql://somewhere")
 
     def test_local_wins_over_a_pinned_supabase(self):
         # Whichever way they disagree, the database that always works wins.
-        with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
+        with self._choose(data_source.SUPABASE, "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "local"}):
             self.assertIsNone(connection._supabase_dsn())
 
@@ -273,40 +273,40 @@ class WhichDatabaseServesTest(unittest.TestCase):
         # without redirecting DB_PATH, so they read whatever is configured;
         # with Supabase selected those became network reads against the real
         # project. Also how a deployment pins the backend without the file.
-        with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
+        with self._choose(data_source.SUPABASE, "postgresql://somewhere"), \
              mock.patch.dict(os.environ, {"DB_BACKEND": "local"}):
             self.assertIsNone(connection._supabase_dsn())
 
     def _choose(self, source, url):
-        backend.set_active_source(source)
-        return mock.patch.object(backend, "db_url", lambda: url)
+        data_source.set_active_source(source)
+        return mock.patch.object(data_source, "db_url", lambda: url)
 
     def test_a_named_database_file_always_means_sqlite(self):
         # Every test file patches connection.DB_PATH at a temp file, and naming a
         # specific SQLite file is a clear enough statement of intent to
         # override the dropdown. Without this the suite would send its writes
         # to the live Supabase project.
-        with self._choose(backend.SUPABASE, "postgresql://nowhere"), \
+        with self._choose(data_source.SUPABASE, "postgresql://nowhere"), \
              mock.patch.object(connection, "DB_PATH", os.path.join(self._tmp.name, "t.db")):
             self.assertIsNone(connection._supabase_dsn())
 
     def test_local_means_sqlite_even_with_a_connection_string(self):
-        with self._choose(backend.LOCAL, "postgresql://nowhere"):
+        with self._choose(data_source.LOCAL, "postgresql://nowhere"):
             self.assertIsNone(connection._supabase_dsn())
 
     def test_supabase_without_a_connection_string_means_sqlite(self):
-        with self._choose(backend.SUPABASE, ""):
+        with self._choose(data_source.SUPABASE, ""):
             self.assertIsNone(connection._supabase_dsn())
 
     def test_supabase_with_a_connection_string_uses_it(self):
-        with self._choose(backend.SUPABASE, "postgresql://somewhere"):
+        with self._choose(data_source.SUPABASE, "postgresql://somewhere"):
             self.assertEqual(connection._supabase_dsn(), "postgresql://somewhere")
 
     def test_an_unreachable_supabase_serves_local_data_and_says_why(self):
         # A page rendering local data with a warning beats every page 500ing,
         # and beats a silent switch back, which would leave an admin believing
         # they were looking at Supabase.
-        with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
+        with self._choose(data_source.SUPABASE, "postgresql://somewhere"), \
              mock.patch.object(postgres, "connect",
                                side_effect=ImportError("no psycopg")), \
              mock.patch.object(connection, "connect_sqlite", lambda: "sqlite"):
@@ -316,7 +316,7 @@ class WhichDatabaseServesTest(unittest.TestCase):
     def test_the_sqlite_setup_is_skipped_on_supabase(self):
         # init_db is PRAGMA table_info and ALTER TABLE the whole way down, and
         # the tables are already there. It seeds no venues on either backend.
-        with self._choose(backend.SUPABASE, "postgresql://somewhere"), \
+        with self._choose(data_source.SUPABASE, "postgresql://somewhere"), \
              mock.patch.object(connection, "connect_sqlite") as opened:
             schema.init_db()
         opened.assert_not_called()
@@ -472,7 +472,7 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
 class TheEnvironmentIsLoadedBeforeAnybodyReadsItTest(unittest.TestCase):
     """DB_BACKEND must mean the same thing throughout a process.
 
-    backend._setting loads .env with override=True, so the first call to it
+    data_source._setting loads .env with override=True, so the first call to it
     changes os.environ. Reading DB_BACKEND before that happened gave one answer
     and after it another, which is how a cold process could choose Supabase
     using an environment .env was about to override to local.
@@ -485,9 +485,9 @@ class TheEnvironmentIsLoadedBeforeAnybodyReadsItTest(unittest.TestCase):
         import os, sys
         sys.path.insert(0, %r)
         os.environ.pop("DB_BACKEND", None)
-        from src.store import backend, connection
+        from src.store import connection, data_source
         before = connection.backend_pinned_by_env()
-        backend.db_url()                 # the call that mutates os.environ
+        data_source.db_url()                 # the call that mutates os.environ
         print(before, connection.backend_pinned_by_env())
     """)
 
