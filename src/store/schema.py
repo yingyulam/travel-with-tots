@@ -270,7 +270,7 @@ def init_db():
     On Supabase the tables were created by the SQL on /settings, so only
     _ensure_postgres_columns runs there.
     """
-    if connection._supabase_dsn() is not None:
+    if connection.serves_supabase():
         _ensure_postgres_columns()
         return
     with closing(connection.connect_sqlite()) as conn:

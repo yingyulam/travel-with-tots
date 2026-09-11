@@ -436,14 +436,14 @@ class ColumnsReachSupabaseTooTest(unittest.TestCase):
     def test_boot_runs_it_on_supabase(self):
         # The wiring, and the whole point: init_db returns early on Supabase,
         # so without this line the migration exists and never runs.
-        with mock.patch.object(connection, "_supabase_dsn", return_value="postgresql://x/y"), \
+        with mock.patch.object(connection, "serves_supabase", return_value=True), \
              mock.patch.object(schema, "_ensure_postgres_columns") as migrated:
             schema.init_db()
         migrated.assert_called_once()
 
     def test_boot_does_not_run_it_on_sqlite(self):
         # SQLite has _ensure_columns for this, which handles its own dialect.
-        with mock.patch.object(connection, "_supabase_dsn", return_value=None), \
+        with mock.patch.object(connection, "serves_supabase", return_value=False), \
              mock.patch.object(schema, "_ensure_postgres_columns") as migrated, \
              mock.patch.object(connection, "connect_sqlite"), \
              mock.patch.object(schema, "create_schema"), \

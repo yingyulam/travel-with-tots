@@ -48,34 +48,45 @@ def connect_sqlite():
     return conn
 
 
-def _supabase_dsn():
-    """The Postgres connection string to serve from, or None to stay local.
+def serves_supabase():
+    """Whether Supabase serves this request, rather than the local SQLite file.
 
-    Requires all of: DB_BACKEND is not "local", DB_PATH is the default,
-    Supabase is chosen (by DB_BACKEND or the /settings dropdown), a connection
-    string is set, and psycopg is installed. Anything missing means SQLite.
+    Four conditions, all required; any one missing means SQLite. The fallback
+    runs in that direction on purpose, so the worst outcome of a mistake here
+    is reading a local file rather than somebody else's live project.
 
     DB_BACKEND overrides the dropdown in both directions: "local" keeps the
     test suite off the live project, "supabase" pins a deployment whose disk
     does not survive a restart.
     """
     pinned = os.environ.get("DB_BACKEND", "").strip().lower()
+
     if pinned == data_source.LOCAL:
-        return None
+        return False                       # the environment forbids it
+
     if Path(DB_PATH) != _DEFAULT_DB_PATH:
-        return None
-    if data_source.SUPABASE not in (pinned, data_source.active_source()):
-        return None
-    return data_source.db_url() or None
+        return False                       # a test or script redirected the file
+
+    asked_by_env = pinned == data_source.SUPABASE
+    asked_by_dropdown = data_source.active_source() == data_source.SUPABASE
+    if not (asked_by_env or asked_by_dropdown):
+        return False                       # nobody asked for Supabase
+
+    return bool(data_source.db_url())      # and there has to be somewhere to connect
+
+
+def _supabase_dsn():
+    """The Postgres connection string when Supabase serves, else None."""
+    return data_source.db_url() if serves_supabase() else None
 
 
 def effective_backend():
     """Which database is actually serving: "supabase" or "local".
 
-    Differs from data_source.active_source(), which reads the dropdown's file,
-    whenever DB_BACKEND is set.
+    Differs from data_source.active_source(), which reads only the dropdown's
+    file, whenever DB_BACKEND is set.
     """
-    return data_source.SUPABASE if _supabase_dsn() is not None else data_source.LOCAL
+    return data_source.SUPABASE if serves_supabase() else data_source.LOCAL
 
 
 def backend_pinned_by_env():

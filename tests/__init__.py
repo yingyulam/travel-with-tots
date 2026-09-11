@@ -128,7 +128,7 @@ else:
 # the pool is explicit rather than whatever the seed file happens to say today,
 # and a test that wants its own database still redirects DB_PATH as before.
 #
-# Note _DEFAULT_DB_PATH is deliberately *not* touched: connection._supabase_dsn reads a
+# Note _DEFAULT_DB_PATH is deliberately *not* touched: connection.serves_supabase reads a
 # non-default DB_PATH as "a test redirected this, stay local", which is a second
 # guard behind the DB_BACKEND pin above. test_pg_dialect's backend-selection
 # tests lift both by hand, because switching backends is what they are for.
